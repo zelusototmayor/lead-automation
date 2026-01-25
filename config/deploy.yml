@@ -41,3 +41,4 @@ volumes:
 
 builder:
   arch: amd64
+  dockerfile: Dockerfile.dashboard
