@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if error %}
+<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+{% if metrics %}
+<!-- Executive Summary Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-3xl font-bold text-blue-600">{{ metrics.summary.leads_today }}</div>
+        <div class="text-sm text-gray-500 uppercase tracking-wide mt-1">Leads Today</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-3xl font-bold text-gray-900">{{ metrics.summary.total_leads }}</div>
+        <div class="text-sm text-gray-500 uppercase tracking-wide mt-1">Total in CRM</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-3xl font-bold text-green-600">{{ metrics.summary.total_responses }}</div>
+        <div class="text-sm text-gray-500 uppercase tracking-wide mt-1">Total Responses</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="text-3xl font-bold text-purple-600">{{ metrics.summary.response_rate }}%</div>
+        <div class="text-sm text-gray-500 uppercase tracking-wide mt-1">Response Rate</div>
+    </div>
+</div>
+
+<!-- Status Pipeline -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Lead Pipeline</h2>
+    <div class="flex flex-wrap justify-between items-center gap-4">
+        <div class="flex-1 min-w-[100px] text-center">
+            <div class="text-2xl font-bold text-gray-600">{{ metrics.pipeline.new }}</div>
+            <div class="text-xs text-gray-500 uppercase">New</div>
+            <div class="h-2 bg-gray-200 rounded-full mt-2">
+                <div class="h-2 bg-gray-400 rounded-full" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="text-gray-300 text-2xl">→</div>
+        <div class="flex-1 min-w-[100px] text-center">
+            <div class="text-2xl font-bold text-blue-600">{{ metrics.pipeline.queued }}</div>
+            <div class="text-xs text-gray-500 uppercase">Queued</div>
+            <div class="h-2 bg-blue-100 rounded-full mt-2">
+                <div class="h-2 bg-blue-400 rounded-full" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="text-gray-300 text-2xl">→</div>
+        <div class="flex-1 min-w-[100px] text-center">
+            <div class="text-2xl font-bold text-yellow-600">{{ metrics.pipeline.contacted }}</div>
+            <div class="text-xs text-gray-500 uppercase">Contacted</div>
+            <div class="h-2 bg-yellow-100 rounded-full mt-2">
+                <div class="h-2 bg-yellow-400 rounded-full" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="text-gray-300 text-2xl">→</div>
+        <div class="flex-1 min-w-[100px] text-center">
+            <div class="text-2xl font-bold text-purple-600">{{ metrics.pipeline.replied }}</div>
+            <div class="text-xs text-gray-500 uppercase">Replied</div>
+            <div class="h-2 bg-purple-100 rounded-full mt-2">
+                <div class="h-2 bg-purple-400 rounded-full" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="text-gray-300 text-2xl">→</div>
+        <div class="flex-1 min-w-[100px] text-center">
+            <div class="text-2xl font-bold text-green-600">{{ metrics.pipeline.won }}</div>
+            <div class="text-xs text-gray-500 uppercase">Won</div>
+            <div class="h-2 bg-green-100 rounded-full mt-2">
+                <div class="h-2 bg-green-500 rounded-full" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Email Sequence Table -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Email Sequence Performance</h2>
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead>
+                <tr class="border-b border-gray-200">
+                    <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">Step</th>
+                    <th class="text-right py-3 px-4 text-sm font-medium text-gray-500">Sent</th>
+                    <th class="text-right py-3 px-4 text-sm font-medium text-gray-500">Responses</th>
+                    <th class="text-right py-3 px-4 text-sm font-medium text-gray-500">Response Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for email in metrics.email_sequence %}
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 px-4 text-sm font-medium text-gray-900">{{ email.name }}</td>
+                    <td class="py-3 px-4 text-sm text-gray-600 text-right">{{ email.sent }}</td>
+                    <td class="py-3 px-4 text-sm text-gray-600 text-right">{{ email.responses }}</td>
+                    <td class="py-3 px-4 text-sm text-right">
+                        <span class="px-2 py-1 rounded-full text-xs font-medium
+                            {% if email.response_rate >= 10 %}bg-green-100 text-green-800
+                            {% elif email.response_rate >= 5 %}bg-yellow-100 text-yellow-800
+                            {% else %}bg-gray-100 text-gray-800{% endif %}">
+                            {{ email.response_rate }}%
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <!-- Lead Score Distribution -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Lead Score Distribution</h2>
+        <canvas id="scoreChart" height="200"></canvas>
+    </div>
+
+    <!-- Industry Breakdown -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Industry Breakdown</h2>
+        <canvas id="industryChart" height="200"></canvas>
+    </div>
+
+    <!-- Company Size Distribution -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Company Size</h2>
+        <canvas id="sizeChart" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Geographic Breakdown -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Top Countries -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Top Countries</h2>
+        <table class="min-w-full">
+            <thead>
+                <tr class="border-b border-gray-200">
+                    <th class="text-left py-2 text-sm font-medium text-gray-500">Country</th>
+                    <th class="text-right py-2 text-sm font-medium text-gray-500">Leads</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for country, count in metrics.geography.countries %}
+                <tr class="border-b border-gray-100">
+                    <td class="py-2 text-sm text-gray-900">{{ country }}</td>
+                    <td class="py-2 text-sm text-gray-600 text-right">{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Top Cities -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Top Cities</h2>
+        <table class="min-w-full">
+            <thead>
+                <tr class="border-b border-gray-200">
+                    <th class="text-left py-2 text-sm font-medium text-gray-500">City</th>
+                    <th class="text-right py-2 text-sm font-medium text-gray-500">Leads</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for city, count in metrics.geography.cities %}
+                <tr class="border-b border-gray-100">
+                    <td class="py-2 text-sm text-gray-900">{{ city }}</td>
+                    <td class="py-2 text-sm text-gray-600 text-right">{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Chart.js configuration
+Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+Chart.defaults.plugins.legend.position = 'bottom';
+
+{% if metrics %}
+// Lead Score Distribution Chart
+new Chart(document.getElementById('scoreChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ metrics.score_distribution.labels | tojson }},
+        datasets: [{
+            label: 'Leads',
+            data: {{ metrics.score_distribution.data | tojson }},
+            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } },
+            x: { title: { display: true, text: 'Lead Score' } }
+        }
+    }
+});
+
+// Industry Breakdown Chart
+new Chart(document.getElementById('industryChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ metrics.industry_breakdown.labels | tojson }},
+        datasets: [{
+            data: {{ metrics.industry_breakdown.data | tojson }},
+            backgroundColor: [
+                'rgba(59, 130, 246, 0.8)',
+                'rgba(16, 185, 129, 0.8)',
+                'rgba(245, 158, 11, 0.8)',
+                'rgba(239, 68, 68, 0.8)',
+                'rgba(139, 92, 246, 0.8)',
+                'rgba(236, 72, 153, 0.8)',
+                'rgba(14, 165, 233, 0.8)',
+                'rgba(34, 197, 94, 0.8)',
+                'rgba(249, 115, 22, 0.8)',
+                'rgba(168, 85, 247, 0.8)'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: { boxWidth: 12, font: { size: 10 } }
+            }
+        }
+    }
+});
+
+// Company Size Chart
+new Chart(document.getElementById('sizeChart'), {
+    type: 'pie',
+    data: {
+        labels: {{ metrics.company_size.labels | tojson }},
+        datasets: [{
+            data: {{ metrics.company_size.data | tojson }},
+            backgroundColor: [
+                'rgba(34, 197, 94, 0.8)',
+                'rgba(59, 130, 246, 0.8)',
+                'rgba(245, 158, 11, 0.8)',
+                'rgba(239, 68, 68, 0.8)',
+                'rgba(139, 92, 246, 0.8)',
+                'rgba(107, 114, 128, 0.8)'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: { boxWidth: 12, font: { size: 10 } }
+            }
+        }
+    }
+});
+{% endif %}
+
+// Auto-refresh countdown
+let countdown = 300;
+const countdownEl = document.getElementById('refresh-countdown');
+
+setInterval(() => {
+    countdown--;
+    if (countdownEl) countdownEl.textContent = countdown;
+    if (countdown <= 0) {
+        window.location.reload();
+    }
+}, 1000);
+
+// Sync replies from Instantly
+async function syncReplies() {
+    const btn = document.getElementById('sync-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+
+    try {
+        const response = await fetch('/api/sync-replies', {
+            method: 'POST',
+            headers: getAuthHeader()
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showNotification(
+                `Synced! Found ${data.replies_found} replies, updated ${data.crm_updated} in CRM.`,
+                'success'
+            );
+            // Reload page after short delay to show updated data
+            if (data.crm_updated > 0) {
+                setTimeout(() => window.location.reload(), 2000);
+            }
+        } else {
+            showNotification(data.error || 'Sync failed', 'error');
+        }
+    } catch (err) {
+        showNotification('Sync failed: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Replies';
+    }
+}
+</script>
+{% endblock %}

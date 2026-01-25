@@ -1,0 +1,45 @@
+# Kamal deployment configuration for Lead Dashboard
+# https://kamal-deploy.org/docs/configuration/
+
+service: leads-dashboard
+image: zelusottomayor/leads-dashboard
+
+servers:
+  web:
+    hosts:
+      - 143.110.169.251
+    options:
+      cpus: "0.25"
+      memory: "256m"
+
+proxy:
+  ssl: true
+  host: leads.zelusottomayor.com
+  app_port: 8000
+  healthcheck:
+    path: /up
+    interval: 30
+    timeout: 5
+
+registry:
+  username: zelusottomayor
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  clear:
+    SPREADSHEET_ID: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
+    SHEET_NAME: "Leads"
+    GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
+  secret:
+    - DASHBOARD_USER
+    - DASHBOARD_PASSWORD
+    - INSTANTLY_API_KEY
+
+volumes:
+  - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
+
+builder:
+  arch: amd64
+  context: ..
+  dockerfile: dashboard/Dockerfile

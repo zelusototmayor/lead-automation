@@ -1,0 +1,36 @@
+# Lead Automation Docker Compose
+# ===============================
+# Run with: docker-compose up
+
+version: '3.8'
+
+services:
+  lead-automation:
+    build: .
+    container_name: lead-automation
+    volumes:
+      # Mount config directory
+      - ./config:/app/config
+      # Mount logs directory
+      - ./logs:/app/logs
+    environment:
+      # API Keys (loaded from .env file)
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - APOLLO_API_KEY=${APOLLO_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - INSTANTLY_API_KEY=${INSTANTLY_API_KEY}
+    restart: "no"  # Don't restart automatically (we use cron)
+
+  # Optional: Run on a schedule using ofelia (cron in docker)
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: lead-scheduler
+    depends_on:
+      - lead-automation
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      ofelia.job-exec.lead-daily.schedule: "0 8 * * *"  # Run at 8 AM daily
+      ofelia.job-exec.lead-daily.container: "lead-automation"
+      ofelia.job-exec.lead-daily.command: "python src/main.py"

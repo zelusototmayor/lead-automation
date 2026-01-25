@@ -1,0 +1,124 @@
+# Lead Automation Configuration
+# ================================
+
+# API Keys (loaded from environment variables in production)
+api_keys:
+  google_maps: ${GOOGLE_MAPS_API_KEY}
+  apollo: ${APOLLO_API_KEY}
+  anthropic: ${ANTHROPIC_API_KEY}
+
+# Google Sheets CRM
+google_sheets:
+  spreadsheet_id: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
+  credentials_file: "config/google_credentials.json"
+  sheet_name: "Leads"
+
+# Lead Sourcing Settings
+lead_sourcing:
+  daily_target: 10  # Number of leads to find per day
+
+  # Target cities for agency search
+  target_cities:
+    # US Major Cities
+    - name: "New York"
+      country: "US"
+    - name: "Los Angeles"
+      country: "US"
+    - name: "Miami"
+      country: "US"
+    - name: "Chicago"
+      country: "US"
+    - name: "Austin"
+      country: "US"
+    - name: "San Francisco"
+      country: "US"
+    - name: "Boston"
+      country: "US"
+    - name: "Atlanta"
+      country: "US"
+    - name: "Denver"
+      country: "US"
+    - name: "Seattle"
+      country: "US"
+
+    # Portugal
+    - name: "Lisbon"
+      country: "PT"
+    - name: "Porto"
+      country: "PT"
+
+    # EU Major Cities
+    - name: "London"
+      country: "UK"
+    - name: "Berlin"
+      country: "DE"
+    - name: "Paris"
+      country: "FR"
+    - name: "Amsterdam"
+      country: "NL"
+    - name: "Barcelona"
+      country: "ES"
+    - name: "Madrid"
+      country: "ES"
+    - name: "Milan"
+      country: "IT"
+    - name: "Dublin"
+      country: "IE"
+
+  # Search queries for finding agencies
+  search_queries:
+    - "marketing agency"
+    - "digital marketing agency"
+    - "PR agency"
+    - "communications agency"
+    - "advertising agency"
+    - "creative agency"
+    - "media agency"
+    - "sports marketing agency"
+    - "branding agency"
+    - "social media agency"
+
+  # Industries to exclude (competitors)
+  exclude_keywords:
+    - "automation"
+    - "AI agency"
+    - "software development"
+    - "web development"
+    - "app development"
+
+# Email Settings
+email:
+  sender_name: "Zelu Sottomayor"
+  sender_email: "zelu@zelusottomayor.com"
+
+  # Sending limits
+  daily_limit: 50
+  delay_between_emails_seconds: 120  # 2 minutes between emails
+
+  # Send window (in sender's timezone)
+  send_start_hour: 9
+  send_end_hour: 17
+
+  # Days to send (0=Monday, 6=Sunday)
+  send_days: [0, 1, 2, 3, 4]  # Monday to Friday
+
+# Instantly.ai Settings
+instantly:
+  api_key: ${INSTANTLY_API_KEY}
+  campaign_name: "Agency Outreach"
+
+# Email Personalization
+personalization:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 500
+
+  # Your value proposition for the AI to use
+  value_proposition: |
+    I help agencies automate their repetitive processes - from lead management
+    to client reporting to invoice chasing. The meta-twist: this very email
+    was researched, personalized, and sent through automation.
+
+  # Sender bio for context
+  sender_bio: |
+    Zelu Sottomayor runs a boutique automation agency that helps companies
+    eliminate tedious manual work through custom automation solutions.

@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.venv
+venv
+env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Config secrets (mounted at runtime)
+config/google_credentials.json
+
+# Kamal
+.kamal
+config/deploy.yml
