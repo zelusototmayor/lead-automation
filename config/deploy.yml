@@ -16,11 +16,12 @@ proxy:
   ssl: true
   host: leads.zelusottomayor.com
   app_port: 8000
-  deploy_timeout: 60s
   healthcheck:
     path: /up
     interval: 3
-    timeout: 5
+    timeout: 10
+
+deploy_timeout: 120
 
 registry:
   username: zelusottomayor
