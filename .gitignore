@@ -54,4 +54,5 @@ Thumbs.db
 htmlcov/
 
 # Kamal
+.kamal/secrets
 dashboard/.kamal/secrets
