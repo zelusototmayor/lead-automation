@@ -1,7 +1,7 @@
 """
-Instantly Reply Sync
-====================
-Syncs reply data from Instantly.ai back to Google Sheets CRM.
+Instantly CRM Sync
+==================
+Syncs lead data (opens, clicks, replies, status) from Instantly.ai back to Google Sheets CRM.
 """
 
 import os
@@ -15,7 +15,7 @@ from ..crm.sheets import GoogleSheetsCRM
 logger = structlog.get_logger()
 
 
-class ReplySyncer:
+class InstantlySyncer:
     """Syncs replies from Instantly to Google Sheets CRM."""
 
     def __init__(

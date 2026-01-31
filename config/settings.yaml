@@ -17,9 +17,8 @@ google_sheets:
 lead_sourcing:
   daily_target: 10  # Number of leads to find per day
 
-  # Target cities for agency search
+  # Target cities for agency search (US only for this campaign)
   target_cities:
-    # US Major Cities
     - name: "New York"
       country: "US"
     - name: "Los Angeles"
@@ -40,30 +39,16 @@ lead_sourcing:
       country: "US"
     - name: "Seattle"
       country: "US"
-
-    # Portugal
-    - name: "Lisbon"
-      country: "PT"
-    - name: "Porto"
-      country: "PT"
-
-    # EU Major Cities
-    - name: "London"
-      country: "UK"
-    - name: "Berlin"
-      country: "DE"
-    - name: "Paris"
-      country: "FR"
-    - name: "Amsterdam"
-      country: "NL"
-    - name: "Barcelona"
-      country: "ES"
-    - name: "Madrid"
-      country: "ES"
-    - name: "Milan"
-      country: "IT"
-    - name: "Dublin"
-      country: "IE"
+    - name: "Phoenix"
+      country: "US"
+    - name: "Dallas"
+      country: "US"
+    - name: "Houston"
+      country: "US"
+    - name: "Philadelphia"
+      country: "US"
+    - name: "San Diego"
+      country: "US"
 
   # Search queries for finding agencies
   search_queries:
@@ -114,11 +99,13 @@ personalization:
 
   # Your value proposition for the AI to use
   value_proposition: |
-    I help agencies automate their repetitive processes - from lead management
-    to client reporting to invoice chasing. The meta-twist: this very email
-    was researched, personalized, and sent through automation.
+    I build fully automated outbound systems for agencies. The system finds
+    ideal clients, researches them, writes personalized emails, sends sequences,
+    and books calls—all automatically. It's like hiring a salesperson for a
+    fraction of the cost. This very email is proof it works.
 
   # Sender bio for context
   sender_bio: |
-    Zelu Sottomayor runs a boutique automation agency that helps companies
-    eliminate tedious manual work through custom automation solutions.
+    Zelu Sottomayor builds automated outbound systems for agencies. He helps
+    them get consistent lead flow without spending hours on prospecting.
+    He also does custom automation for other business processes.

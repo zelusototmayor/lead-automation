@@ -38,11 +38,14 @@ CRM_HEADERS = [
     "Email 2 Sent",
     "Email 3 Sent",
     "Email 4 Sent",
+    "Opens",
+    "Clicks",
     "Response",
     "Notes",
     "Source",
     "LinkedIn",
-    "Title"
+    "Title",
+    "Instantly Status"
 ]
 
 
@@ -139,11 +142,14 @@ class GoogleSheetsCRM:
             "FALSE",  # Email 2 Sent
             "FALSE",  # Email 3 Sent
             "FALSE",  # Email 4 Sent
+            "0",  # Opens
+            "0",  # Clicks
             "",  # Response
             lead_data.get("notes", ""),
             lead_data.get("source", ""),
             lead_data.get("linkedin", ""),
-            lead_data.get("title", "")
+            lead_data.get("title", ""),
+            ""  # Instantly Status
         ]
 
         self.sheet.append_row(row)
@@ -337,9 +343,40 @@ class GoogleSheetsCRM:
             "email_2_sent": row[15],
             "email_3_sent": row[16],
             "email_4_sent": row[17],
-            "response": row[18],
-            "notes": row[19],
-            "source": row[20],
-            "linkedin": row[21] if len(row) > 21 else "",
-            "title": row[22] if len(row) > 22 else ""
+            "opens": row[18] if len(row) > 18 else "0",
+            "clicks": row[19] if len(row) > 19 else "0",
+            "response": row[20] if len(row) > 20 else "",
+            "notes": row[21] if len(row) > 21 else "",
+            "source": row[22] if len(row) > 22 else "",
+            "linkedin": row[23] if len(row) > 23 else "",
+            "title": row[24] if len(row) > 24 else "",
+            "instantly_status": row[25] if len(row) > 25 else ""
         }
+
+    def update_from_instantly(self, email: str, instantly_data: dict) -> bool:
+        """
+        Update lead with data synced from Instantly.
+
+        Args:
+            email: Lead email address
+            instantly_data: Dict with opens, clicks, status, etc.
+        """
+        lead = self.find_lead_by_email(email)
+        if not lead:
+            return False
+
+        updates = {}
+
+        if "opens" in instantly_data:
+            updates["opens"] = str(instantly_data["opens"])
+        if "clicks" in instantly_data:
+            updates["clicks"] = str(instantly_data["clicks"])
+        if "instantly_status" in instantly_data:
+            updates["instantly_status"] = instantly_data["instantly_status"]
+        if "response" in instantly_data and instantly_data["response"]:
+            updates["response"] = instantly_data["response"]
+            updates["status"] = "Replied"
+
+        if updates:
+            return self.update_lead(lead["id"], updates)
+        return True

@@ -12,18 +12,22 @@ logger = structlog.get_logger()
 
 
 class InstantlyClient:
-    """Client for Instantly.ai API."""
+    """Client for Instantly.ai API V2."""
 
-    BASE_URL = "https://api.instantly.ai/api/v1"
+    BASE_URL = "https://api.instantly.ai/api/v2"
 
     def __init__(self, api_key: str):
         """
         Initialize the Instantly client.
 
         Args:
-            api_key: Instantly API key
+            api_key: Instantly API key (Bearer token)
         """
         self.api_key = api_key
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
 
     def _make_request(
         self,
@@ -32,19 +36,14 @@ class InstantlyClient:
         data: dict = None,
         params: dict = None
     ) -> Optional[dict]:
-        """Make an API request."""
+        """Make an API request using V2 Bearer authentication."""
         url = f"{self.BASE_URL}/{endpoint}"
-
-        # Add API key to params
-        if params is None:
-            params = {}
-        params["api_key"] = self.api_key
 
         try:
             if method == "GET":
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, headers=self.headers, params=params, timeout=30)
             elif method == "POST":
-                response = requests.post(url, json=data, params=params, timeout=30)
+                response = requests.post(url, headers=self.headers, json=data, params=params, timeout=30)
             else:
                 raise ValueError(f"Unsupported method: {method}")
 
@@ -61,12 +60,15 @@ class InstantlyClient:
 
     def list_campaigns(self) -> list[dict]:
         """List all campaigns."""
-        result = self._make_request("GET", "campaign/list")
+        result = self._make_request("GET", "campaigns")
+        # V2 returns {items: [...], next_starting_after: ...}
+        if result and "items" in result:
+            return result["items"]
         return result if result else []
 
     def get_campaign(self, campaign_id: str) -> Optional[dict]:
         """Get campaign details."""
-        return self._make_request("GET", "campaign/get", params={"campaign_id": campaign_id})
+        return self._make_request("GET", f"campaigns/{campaign_id}")
 
     def create_campaign(self, name: str) -> Optional[dict]:
         """
@@ -79,7 +81,7 @@ class InstantlyClient:
             Campaign data or None
         """
         data = {"name": name}
-        result = self._make_request("POST", "campaign/create", data=data)
+        result = self._make_request("POST", "campaigns", data=data)
 
         if result:
             logger.info("Campaign created", name=name, id=result.get("id"))
@@ -101,10 +103,12 @@ class InstantlyClient:
         Returns:
             API response or None
         """
-        # Format leads for Instantly
-        formatted_leads = []
+        results = []
+
         for lead in leads:
-            formatted_lead = {
+            # V2 API uses flat structure, one lead at a time
+            data = {
+                "campaign": campaign_id,
                 "email": lead.get("email"),
                 "first_name": lead.get("first_name", lead.get("contact_name", "").split()[0] if lead.get("contact_name") else ""),
                 "last_name": lead.get("last_name", ""),
@@ -113,48 +117,45 @@ class InstantlyClient:
                 "phone": lead.get("phone", ""),
             }
 
-            # Add custom variables for personalization
+            # Add custom variables as top-level fields
             if lead.get("personalized_opener"):
-                formatted_lead["personalized_opener"] = lead["personalized_opener"]
+                data["personalized_opener"] = lead["personalized_opener"]
             if lead.get("specific_pain_point"):
-                formatted_lead["specific_pain_point"] = lead["specific_pain_point"]
+                data["specific_pain_point"] = lead["specific_pain_point"]
             if lead.get("industry_specific_insight"):
-                formatted_lead["industry_specific_insight"] = lead["industry_specific_insight"]
+                data["industry_specific_insight"] = lead["industry_specific_insight"]
             if lead.get("industry"):
-                formatted_lead["industry"] = lead["industry"]
+                data["industry"] = lead["industry"]
             if lead.get("city"):
-                formatted_lead["city"] = lead["city"]
+                data["city"] = lead["city"]
 
-            formatted_leads.append(formatted_lead)
+            result = self._make_request("POST", "leads", data=data)
 
-        data = {
-            "campaign_id": campaign_id,
-            "leads": formatted_leads,
-            "skip_if_in_workspace": True  # Avoid duplicates
-        }
+            if result:
+                results.append(result)
+                logger.info(
+                    "Lead added to campaign",
+                    campaign_id=campaign_id,
+                    email=lead.get("email")
+                )
 
-        result = self._make_request("POST", "lead/add", data=data)
-
-        if result:
-            logger.info(
-                "Leads added to campaign",
-                campaign_id=campaign_id,
-                count=len(leads)
-            )
-
-        return result
+        return results if results else None
 
     def get_campaign_analytics(self, campaign_id: str) -> Optional[dict]:
         """Get campaign analytics."""
-        return self._make_request("GET", "analytics/campaign/summary", params={"campaign_id": campaign_id})
+        return self._make_request("GET", f"campaigns/{campaign_id}/analytics")
 
-    def list_leads(self, campaign_id: str, limit: int = 100) -> list[dict]:
-        """List leads in a campaign."""
-        result = self._make_request(
-            "GET",
-            "lead/list",
-            params={"campaign_id": campaign_id, "limit": limit}
-        )
+    def list_leads(self, campaign_id: str = None, limit: int = 100) -> list[dict]:
+        """List leads in a campaign. V2 uses POST /leads/list."""
+        data = {"limit": limit}
+        if campaign_id:
+            data["campaign_id"] = campaign_id
+
+        result = self._make_request("POST", "leads/list", data=data)
+
+        # V2 returns {items: [...]}
+        if result and "items" in result:
+            return result["items"]
         return result.get("leads", []) if result else []
 
     def get_lead_status(self, email: str, campaign_id: str = None) -> Optional[dict]:
@@ -162,23 +163,21 @@ class InstantlyClient:
         params = {"email": email}
         if campaign_id:
             params["campaign_id"] = campaign_id
-        return self._make_request("GET", "lead/get", params=params)
+        return self._make_request("GET", "leads", params=params)
 
     def pause_campaign(self, campaign_id: str) -> bool:
         """Pause a campaign."""
         result = self._make_request(
             "POST",
-            "campaign/update/status",
-            data={"campaign_id": campaign_id, "status": "paused"}
+            f"campaigns/{campaign_id}/pause"
         )
         return result is not None
 
     def resume_campaign(self, campaign_id: str) -> bool:
-        """Resume a campaign."""
+        """Resume/activate a campaign."""
         result = self._make_request(
             "POST",
-            "campaign/update/status",
-            data={"campaign_id": campaign_id, "status": "active"}
+            f"campaigns/{campaign_id}/activate"
         )
         return result is not None
 

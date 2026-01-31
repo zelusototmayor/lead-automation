@@ -23,7 +23,7 @@ class GoogleMapsClient:
     def search_businesses(
         self,
         query: str,
-        location: str,
+        location: str = None,
         radius_meters: int = 50000,  # 50km radius
         max_results: int = 20
     ) -> list[dict]:
@@ -31,29 +31,27 @@ class GoogleMapsClient:
         Search for businesses using text search.
 
         Args:
-            query: Search query (e.g., "marketing agency")
-            location: City name or coordinates
+            query: Search query (e.g., "marketing agency in Austin")
+            location: Optional city name for geocoding (not required if city is in query)
             radius_meters: Search radius in meters
             max_results: Maximum number of results to return
 
         Returns:
             List of business dictionaries
         """
-        # First, geocode the location to get coordinates
-        coords = self._geocode_location(location)
-        if not coords:
-            logger.warning("Could not geocode location", location=location)
-            return []
-
-        # Perform text search
+        # Perform text search - the query should include location
         url = f"{self.BASE_URL}/textsearch/json"
         params = {
             "query": query,
-            "location": f"{coords['lat']},{coords['lng']}",
-            "radius": radius_meters,
             "key": self.api_key,
-            "type": "establishment"
         }
+
+        # If location provided, try to geocode and add to params
+        if location:
+            coords = self._geocode_location(location)
+            if coords:
+                params["location"] = f"{coords['lat']},{coords['lng']}"
+                params["radius"] = radius_meters
 
         results = []
         next_page_token = None

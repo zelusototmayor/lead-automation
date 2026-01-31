@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.lead_sourcing import search_agencies, enrich_lead
 from src.crm import GoogleSheetsCRM
-from src.outreach import EmailPersonalizer, calculate_lead_score, InstantlyClient
+from src.outreach import EmailPersonalizer, calculate_lead_score, InstantlyClient, sync_from_instantly
 
 # Configure logging
 structlog.configure(
@@ -285,22 +285,47 @@ class LeadAutomation:
 
         return len(personalized_leads)
 
+    def sync_from_instantly(self):
+        """Sync lead data (opens, clicks, replies) from Instantly to CRM."""
+        logger.info("Syncing data from Instantly...")
+
+        try:
+            results = sync_from_instantly(
+                instantly_api_key=self.config.get("instantly", {}).get("api_key", ""),
+                credentials_file=self.config["google_sheets"]["credentials_file"],
+                spreadsheet_id=self.config["google_sheets"]["spreadsheet_id"]
+            )
+            logger.info(
+                "Instantly sync complete",
+                leads_synced=results.get("crm_updated", 0),
+                replies_found=results.get("replies_found", 0)
+            )
+            return results
+        except Exception as e:
+            logger.error("Instantly sync failed", error=str(e))
+            return {"error": str(e)}
+
     def run_full_workflow(self):
         """Run the complete daily workflow."""
         logger.info("=" * 50)
         logger.info("Starting full daily workflow", timestamp=datetime.now().isoformat())
         logger.info("=" * 50)
 
-        # Step 1: Source new leads
-        new_leads = self.run_daily_sourcing()
-        logger.info(f"Step 1 complete: Found {len(new_leads)} new leads")
+        # Step 1: Sync existing leads from Instantly (get opens/replies)
+        sync_results = self.sync_from_instantly()
+        logger.info(f"Step 1 complete: Synced {sync_results.get('crm_updated', 0)} leads from Instantly")
 
-        # Step 2: Personalize and queue for outreach
+        # Step 2: Source new leads
+        new_leads = self.run_daily_sourcing()
+        logger.info(f"Step 2 complete: Found {len(new_leads)} new leads")
+
+        # Step 3: Personalize and queue for outreach
+        queued = 0
         if new_leads:
             queued = self.personalize_and_queue_leads(new_leads)
-            logger.info(f"Step 2 complete: Queued {queued} leads for outreach")
+            logger.info(f"Step 3 complete: Queued {queued} leads for outreach")
 
-        # Step 3: Get and log stats
+        # Step 4: Get and log stats
         stats = self.crm.get_stats()
         logger.info("CRM Stats", **stats)
 
@@ -309,8 +334,10 @@ class LeadAutomation:
         logger.info("=" * 50)
 
         return {
+            "synced": sync_results.get("crm_updated", 0),
+            "replies_found": sync_results.get("replies_found", 0),
             "new_leads": len(new_leads),
-            "queued": len(new_leads),
+            "queued": queued,
             "stats": stats
         }
 
@@ -329,6 +356,8 @@ def main():
     result = automation.run_full_workflow()
 
     print(f"\n✅ Daily workflow complete!")
+    print(f"   Synced from Instantly: {result.get('synced', 0)} leads")
+    print(f"   Replies found: {result.get('replies_found', 0)}")
     print(f"   New leads found: {result['new_leads']}")
     print(f"   Leads queued: {result['queued']}")
     print(f"   Total in CRM: {result['stats']['total_leads']}")

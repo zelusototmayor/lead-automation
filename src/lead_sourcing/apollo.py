@@ -96,7 +96,8 @@ class ApolloClient:
         limit: int = 3
     ) -> list[dict]:
         """
-        Find contacts at a company.
+        Find contacts at a company using the new mixed_people/api_search endpoint.
+        Then enrich by ID to get emails (costs credits).
 
         Args:
             company_domain: Company website domain
@@ -108,22 +109,15 @@ class ApolloClient:
         Returns:
             List of contact dictionaries
         """
-        url = f"{self.BASE_URL}/people/search"
-
-        # Default to decision-maker titles for agencies
-        if not titles:
-            titles = [
-                "CEO", "Founder", "Owner", "Managing Director",
-                "Director", "President", "Partner", "Principal",
-                "Head of Operations", "COO", "General Manager"
-            ]
+        # Step 1: Search for people (free, no credits)
+        search_url = "https://api.apollo.io/api/v1/mixed_people/api_search"
 
         if not seniority:
-            seniority = ["owner", "founder", "c_suite", "vp", "director", "manager"]
+            seniority = ["owner", "founder", "c_suite", "vp", "director"]
 
         payload = {
             "page": 1,
-            "per_page": limit,
+            "per_page": limit * 2,  # Get extra in case some don't have emails
             "person_seniorities": seniority
         }
 
@@ -137,44 +131,34 @@ class ApolloClient:
             return []
 
         try:
-            response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+            response = requests.post(search_url, json=payload, headers=self.headers, timeout=30)
             response.raise_for_status()
             data = response.json()
 
-            contacts = []
-            for person in data.get("people", [])[:limit]:
-                contact = {
-                    "apollo_id": person.get("id"),
-                    "first_name": person.get("first_name"),
-                    "last_name": person.get("last_name"),
-                    "full_name": person.get("name"),
-                    "email": person.get("email"),
-                    "email_status": person.get("email_status"),
-                    "title": person.get("title"),
-                    "seniority": person.get("seniority"),
-                    "linkedin_url": person.get("linkedin_url"),
-                    "city": person.get("city"),
-                    "state": person.get("state"),
-                    "country": person.get("country"),
-                    "company_name": person.get("organization", {}).get("name"),
-                    "company_domain": person.get("organization", {}).get("primary_domain")
-                }
+            people = data.get("people", [])
+            logger.info(f"Found {len(people)} people in search", company=company_domain or company_name)
 
-                # Only include contacts with verified emails
-                if contact["email"] and contact["email_status"] == "verified":
-                    contacts.append(contact)
-                elif contact["email"]:
-                    # Include unverified but log it
-                    contact["email_verified"] = False
-                    contacts.append(contact)
-                    logger.debug(
-                        "Contact email not verified",
-                        name=contact["full_name"],
-                        status=contact["email_status"]
-                    )
+            # Step 2: Enrich people who have email (costs credits)
+            contacts = []
+            for person in people:
+                if len(contacts) >= limit:
+                    break
+
+                # Only enrich if they have email
+                if not person.get("has_email"):
+                    continue
+
+                person_id = person.get("id")
+                if not person_id:
+                    continue
+
+                # Enrich by ID to get full details + email
+                enriched = self._enrich_person_by_id(person_id)
+                if enriched and enriched.get("email"):
+                    contacts.append(enriched)
 
             logger.info(
-                "Found contacts",
+                "Found contacts with emails",
                 company=company_domain or company_name,
                 count=len(contacts)
             )
@@ -183,6 +167,43 @@ class ApolloClient:
         except requests.RequestException as e:
             logger.error("Apollo contact search failed", error=str(e))
             return []
+
+    def _enrich_person_by_id(self, person_id: str) -> Optional[dict]:
+        """
+        Enrich a person by their Apollo ID to get full details including email.
+        This costs credits.
+        """
+        url = f"{self.BASE_URL}/people/match"
+        payload = {"id": person_id}
+
+        try:
+            response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            person = response.json().get("person", {})
+
+            if not person:
+                return None
+
+            return {
+                "apollo_id": person.get("id"),
+                "first_name": person.get("first_name"),
+                "last_name": person.get("last_name"),
+                "full_name": person.get("name"),
+                "email": person.get("email"),
+                "email_status": person.get("email_status"),
+                "title": person.get("title"),
+                "seniority": person.get("seniority"),
+                "linkedin_url": person.get("linkedin_url"),
+                "city": person.get("city"),
+                "state": person.get("state"),
+                "country": person.get("country"),
+                "company_name": person.get("organization", {}).get("name") if person.get("organization") else None,
+                "company_domain": person.get("organization", {}).get("primary_domain") if person.get("organization") else None
+            }
+
+        except requests.RequestException as e:
+            logger.error("Apollo person enrichment failed", error=str(e), person_id=person_id)
+            return None
 
     def enrich_email(self, email: str) -> Optional[dict]:
         """
