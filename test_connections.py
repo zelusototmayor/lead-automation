@@ -104,7 +104,7 @@ def test_anthropic():
 def test_instantly():
     """Test Instantly API connection."""
     print("\n📧 Testing Instantly API...")
-    from src.email.instantly_client import InstantlyClient
+    from src.outreach.instantly_client import InstantlyClient
 
     api_key = os.environ.get("INSTANTLY_API_KEY")
     if not api_key:

@@ -106,28 +106,47 @@ class InstantlyClient:
         results = []
 
         for lead in leads:
+            # Extract first_name and last_name from contact_name if not provided
+            contact_name = lead.get("contact_name", "")
+            name_parts = contact_name.split() if contact_name else []
+
+            first_name = lead.get("first_name") or (name_parts[0] if name_parts else "")
+            last_name = lead.get("last_name") or (" ".join(name_parts[1:]) if len(name_parts) > 1 else "")
+
             # V2 API uses flat structure, one lead at a time
             data = {
                 "campaign": campaign_id,
                 "email": lead.get("email"),
-                "first_name": lead.get("first_name", lead.get("contact_name", "").split()[0] if lead.get("contact_name") else ""),
-                "last_name": lead.get("last_name", ""),
-                "company_name": lead.get("company", ""),
+                "first_name": first_name,
+                "last_name": last_name,
+                "company_name": lead.get("company_name") or lead.get("company", ""),
                 "website": lead.get("website", ""),
                 "phone": lead.get("phone", ""),
             }
 
-            # Add custom variables as top-level fields
+            # Add custom variables via custom_variables object (required for Instantly V2 API)
+            custom_vars = {}
             if lead.get("personalized_opener"):
-                data["personalized_opener"] = lead["personalized_opener"]
+                custom_vars["personalized_opener"] = lead["personalized_opener"]
             if lead.get("specific_pain_point"):
-                data["specific_pain_point"] = lead["specific_pain_point"]
+                custom_vars["specific_pain_point"] = lead["specific_pain_point"]
             if lead.get("industry_specific_insight"):
-                data["industry_specific_insight"] = lead["industry_specific_insight"]
+                custom_vars["industry_specific_insight"] = lead["industry_specific_insight"]
             if lead.get("industry"):
-                data["industry"] = lead["industry"]
+                custom_vars["industry"] = lead["industry"]
             if lead.get("city"):
-                data["city"] = lead["city"]
+                custom_vars["city"] = lead["city"]
+
+            if custom_vars:
+                data["custom_variables"] = custom_vars
+
+            # Log payload for debugging field mapping issues
+            logger.info(
+                "Instantly lead payload",
+                campaign_id=campaign_id,
+                email=data.get("email"),
+                payload_keys=sorted(list(data.keys()))
+            )
 
             result = self._make_request("POST", "leads", data=data)
 

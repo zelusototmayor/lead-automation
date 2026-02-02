@@ -27,7 +27,7 @@ schedule==1.2.1
 apscheduler==3.10.4
 
 # Data handling
-pandas==2.1.4
+pandas>=2.2.0
 
 # Utilities
 tenacity==8.2.3  # Retry logic
