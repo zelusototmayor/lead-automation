@@ -84,9 +84,9 @@ async def dashboard(request: Request):
     metrics = {}
     error = None
 
+    all_rows = []
     if crm:
         try:
-            # Get all data from Google Sheets
             all_rows = crm.sheet.get_all_values()[1:]  # Skip header
             metrics = calculate_metrics(all_rows)
         except Exception as e:
@@ -98,9 +98,10 @@ async def dashboard(request: Request):
         "dashboard.html",
         {
             "request": request,
-            "username": None,  # Not logged in by default
+            "username": None,
             "metrics": metrics,
             "error": error,
+            "leads_raw": all_rows,
         },
     )
 

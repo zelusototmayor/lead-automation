@@ -1,369 +1,238 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Outbound Dashboard{% endblock %}</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Campaign Dashboard{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-    <!-- Inter Font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', system-ui, sans-serif; }
 
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- ApexCharts -->
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
-    <script>
-    tailwind.config = {
-        darkMode: 'class',
-        theme: {
-            extend: {
-                fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-                colors: {
-                    page:    '#0f1117',
-                    surface: '#1a1d27',
-                    card:    '#1e2130',
-                    cardh:   '#252840',
-                    border:  '#2d3148',
-                    borderl: '#3a3f5c',
-                    primary: { DEFAULT: '#275a4e', light: '#4a9e8a', glow: 'rgba(39,90,78,0.3)' },
-                    accent:  { DEFAULT: '#c8a15a', light: '#dbb87a' },
-                    tx1:     '#f0f2f8',
-                    tx2:     '#a8adc8',
-                    tx3:     '#6b7099',
-                }
-            }
-        }
+    :root {
+      /* Softer, muted palette — pastels on dark */
+      --bg:       #111318;
+      --bg2:      #181b24;
+      --card:     #1d2030;
+      --card2:    #22263a;
+      --border:   #2a2e42;
+      --borderl:  #363a52;
+      --sage:     #7bb5a4;   /* soft teal-green */
+      --sage-dim: rgba(123,181,164,.12);
+      --sand:     #c4a87a;   /* soft gold */
+      --sand-dim: rgba(196,168,122,.12);
+      --mint:     #72b08a;   /* soft green */
+      --mint-dim: rgba(114,176,138,.12);
+      --rose:     #c48888;   /* soft red */
+      --blue:     #7898c8;   /* soft blue */
+      --blue-dim: rgba(120,152,200,.12);
+      --tx1:      #e8eaf2;
+      --tx2:      #9098b8;
+      --tx3:      #52576e;
     }
-    </script>
 
-    <style>
-        * { font-family: 'Inter', system-ui, sans-serif; }
-        body { background: #0f1117; color: #f0f2f8; }
+    body { background: var(--bg); color: var(--tx1); min-height: 100vh; font-size: 14px; line-height: 1.5; }
 
-        :root {
-            --bg-page: #0f1117;
-            --bg-surface: #1a1d27;
-            --bg-card: #1e2130;
-            --border: #2d3148;
-            --border-l: #3a3f5c;
-            --primary: #275a4e;
-            --primary-l: #4a9e8a;
-            --accent: #c8a15a;
-            --tx1: #f0f2f8;
-            --tx2: #a8adc8;
-            --tx3: #6b7099;
-        }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: var(--bg-page); }
-        ::-webkit-scrollbar-thumb { background: var(--border-l); border-radius: 3px; }
+    /* ── TOP BAR ─────────────────────────── */
+    #topbar {
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(17,19,24,.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .bar-brand { font-size: 13px; font-weight: 700; color: var(--tx1); letter-spacing: -.02em; }
+    .bar-meta  { display: flex; align-items: center; gap: 20px; }
+    .bar-stat  { font-size: 12px; color: var(--tx3); }
+    .bar-stat strong { color: var(--tx2); font-weight: 600; }
+    .bar-actions { display: flex; align-items: center; gap: 10px; }
 
-        /* Cards */
-        .d-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            transition: border-color 180ms, box-shadow 180ms, transform 180ms;
-        }
-        .d-card:hover { border-color: var(--border-l); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.4 } }
+    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); animation: pulse 2.4s infinite; flex-shrink: 0; }
 
-        /* KPI number */
-        .kpi-num {
-            font-size: 2.5rem;
-            font-weight: 800;
-            letter-spacing: -0.04em;
-            font-variant-numeric: tabular-nums;
-            line-height: 1;
-            color: var(--tx1);
-        }
-        .kpi-label {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--tx3);
-        }
+    /* ── BUTTONS ─────────────────────────── */
+    .btn {
+      padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: none; transition: all 140ms;
+    }
+    .btn-primary { background: var(--sage); color: #0d1a16; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: var(--tx2); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--borderl); color: var(--tx1); }
 
-        /* Status pulse */
-        @keyframes pulse-green { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(34,197,94,.5)} 50%{opacity:.8;box-shadow:0 0 0 6px rgba(34,197,94,0)} }
-        .pulse-green { animation: pulse-green 2s infinite; }
+    /* ── CARDS ───────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      transition: border-color 160ms;
+    }
+    .card:hover { border-color: var(--borderl); }
+    .card-p { padding: 22px 24px; }
 
-        /* Section label */
-        .section-label {
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: var(--tx3);
-        }
+    /* ── SECTION HEADING ─────────────────── */
+    .sh { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--tx3); margin-bottom: 14px; }
 
-        /* Progress bar */
-        .prog-track { background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
-        .prog-fill { height: 100%; border-radius: 99px; transition: width 1s cubic-bezier(.4,0,.2,1); }
+    /* ── BADGE ───────────────────────────── */
+    .badge { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+    .badge-sage { background: var(--sage-dim); color: var(--sage); border: 1px solid rgba(123,181,164,.25); }
+    .badge-sand { background: var(--sand-dim); color: var(--sand); border: 1px solid rgba(196,168,122,.25); }
+    .badge-mint { background: var(--mint-dim); color: var(--mint); border: 1px solid rgba(114,176,138,.25); }
+    .badge-rose { background: rgba(196,136,136,.1); color: var(--rose); border: 1px solid rgba(196,136,136,.2); }
 
-        /* Hover lift */
-        .lift { transition: transform 180ms, box-shadow 180ms; }
-        .lift:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    /* ── PROGRESS ────────────────────────── */
+    .pbar { height: 4px; background: rgba(255,255,255,.06); border-radius: 99px; overflow: hidden; }
+    .pbar-fill { height: 100%; border-radius: 99px; transition: width .9s cubic-bezier(.4,0,.2,1); }
 
-        /* Badge */
-        .badge {
-            display: inline-flex; align-items: center; gap: 5px;
-            font-size: 11px; font-weight: 600;
-            padding: 3px 10px; border-radius: 99px;
-        }
-        .badge-green { background: rgba(34,197,94,.15); color: #22c55e; border: 1px solid rgba(34,197,94,.25); }
-        .badge-amber { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.25); }
-        .badge-red   { background: rgba(239,68,68,.15);  color: #ef4444; border: 1px solid rgba(239,68,68,.25); }
-        .badge-blue  { background: rgba(59,130,246,.15); color: #60a5fa; border: 1px solid rgba(59,130,246,.25); }
+    /* ── TABLE ───────────────────────────── */
+    .dtbl { width: 100%; border-collapse: collapse; }
+    .dtbl th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--tx3); padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    .dtbl td { font-size: 13px; color: var(--tx2); padding: 9px 12px; border-bottom: 1px solid rgba(42,46,66,.5); }
+    .dtbl tr:last-child td { border-bottom: none; }
+    .dtbl tbody tr { cursor: pointer; transition: background 120ms; }
+    .dtbl tbody tr:hover td { background: rgba(255,255,255,.025); color: var(--tx1); }
 
-        /* Trend arrow */
-        .trend-up   { color: #22c55e; font-size: 11px; font-weight: 600; }
-        .trend-down { color: #ef4444; font-size: 11px; font-weight: 600; }
+    /* ── MODAL ───────────────────────────── */
+    #login-modal .mbox {
+      background: var(--card); border: 1px solid var(--borderl);
+      border-radius: 16px; padding: 32px; width: 340px;
+    }
+    #login-modal input {
+      width: 100%; background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; color: var(--tx1); font-size: 13px;
+      outline: none; transition: border-color 140ms;
+    }
+    #login-modal input:focus { border-color: var(--sage); }
+    #login-modal label { font-size: 11px; font-weight: 600; color: var(--tx2); display: block; margin-bottom: 5px; }
 
-        /* Top bar */
-        #topbar {
-            position: sticky; top: 0; z-index: 40;
-            background: rgba(15,17,23,0.92);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
-        }
+    /* ── APEX OVERRIDES ──────────────────── */
+    .apexcharts-tooltip { background: #1d2030 !important; border: 1px solid #363a52 !important; border-radius: 10px !important; }
+    .apexcharts-tooltip-title { background: #22263a !important; border-bottom: 1px solid #2a2e42 !important; color: var(--tx2) !important; font-size: 11px !important; }
+    .apexcharts-xaxis-label, .apexcharts-yaxis-label { fill: var(--tx3) !important; font-size: 10px !important; }
+    .apexcharts-gridline { stroke: rgba(42,46,66,.7) !important; }
+    .apexcharts-legend-text { color: var(--tx2) !important; font-size: 11px !important; }
+    .apexcharts-menu { background: #1d2030 !important; border: 1px solid #363a52 !important; }
 
-        /* Btn */
-        .btn-primary {
-            background: var(--primary); color: #fff;
-            border: none; border-radius: 8px;
-            font-size: 13px; font-weight: 600; cursor: pointer;
-            padding: 7px 16px; transition: background 150ms, opacity 150ms;
-        }
-        .btn-primary:hover { background: #2e6b5c; }
-        .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-        .btn-ghost {
-            background: transparent; color: var(--tx2);
-            border: 1px solid var(--border); border-radius: 8px;
-            font-size: 12px; font-weight: 500; cursor: pointer;
-            padding: 6px 14px; transition: border-color 150ms, color 150ms;
-        }
-        .btn-ghost:hover { border-color: var(--border-l); color: var(--tx1); }
+    /* ── NOTIFICATION ─────────────────────── */
+    #notif { font-size: 12px; font-weight: 500; }
+  </style>
 
-        /* Table */
-        .d-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--tx3); padding: 8px 12px; border-bottom: 1px solid var(--border); }
-        .d-table td { font-size: 13px; color: var(--tx2); padding: 10px 12px; border-bottom: 1px solid rgba(45,49,72,.5); vertical-align: middle; }
-        .d-table tr:last-child td { border-bottom: none; }
-        .d-table tr:hover td { background: rgba(255,255,255,.025); }
-
-        /* Timeline */
-        .timeline-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(45,49,72,.5); }
-        .timeline-item:last-child { border-bottom: none; }
-        .timeline-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
-
-        /* Modal dark */
-        #login-modal .modal-box {
-            background: var(--bg-card); border: 1px solid var(--border-l);
-            border-radius: 16px; color: var(--tx1);
-        }
-        #login-modal input {
-            background: var(--bg-surface); border: 1px solid var(--border-l);
-            color: var(--tx1); border-radius: 8px; padding: 9px 12px; width: 100%;
-            font-size: 14px; outline: none; transition: border-color 150ms;
-        }
-        #login-modal input:focus { border-color: var(--primary-l); }
-        #login-modal label { font-size: 12px; font-weight: 600; color: var(--tx2); margin-bottom: 6px; display: block; }
-
-        /* Notification */
-        #sync-notification { font-size: 13px; font-weight: 500; }
-
-        /* Apex overrides */
-        .apexcharts-tooltip { background: #1e2130 !important; border: 1px solid #3a3f5c !important; border-radius: 10px !important; box-shadow: 0 8px 32px rgba(0,0,0,.6) !important; }
-        .apexcharts-tooltip-title { background: #252840 !important; border-bottom: 1px solid #2d3148 !important; color: #a8adc8 !important; font-size: 11px !important; }
-        .apexcharts-tooltip-text { color: #f0f2f8 !important; }
-        .apexcharts-xaxis-label, .apexcharts-yaxis-label { fill: #6b7099 !important; font-size: 11px !important; }
-        .apexcharts-gridline { stroke: rgba(45,49,72,.6) !important; }
-        .apexcharts-legend-text { color: #a8adc8 !important; font-size: 12px !important; }
-        .apexcharts-menu { background: #1e2130 !important; border: 1px solid #3a3f5c !important; }
-        .apexcharts-menu-item:hover { background: #252840 !important; }
-    </style>
-
-    {% block extra_head %}{% endblock %}
+  {% block extra_head %}{% endblock %}
 </head>
-<body class="min-h-screen">
+<body>
 
-    <!-- TOP BAR -->
-    <div id="topbar">
-        <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-6">
-
-            <!-- Brand -->
-            <div class="flex items-center gap-3 flex-shrink-0">
-                <div style="width:32px;height:32px;background:var(--primary);border-radius:8px;display:flex;align-items:center;justify-content:center;">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h8M2 12h10" stroke="#c8a15a" stroke-width="1.5" stroke-linecap="round"/></svg>
-                </div>
-                <span style="font-size:14px;font-weight:700;color:var(--tx1);letter-spacing:-.01em;">OUTBOUND</span>
-            </div>
-
-            <!-- Status indicators -->
-            <div class="flex items-center gap-6 flex-1 justify-center">
-                <!-- Live status -->
-                <div class="flex items-center gap-2">
-                    {% if metrics %}
-                    <span class="pulse-green" style="width:8px;height:8px;background:#22c55e;border-radius:50%;display:inline-block;"></span>
-                    <span style="font-size:12px;font-weight:600;color:#22c55e;">LIVE</span>
-                    {% else %}
-                    <span style="width:8px;height:8px;background:#6b7099;border-radius:50%;display:inline-block;"></span>
-                    <span style="font-size:12px;font-weight:600;color:var(--tx3);">OFFLINE</span>
-                    {% endif %}
-                </div>
-
-                <div style="width:1px;height:16px;background:var(--border);"></div>
-
-                <!-- Emails today -->
-                {% if metrics %}
-                <div class="flex items-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7099" stroke-width="1.5"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                    <span style="font-size:12px;color:var(--tx2);"><span style="color:var(--tx1);font-weight:600;">{{ metrics.summary.leads_today }}</span> added today</span>
-                </div>
-
-                <div style="width:1px;height:16px;background:var(--border);"></div>
-
-                <!-- Response rate -->
-                <div class="flex items-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7099" stroke-width="1.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-                    <span style="font-size:12px;color:var(--tx2);"><span style="color:var(--tx1);font-weight:600;">{{ metrics.summary.response_rate }}%</span> reply rate</span>
-                </div>
-                {% endif %}
-            </div>
-
-            <!-- Actions -->
-            <div class="flex items-center gap-3 flex-shrink-0">
-                <div style="font-size:11px;color:var(--tx3);">
-                    {% if metrics %}Updated {{ metrics.last_updated }}{% endif %}
-                </div>
-                <button id="sync-btn" onclick="requireAuth(syncReplies)" class="btn-primary">
-                    ↻ Sync Replies
-                </button>
-                <div id="auth-status" style="font-size:12px;color:var(--tx3);">
-                    <button onclick="showLoginModal()" style="color:var(--primary-l);font-weight:600;font-size:12px;background:none;border:none;cursor:pointer;">Login</button>
-                </div>
-            </div>
-        </div>
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      {% if metrics %}
+      <div class="live-dot"></div>
+      {% endif %}
+      <span class="bar-brand">Campaign Dashboard</span>
     </div>
 
-    <!-- Login Modal -->
-    <div id="login-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-        <div class="flex min-h-screen items-center justify-center px-4">
-            <div class="fixed inset-0 transition-opacity" style="background:rgba(0,0,0,.7);backdrop-filter:blur(4px);" onclick="hideLoginModal()"></div>
-            <div class="modal-box relative max-w-sm w-full p-8">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 style="font-size:16px;font-weight:700;color:var(--tx1);">Authentication Required</h3>
-                    <button onclick="hideLoginModal()" style="background:none;border:none;cursor:pointer;color:var(--tx3);">✕</button>
-                </div>
-                <form id="login-form" onsubmit="handleLogin(event)">
-                    <div class="mb-4">
-                        <label>Username</label>
-                        <input type="text" id="login-username" name="username" required placeholder="admin">
-                    </div>
-                    <div class="mb-5">
-                        <label>Password</label>
-                        <input type="password" id="login-password" name="password" required placeholder="••••••••">
-                    </div>
-                    <div id="login-error" class="hidden mb-4" style="font-size:13px;color:#ef4444;"></div>
-                    <button type="submit" id="login-submit" class="btn-primary" style="width:100%;padding:10px;">Sign In</button>
-                </form>
-            </div>
-        </div>
+    <div class="bar-meta">
+      {% if metrics %}
+      <span class="bar-stat"><strong>{{ metrics.summary.contacted }}</strong> contacted</span>
+      <span class="bar-stat"><strong>{{ metrics.summary.open_rate }}%</strong> open rate</span>
+      <span class="bar-stat"><strong>{{ metrics.summary.response_rate }}%</strong> reply rate</span>
+      <span class="bar-stat" style="color:var(--tx3);">{{ metrics.last_updated }}</span>
+      {% endif %}
     </div>
 
-    <!-- Notification -->
-    <div id="sync-notification" class="hidden fixed top-16 right-5 px-4 py-3 rounded-xl shadow-2xl max-w-sm z-50"
-         style="background:var(--bg-card);border:1px solid var(--border-l);"></div>
+    <div class="bar-actions">
+      <button id="sync-btn" onclick="requireAuth(syncReplies)" class="btn btn-primary">↻ Sync</button>
+      <div id="auth-status" style="font-size:11px;color:var(--tx3);">
+        <button onclick="showLoginModal()" style="background:none;border:none;cursor:pointer;color:var(--sage);font-size:11px;font-weight:600;">Login</button>
+      </div>
+    </div>
+  </div>
 
-    <!-- Main Content -->
-    <main class="max-w-screen-2xl mx-auto px-6 py-6">
-        {% block content %}{% endblock %}
-    </main>
+  <!-- Login Modal -->
+  <div id="login-modal" class="hidden fixed inset-0 z-50">
+    <div class="flex items-center justify-center min-h-screen px-4">
+      <div class="fixed inset-0" style="background:rgba(0,0,0,.65);backdrop-filter:blur(4px);" onclick="hideLoginModal()"></div>
+      <div class="mbox relative">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <span style="font-size:15px;font-weight:700;">Sign in</span>
+          <button onclick="hideLoginModal()" style="background:none;border:none;cursor:pointer;color:var(--tx3);font-size:16px;">✕</button>
+        </div>
+        <form id="login-form" onsubmit="handleLogin(event)">
+          <div style="margin-bottom:12px;"><label>Username</label><input type="text" id="login-username" required placeholder="admin"></div>
+          <div style="margin-bottom:16px;"><label>Password</label><input type="password" id="login-password" required placeholder="••••••••"></div>
+          <div id="login-error" class="hidden" style="font-size:12px;color:var(--rose);margin-bottom:12px;"></div>
+          <button type="submit" id="login-submit" class="btn btn-primary" style="width:100%;padding:9px;">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
-    <!-- Auth Scripts (unchanged logic) -->
-    <script>
-    let authCredentials = null;
-    let pendingAction = null;
+  <div id="notif" class="hidden fixed top-14 right-5 px-4 py-2.5 rounded-xl shadow-2xl z-50"
+       style="background:var(--card);border:1px solid var(--borderl);max-width:280px;"></div>
 
-    (function() {
-        const stored = sessionStorage.getItem('dashboardAuth');
-        if (stored) { authCredentials = JSON.parse(stored); updateAuthStatus(); }
-    })();
+  <main style="max-width:1320px;margin:0 auto;padding:20px 24px 60px;">
+    {% block content %}{% endblock %}
+  </main>
 
-    function updateAuthStatus() {
-        const el = document.getElementById('auth-status');
-        if (authCredentials) {
-            el.innerHTML = `<span style="color:var(--tx3);">${authCredentials.username}</span> <button onclick="logout()" style="color:var(--tx3);background:none;border:none;cursor:pointer;font-size:11px;">logout</button>`;
-        } else {
-            el.innerHTML = `<button onclick="showLoginModal()" style="color:var(--primary-l);font-weight:600;font-size:12px;background:none;border:none;cursor:pointer;">Login</button>`;
-        }
-    }
+  <script>
+  let authCredentials = null, pendingAction = null;
+  (function(){ const s=sessionStorage.getItem('dAuth'); if(s){authCredentials=JSON.parse(s);updateAuth();} })();
+  function updateAuth(){
+    const el=document.getElementById('auth-status');
+    if(authCredentials) el.innerHTML=`<span style="color:var(--tx3)">${authCredentials.username}</span> <button onclick="logout()" style="background:none;border:none;cursor:pointer;color:var(--tx3);font-size:10px;">out</button>`;
+    else el.innerHTML=`<button onclick="showLoginModal()" style="background:none;border:none;cursor:pointer;color:var(--sage);font-size:11px;font-weight:600;">Login</button>`;
+  }
+  function showLoginModal(){ document.getElementById('login-modal').classList.remove('hidden'); document.getElementById('login-username').focus(); }
+  function hideLoginModal(){ document.getElementById('login-modal').classList.add('hidden'); document.getElementById('login-error').classList.add('hidden'); document.getElementById('login-form').reset(); }
+  async function handleLogin(e){
+    e.preventDefault();
+    const u=document.getElementById('login-username').value, p=document.getElementById('login-password').value;
+    const errEl=document.getElementById('login-error'), btn=document.getElementById('login-submit');
+    btn.disabled=true; btn.textContent='…';
+    errEl.classList.add('hidden');
+    try{
+      const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+      const d=await r.json();
+      if(d.success){ authCredentials={username:u,password:p}; sessionStorage.setItem('dAuth',JSON.stringify(authCredentials)); updateAuth(); hideLoginModal(); if(pendingAction){pendingAction();pendingAction=null;} }
+      else{ errEl.textContent=d.error||'Invalid credentials'; errEl.classList.remove('hidden'); }
+    }catch(err){ errEl.textContent='Error: '+err.message; errEl.classList.remove('hidden'); }
+    finally{ btn.disabled=false; btn.textContent='Sign in'; }
+  }
+  function logout(){ authCredentials=null; sessionStorage.removeItem('dAuth'); updateAuth(); notify('Logged out','ok'); }
+  function requireAuth(fn){ if(authCredentials) fn(); else{ pendingAction=fn; showLoginModal(); } }
+  function getAuthHeader(){ return authCredentials?{'Authorization':'Basic '+btoa(authCredentials.username+':'+authCredentials.password)}:{}; }
+  function notify(msg,type){
+    const n=document.getElementById('notif');
+    n.textContent=msg;
+    n.style.borderColor=type==='ok'?'rgba(114,176,138,.4)':'rgba(196,136,136,.4)';
+    n.style.color=type==='ok'?'var(--mint)':'var(--rose)';
+    n.classList.remove('hidden');
+    setTimeout(()=>n.classList.add('hidden'),5000);
+  }
+  async function syncReplies(){
+    const btn=document.getElementById('sync-btn');
+    btn.disabled=true; btn.textContent='↻ …';
+    try{
+      const r=await fetch('/api/sync-replies',{method:'POST',headers:getAuthHeader()});
+      const d=await r.json();
+      if(r.ok){ notify(`Synced — ${d.replies_found} replies, ${d.crm_updated} updated`,'ok'); if(d.crm_updated>0) setTimeout(()=>location.reload(),1800); }
+      else notify(d.error||'Sync failed','err');
+    }catch(e){ notify('Sync failed: '+e.message,'err'); }
+    finally{ btn.disabled=false; btn.textContent='↻ Sync'; }
+  }
+  let cd=300; setInterval(()=>{ cd--; if(cd<=0) location.reload(); },1000);
+  </script>
 
-    function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); document.getElementById('login-username').focus(); }
-    function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); document.getElementById('login-error').classList.add('hidden'); document.getElementById('login-form').reset(); }
-
-    async function handleLogin(event) {
-        event.preventDefault();
-        const username = document.getElementById('login-username').value;
-        const password = document.getElementById('login-password').value;
-        const errorEl = document.getElementById('login-error');
-        const submitBtn = document.getElementById('login-submit');
-        submitBtn.disabled = true; submitBtn.textContent = 'Signing in…';
-        errorEl.classList.add('hidden');
-        try {
-            const response = await fetch('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username, password}) });
-            const data = await response.json();
-            if (data.success) {
-                authCredentials = {username, password};
-                sessionStorage.setItem('dashboardAuth', JSON.stringify(authCredentials));
-                updateAuthStatus(); hideLoginModal();
-                if (pendingAction) { pendingAction(); pendingAction = null; }
-            } else { errorEl.textContent = data.error || 'Invalid credentials'; errorEl.classList.remove('hidden'); }
-        } catch (err) { errorEl.textContent = 'Login failed: ' + err.message; errorEl.classList.remove('hidden'); }
-        finally { submitBtn.disabled = false; submitBtn.textContent = 'Sign In'; }
-    }
-
-    function logout() { authCredentials = null; sessionStorage.removeItem('dashboardAuth'); updateAuthStatus(); showNotification('Logged out', 'success'); }
-    function requireAuth(action) { if (authCredentials) { action(); } else { pendingAction = action; showLoginModal(); } }
-    function getAuthHeader() { if (!authCredentials) return {}; return {'Authorization': 'Basic ' + btoa(authCredentials.username + ':' + authCredentials.password)}; }
-
-    function showNotification(message, type) {
-        const n = document.getElementById('sync-notification');
-        n.textContent = message;
-        n.style.borderColor = type === 'success' ? 'rgba(34,197,94,.4)' : 'rgba(239,68,68,.4)';
-        n.style.color = type === 'success' ? '#22c55e' : '#ef4444';
-        n.classList.remove('hidden');
-        setTimeout(() => n.classList.add('hidden'), 5000);
-    }
-
-    // Auto-refresh
-    let countdown = 300;
-    setInterval(() => { countdown--; if (countdown <= 0) window.location.reload(); }, 1000);
-
-    // Sync replies
-    async function syncReplies() {
-        const btn = document.getElementById('sync-btn');
-        btn.disabled = true; btn.textContent = '↻ Syncing…';
-        try {
-            const response = await fetch('/api/sync-replies', { method: 'POST', headers: getAuthHeader() });
-            const data = await response.json();
-            if (response.ok) {
-                showNotification(`Synced! ${data.replies_found} replies, ${data.crm_updated} updated.`, 'success');
-                if (data.crm_updated > 0) setTimeout(() => window.location.reload(), 2000);
-            } else { showNotification(data.error || 'Sync failed', 'error'); }
-        } catch (err) { showNotification('Sync failed: ' + err.message, 'error'); }
-        finally { btn.disabled = false; btn.textContent = '↻ Sync Replies'; }
-    }
-    </script>
-
-    {% block scripts %}{% endblock %}
+  {% block scripts %}{% endblock %}
 </body>
 </html>
