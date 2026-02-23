@@ -19,7 +19,7 @@ from src.crm.sheets import GoogleSheetsCRM
 from src.outreach.instantly_client import InstantlyClient
 
 from .auth import authenticate
-from .metrics import calculate_metrics
+from .metrics import calculate_metrics, normalize_rows
 
 # Instantly API key for sync
 INSTANTLY_API_KEY = os.getenv("INSTANTLY_API_KEY")
@@ -85,10 +85,14 @@ async def dashboard(request: Request):
     error = None
 
     all_rows = []
+    leads_view = []
     if crm:
         try:
-            all_rows = crm.sheet.get_all_values()[1:]  # Skip header
-            metrics = calculate_metrics(all_rows)
+            all_values = crm.sheet.get_all_values()
+            header = all_values[0] if all_values else []
+            all_rows = all_values[1:] if len(all_values) > 1 else []
+            metrics = calculate_metrics(all_rows, header)
+            leads_view = normalize_rows(all_rows, header)
         except Exception as e:
             error = f"Failed to load data: {e}"
     else:
@@ -102,6 +106,7 @@ async def dashboard(request: Request):
             "metrics": metrics,
             "error": error,
             "leads_raw": all_rows,
+            "leads_view": leads_view,
         },
     )
 
@@ -138,8 +143,10 @@ async def api_metrics(username: str = Depends(authenticate)):
         return JSONResponse({"error": "CRM not initialized"}, status_code=503)
 
     try:
-        all_rows = crm.sheet.get_all_values()[1:]
-        metrics = calculate_metrics(all_rows)
+        all_values = crm.sheet.get_all_values()
+        header = all_values[0] if all_values else []
+        all_rows = all_values[1:] if len(all_values) > 1 else []
+        metrics = calculate_metrics(all_rows, header)
         return JSONResponse(metrics)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

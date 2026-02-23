@@ -20,14 +20,19 @@
 
   .hero-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
   .hero-meta { display:flex; gap:8px; flex-wrap:wrap; }
-  .hero-kpi { margin:8px 0 14px; }
+  .hero-kpi { margin:8px 0 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:14px; }
+  .hero-mini-stack { display:flex; gap:8px; }
+  .mini-bubble { width:68px; height:68px; border-radius:22px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.01) 100%); display:flex; flex-direction:column; justify-content:center; align-items:center; }
+  .mini-bubble .n { font-size:18px; font-weight:800; line-height:1; }
+  .mini-bubble .l { font-size:9px; color:var(--tx3); margin-top:3px; text-transform:uppercase; letter-spacing:.1em; }
 
   .chip { border-radius:999px; padding:6px 10px; font-size:11px; font-weight:700; border:1px solid var(--borderl); }
   .chip-open { color:var(--sage); background:rgba(123,181,164,.12); border-color:rgba(123,181,164,.35); }
   .chip-reply { color:var(--sand); background:rgba(196,168,122,.12); border-color:rgba(196,168,122,.35); }
 
   .outcomes { display:grid; grid-template-rows:1fr 1fr 1fr; gap:12px; }
-  .out-card { border-radius:18px; border:1px solid var(--border); padding:16px; background:var(--card2); }
+  .out-card { border-radius:18px; border:1px solid var(--border); padding:14px 16px; background:var(--card2); display:flex; align-items:center; justify-content:space-between; }
+  .out-pill { border-radius:999px; padding:6px 10px; font-size:10px; border:1px solid var(--borderl); color:var(--tx3); }
   .out-label { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
   .out-val { margin-top:8px; font-size:40px; font-weight:800; line-height:1; letter-spacing:-.03em; }
 
@@ -89,9 +94,21 @@
         <div class="v2-small">{{ metrics.last_updated }}</div>
       </div>
       <div class="hero-kpi">
-        <div class="v2-big" x-text="num({{ metrics.summary.contacted }})"></div>
+        <div>
+          <div class="v2-big" x-text="num({{ metrics.summary.contacted }})"></div>
+          <div class="v2-small" style="margin-top:4px;">contacted leads</div>
+        </div>
+        <div class="hero-mini-stack">
+          <div class="mini-bubble">
+            <div class="n" x-text="num({{ metrics.summary.total_leads }})"></div>
+            <div class="l">Total</div>
+          </div>
+          <div class="mini-bubble" style="border-radius:50%;">
+            <div class="n" style="color:var(--sage);">{{ metrics.summary.open_rate }}%</div>
+            <div class="l">Open</div>
+          </div>
+        </div>
       </div>
-      <div class="v2-small" style="margin-bottom:12px;">contacted leads</div>
       <div class="hero-meta">
         <span class="chip chip-open">Open {{ metrics.summary.open_rate }}%</span>
         <span class="chip chip-reply">Reply {{ metrics.summary.response_rate }}%</span>
@@ -101,15 +118,24 @@
 
     <div class="outcomes">
       <div class="out-card">
-        <div class="out-label">Replied</div>
+        <div>
+          <div class="out-label">Replied</div>
+          <div class="out-pill">needs action</div>
+        </div>
         <div class="out-val" style="color:var(--sand);" x-text="num({{ metrics.pipeline.replied }})"></div>
       </div>
       <div class="out-card">
-        <div class="out-label">Won</div>
+        <div>
+          <div class="out-label">Won</div>
+          <div class="out-pill">closed</div>
+        </div>
         <div class="out-val" style="color:var(--mint);" x-text="num({{ metrics.pipeline.won }})"></div>
       </div>
       <div class="out-card">
-        <div class="out-label">Lost</div>
+        <div>
+          <div class="out-label">Lost</div>
+          <div class="out-pill">dropped</div>
+        </div>
         <div class="out-val" style="color:var(--rose);" x-text="num({{ metrics.pipeline.lost }})"></div>
       </div>
     </div>
@@ -252,14 +278,14 @@ function dashboardV2(){
 }
 
 const RAW_LEADS = [
-  {% for row in leads_raw %}
+  {% for lead in leads_view %}
   {
     id: {{ loop.index }},
-    company: {{ (row[1] or '') | tojson }},
-    contact_name: {{ (row[2] or '') | tojson }},
-    status: {{ (row[13] or '') | tojson | lower }},
-    opens: {{ (row[20] or '0') | tojson }},
-    response: {{ (row[22] or '') | tojson }},
+    company: {{ (lead.company or '') | tojson }},
+    contact_name: {{ (lead.contact_name or '') | tojson }},
+    status: {{ (lead.status or '') | tojson | lower }},
+    opens: {{ (lead.opens or '0') | tojson }},
+    response: {{ (lead.response or '') | tojson }},
   },
   {% endfor %}
 ];
@@ -279,14 +305,14 @@ function leadsTable(){
   const trendOpts = {
     chart: { type: 'area', height: 220, toolbar: { show:false }, background:'transparent' },
     series: [
-      { name: 'Sent', data: [22,18,27,19,24,20,25,23,21,26,24,22,28,23] },
-      { name: 'Replies', data: [1,1,2,1,2,1,2,2,1,3,2,1,3,2] }
+      { name: 'Sent', data: {{ metrics.trend.sent | tojson }} },
+      { name: 'Replies', data: {{ metrics.trend.replies | tojson }} }
     ],
     stroke: { curve: 'smooth', width: [3,2] },
     colors: ['#7bb5a4','#c4a87a'],
     fill: { type:'gradient', gradient:{ shadeIntensity:.2, opacityFrom:.28, opacityTo:.03 } },
     grid: { borderColor:'rgba(82,87,110,.25)' },
-    xaxis: { categories:['D1','D2','D3','D4','D5','D6','D7','D8','D9','D10','D11','D12','D13','D14'], labels:{style:{colors:'#9098b8'}} },
+    xaxis: { categories: {{ metrics.trend.labels | tojson }}, labels:{style:{colors:'#9098b8'}} },
     yaxis: { labels:{style:{colors:'#9098b8'}} },
     legend: { labels: { colors:'#9098b8' } },
     tooltip: { theme:'dark' }

@@ -5,8 +5,8 @@ from datetime import datetime, date
 from typing import Any
 
 
-def calculate_metrics(rows: list[list[str]]) -> dict[str, Any]:
-    leads = [_row_to_dict(row) for row in rows]
+def calculate_metrics(rows: list[list[str]], header: list[str] | None = None) -> dict[str, Any]:
+    leads = [_row_to_dict(row, header) for row in rows]
     today = date.today()
 
     return {
@@ -17,41 +17,60 @@ def calculate_metrics(rows: list[list[str]]) -> dict[str, Any]:
         "industry_breakdown": _calculate_industry_breakdown(leads),
         "company_size": _calculate_company_size(leads),
         "geography": _calculate_geography(leads),
+        "trend": _calculate_trend(leads, today),
         "last_updated": datetime.now().strftime("%H:%M, %d %b %Y"),
     }
 
 
-def _row_to_dict(row: list) -> dict:
-    """Convert a row to a dictionary using ACTUAL sheet column order.
+def normalize_rows(rows: list[list[str]], header: list[str] | None = None) -> list[dict]:
+    """Normalize raw sheet rows into lead dicts for template rendering."""
+    return [_row_to_dict(row, header) for row in rows]
 
-    Real columns (verified against live sheet 2026-02-20):
-    0  ID
-    1  Company
-    2  Contact Name
-    3  Email
-    4  Phone
-    5  Contacted       ← extra col that shifted everything
-    6  Website
-    7  Industry
-    8  Employee Count
-    9  City
-    10 Country
-    11 Lead Score
-    12 Status
-    13 Date Added
-    14 Last Contact
-    15 Email 1 Sent
-    16 Email 2 Sent
-    17 Email 3 Sent
-    18 Email 4 Sent
-    19 Opens          ← new col
-    20 Clicks         ← new col
-    21 Response
-    22 Notes
-    23 Source
-    24 LinkedIn
-    25 Title
+
+def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
+    """Convert a row to a dictionary.
+
+    Uses header mapping first (drift-safe), then falls back to known index map.
     """
+    if header:
+        norm = {str(h).strip().lower(): i for i, h in enumerate(header)}
+
+        def val(*names: str, default: str = "") -> str:
+            for name in names:
+                idx = norm.get(name.lower())
+                if idx is not None and idx < len(row):
+                    return row[idx]
+            return default
+
+        return {
+            "id": val("id"),
+            "company": val("company"),
+            "contact_name": val("contact", "contact name"),
+            "email": val("email"),
+            "phone": val("phone"),
+            "contacted_flag": val("contacted"),
+            "website": val("website"),
+            "industry": val("industry"),
+            "employee_count": val("employeecount", "employee count"),
+            "city": val("city"),
+            "country": val("country"),
+            "lead_score": val("leadscore", "lead score"),
+            "status": val("status"),
+            "date_added": val("dateadded", "date added"),
+            "last_contact": val("lastcontact", "last contact"),
+            "email_1_sent": val("email1sent", "email 1 sent"),
+            "email_2_sent": val("email2sent", "email 2 sent"),
+            "email_3_sent": val("email3sent", "email 3 sent"),
+            "email_4_sent": val("email4sent", "email 4 sent"),
+            "opens": val("opens"),
+            "clicks": val("clicks"),
+            "response": val("response"),
+            "notes": val("notes"),
+            "source": val("source"),
+            "linkedin": val("linkedin"),
+            "title": val("title"),
+        }
+
     while len(row) < 26:
         row.append("")
 
@@ -244,4 +263,36 @@ def _calculate_geography(leads: list[dict]) -> dict:
     return {
         "countries": countries.most_common(10),
         "cities":    cities.most_common(10),
+    }
+
+
+def _calculate_trend(leads: list[dict], today: date) -> dict:
+    """Build last 14 days trend from real CRM fields (last_contact + response)."""
+    days = [today.fromordinal(today.toordinal() - i) for i in range(13, -1, -1)]
+    sent_map = {d: 0 for d in days}
+    reply_map = {d: 0 for d in days}
+
+    def is_real_reply(r: str) -> bool:
+        if not r:
+            return False
+        return r.strip().upper() not in ("", "TRUE", "FALSE", "N/A", "-", "NONE")
+
+    for lead in leads:
+        raw = (lead.get("last_contact") or "").strip()
+        if not raw:
+            continue
+        try:
+            d = datetime.strptime(raw.split()[0], "%Y-%m-%d").date()
+        except (ValueError, IndexError):
+            continue
+        if d in sent_map:
+            sent_map[d] += 1
+            if is_real_reply(lead.get("response", "")):
+                reply_map[d] += 1
+
+    labels = [d.strftime("%d %b") for d in days]
+    return {
+        "labels": labels,
+        "sent": [sent_map[d] for d in days],
+        "replies": [reply_map[d] for d in days],
     }
