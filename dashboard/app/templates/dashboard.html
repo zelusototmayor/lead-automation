@@ -2,225 +2,207 @@
 
 {% block extra_head %}
 <style>
-  :root {
-    --v4-bg: #f3f4fb;
-    --v4-surface: #ffffff;
-    --v4-ink: #20243a;
-    --v4-muted: #71789a;
-    --v4-border: #e6e8f4;
-    --v4-lav: #e7e3ff;
-    --v4-mint: #dff5ea;
-    --v4-sky: #dfefff;
-    --v4-peach: #fdecd8;
-    --v4-indigo: #5962d9;
-  }
+  .v2-wrap { display:flex; flex-direction:column; gap:16px; }
+  .v2-row { display:grid; gap:16px; }
+  .v2-hero { grid-template-columns: 2.2fr 1fr; }
+  .v2-diag { grid-template-columns: 2fr 1fr 1fr; }
+  .v2-charts { grid-template-columns: 2fr 1fr; }
 
-  body { background: var(--v4-bg); }
+  .v2-card { border-radius:22px; border:1px solid var(--border); background:linear-gradient(180deg, #1e2233 0%, #1a1e2d 100%); }
+  .v2-soft { background:linear-gradient(180deg, #232945 0%, #1f243a 100%); }
+  .v2-light { background:linear-gradient(180deg, #2a3152 0%, #222843 100%); }
+  .v2-pad { padding:24px; }
 
-  .v4-wrap { display:flex; flex-direction:column; gap:16px; }
-  .v4-grid { display:grid; gap:16px; }
-  .v4-hero { grid-template-columns: 2.2fr 1fr; }
-  .v4-kpis { grid-template-rows: repeat(3, 1fr); display:grid; gap:12px; }
-  .v4-mid { grid-template-columns: 2fr 1fr 1fr; }
-  .v4-charts { grid-template-columns: 2fr 1fr; }
-  .v4-bottom { grid-template-columns: 1.2fr 2fr; }
+  .v2-eyebrow { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--tx3); font-weight:700; }
+  .v2-big { font-size:64px; line-height:1; letter-spacing:-.04em; font-weight:800; color:var(--tx1); font-variant-numeric:tabular-nums; }
+  .v2-mid { font-size:32px; line-height:1.05; letter-spacing:-.03em; font-weight:800; color:var(--tx1); font-variant-numeric:tabular-nums; }
+  .v2-small { font-size:12px; color:var(--tx2); }
 
-  .v4-card {
-    background: var(--v4-surface);
-    border: 1px solid var(--v4-border);
-    border-radius: 22px;
-    padding: 20px;
-    box-shadow: 0 6px 20px rgba(42, 52, 110, .05);
-  }
+  .hero-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+  .hero-meta { display:flex; gap:8px; flex-wrap:wrap; }
+  .hero-kpi { margin:8px 0 14px; }
 
-  .t-soft-lav { background: linear-gradient(180deg, #f1eeff 0%, #f8f7ff 100%); }
-  .t-soft-sky { background: linear-gradient(180deg, #ecf5ff 0%, #f8fbff 100%); }
-  .t-soft-mint { background: linear-gradient(180deg, #e8f8f0 0%, #f7fffb 100%); }
-  .t-soft-peach { background: linear-gradient(180deg, #fff3e6 0%, #fffbf6 100%); }
+  .chip { border-radius:999px; padding:6px 10px; font-size:11px; font-weight:700; border:1px solid var(--borderl); }
+  .chip-open { color:var(--sage); background:rgba(123,181,164,.12); border-color:rgba(123,181,164,.35); }
+  .chip-reply { color:var(--sand); background:rgba(196,168,122,.12); border-color:rgba(196,168,122,.35); }
 
-  .eyebrow { font-size:11px; letter-spacing:.11em; text-transform:uppercase; color:var(--v4-muted); font-weight:700; }
-  .metric-big { font-size:72px; font-weight:800; letter-spacing:-.045em; line-height:.95; color:var(--v4-ink); }
-  .metric-mid { font-size:40px; font-weight:800; letter-spacing:-.03em; line-height:1; color:var(--v4-ink); }
-  .txt { color:var(--v4-muted); font-size:13px; }
+  .outcomes { display:grid; grid-template-rows:1fr 1fr 1fr; gap:12px; }
+  .out-card { border-radius:18px; border:1px solid var(--border); padding:16px; background:var(--card2); }
+  .out-label { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
+  .out-val { margin-top:8px; font-size:40px; font-weight:800; line-height:1; letter-spacing:-.03em; }
 
-  .hero-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
-  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
-  .chip {
-    border-radius:999px; padding:6px 10px; font-size:11px; font-weight:700;
-    border:1px solid transparent;
-  }
-  .chip.open { background: #e4f7ef; color:#2d7d63; border-color:#b8e5d3; }
-  .chip.reply { background: #fff2df; color:#9a6a1e; border-color:#f5d3a2; }
-  .chip.neutral { background:#f1f3fb; color:#5f6584; border-color:#dde1f1; }
+  .section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .section-title { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
 
-  .kpi-label { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--v4-muted); font-weight:700; }
-
-  .section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-  .section-title { font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--v4-muted); font-weight:700; }
+  .pipeline { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .pipe-cell { border-radius:14px; background:rgba(255,255,255,.02); border:1px solid var(--border); padding:12px; }
+  .pipe-name { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
+  .pipe-num { margin-top:6px; font-size:28px; font-weight:800; letter-spacing:-.03em; color:var(--tx1); }
 
   .seq-list { display:flex; flex-direction:column; gap:10px; }
-  .seq-row { display:grid; grid-template-columns:84px 52px 52px 1fr 48px; align-items:center; gap:8px; }
-  .seq-name { font-size:12px; color:#495073; }
-  .seq-num { font-size:13px; font-weight:700; color:var(--v4-ink); text-align:right; }
+  .seq-item { display:grid; grid-template-columns:90px 52px 52px 1fr 46px; gap:8px; align-items:center; }
+  .seq-name { font-size:12px; color:var(--tx2); }
+  .seq-num { font-size:14px; font-weight:700; color:var(--tx1); text-align:right; }
 
-  .bar { height:8px; border-radius:999px; background:#edf0fa; overflow:hidden; }
-  .bar > span { height:100%; display:block; border-radius:999px; }
+  .bar { height:7px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; }
+  .bar > span { display:block; height:100%; border-radius:999px; }
 
-  .stack { display:flex; flex-direction:column; gap:10px; }
+  .list-lines { display:flex; flex-direction:column; gap:10px; }
+  .chart-box { min-height:220px; }
   .line { display:grid; grid-template-columns:1fr 42px; gap:8px; align-items:center; }
-  .line-name { font-size:12px; color:#4f5679; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .line-val { font-size:12px; font-weight:700; color:var(--v4-ink); text-align:right; }
+  .line-name { font-size:12px; color:var(--tx2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .line-val { font-size:12px; font-weight:700; color:var(--tx1); text-align:right; }
 
-  .chart-box { min-height:230px; }
+  .activity-wrap { display:grid; grid-template-columns:1.1fr 2fr; gap:16px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips .chip { cursor:pointer; background:transparent; color:var(--tx2); }
+  .chips .chip.active { color:var(--tx1); border-color:var(--sage); background:rgba(123,181,164,.1); }
 
-  .pipeline { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
-  .p-stage { border-radius:14px; border:1px solid var(--v4-border); background:#f8f9ff; padding:12px; }
-  .p-name { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--v4-muted); font-weight:700; }
-  .p-num { margin-top:6px; font-size:28px; font-weight:800; letter-spacing:-.03em; color:var(--v4-ink); }
+  .recent-list { display:flex; flex-direction:column; gap:8px; max-height:170px; overflow:auto; }
+  .recent-item { border:1px solid var(--border); border-radius:12px; padding:10px; background:rgba(255,255,255,.02); }
+  .recent-main { font-size:12px; color:var(--tx1); font-weight:600; }
+  .recent-sub { font-size:11px; color:var(--tx3); margin-top:2px; }
 
-  .quick { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-  .quick button {
-    border-radius:999px; border:1px solid #dfe3f2; background:#fff; color:#5a6388;
-    padding:6px 10px; font-size:11px; font-weight:700; cursor:pointer;
-  }
-  .quick button.active { background:#e8edff; border-color:#bcc8f8; color:#39489e; }
-
-  .recent-list { max-height:190px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
-  .recent-item { border:1px solid var(--v4-border); border-radius:12px; background:#fff; padding:10px; }
-  .recent-main { color:var(--v4-ink); font-size:12px; font-weight:700; }
-  .recent-sub { color:var(--v4-muted); font-size:11px; margin-top:2px; }
-
-  .table-shell { overflow:auto; border:1px solid var(--v4-border); border-radius:14px; }
-  .dtbl { width:100%; border-collapse: collapse; }
-  .dtbl th, .dtbl td { border-bottom:1px solid #eceffa; padding:10px 12px; text-align:left; font-size:12px; color:#4d5577; }
-  .dtbl th { background:#f7f8ff; color:#646d91; font-weight:700; }
-
-  @media (max-width: 1050px){
-    .v4-hero, .v4-mid, .v4-charts, .v4-bottom { grid-template-columns:1fr; }
+  @media (max-width: 1024px){
+    .v2-hero, .v2-diag, .v2-charts, .activity-wrap { grid-template-columns:1fr; }
     .pipeline { grid-template-columns:repeat(2,1fr); }
-    .metric-big { font-size:56px; }
+    .v2-big { font-size:50px; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
 {% if error %}
-<div style="background:rgba(196,136,136,.12);border:1px solid rgba(196,136,136,.35);border-radius:12px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:#9e4f4f;">
+<div style="background:rgba(196,136,136,.1);border:1px solid rgba(196,136,136,.3);border-radius:12px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:var(--rose);">
   <strong>Error:</strong> {{ error }}
 </div>
 {% endif %}
 
 {% if metrics %}
-<div class="v4-wrap" x-data="dashboardV4()">
+<div class="v2-wrap" x-data="dashboardV2()">
 
-  <div class="v4-grid v4-hero">
-    <div class="v4-card t-soft-lav">
-      <div class="hero-head">
-        <div class="eyebrow">Outreach Dashboard</div>
-        <div class="txt">{{ metrics.last_updated }}</div>
+  <!-- HERO -->
+  <div class="v2-row v2-hero">
+    <div class="v2-card v2-soft v2-pad">
+      <div class="hero-top">
+        <div class="v2-eyebrow">Pipeline Health</div>
+        <div class="v2-small">{{ metrics.last_updated }}</div>
       </div>
-      <div class="metric-big" x-text="num({{ metrics.summary.contacted }})"></div>
-      <div class="txt">contacted leads</div>
-      <div class="chips">
-        <span class="chip open">Open {{ metrics.summary.open_rate }}%</span>
-        <span class="chip reply">Reply {{ metrics.summary.response_rate }}%</span>
-        <span class="chip neutral">{{ metrics.summary.total_responses }} replies</span>
+      <div class="hero-kpi">
+        <div class="v2-big" x-text="num({{ metrics.summary.contacted }})"></div>
+      </div>
+      <div class="v2-small" style="margin-bottom:12px;">contacted leads</div>
+      <div class="hero-meta">
+        <span class="chip chip-open">Open {{ metrics.summary.open_rate }}%</span>
+        <span class="chip chip-reply">Reply {{ metrics.summary.response_rate }}%</span>
+        <span class="chip">{{ metrics.summary.total_responses }} replies</span>
       </div>
     </div>
 
-    <div class="v4-kpis">
-      <div class="v4-card t-soft-peach">
-        <div class="kpi-label">Replied</div>
-        <div class="metric-mid" style="color:#9f6f22;" x-text="num({{ metrics.pipeline.replied }})"></div>
+    <div class="outcomes">
+      <div class="out-card">
+        <div class="out-label">Replied</div>
+        <div class="out-val" style="color:var(--sand);" x-text="num({{ metrics.pipeline.replied }})"></div>
       </div>
-      <div class="v4-card t-soft-mint">
-        <div class="kpi-label">Won</div>
-        <div class="metric-mid" style="color:#2f8469;" x-text="num({{ metrics.pipeline.won }})"></div>
+      <div class="out-card">
+        <div class="out-label">Won</div>
+        <div class="out-val" style="color:var(--mint);" x-text="num({{ metrics.pipeline.won }})"></div>
       </div>
-      <div class="v4-card t-soft-sky">
-        <div class="kpi-label">Lost</div>
-        <div class="metric-mid" style="color:#6f78a7;" x-text="num({{ metrics.pipeline.lost }})"></div>
+      <div class="out-card">
+        <div class="out-label">Lost</div>
+        <div class="out-val" style="color:var(--rose);" x-text="num({{ metrics.pipeline.lost }})"></div>
       </div>
     </div>
   </div>
 
-  <div class="v4-grid v4-mid">
-    <div class="v4-card">
+  <!-- DIAG -->
+  <div class="v2-row v2-diag">
+    <div class="v2-card v2-pad">
       <div class="section-head"><div class="section-title">Sequence Performance</div></div>
       <div class="seq-list">
-        {% for em in metrics.email_sequence %}{% if em.sent > 0 %}
-        <div class="seq-row">
+        {% for em in metrics.email_sequence %}
+        {% if em.sent > 0 %}
+        <div class="seq-item">
           <div class="seq-name">{{ em.name }}</div>
           <div class="seq-num">{{ em.sent }}</div>
           <div class="seq-num">{{ em.responses }}</div>
-          <div class="bar"><span style="width:{{ [em.response_rate*8,100]|min }}%;background:{% if em.response_rate >= 10 %}#61bf9b{% elif em.response_rate >= 4 %}#e7b262{% else %}#b8bfdc{% endif %};"></span></div>
+          <div class="bar"><span style="width:{{ [em.response_rate*7,100]|min }}%;background:{% if em.response_rate >= 10 %}var(--mint){% elif em.response_rate >= 4 %}var(--sand){% else %}var(--tx3){% endif %};"></span></div>
           <div class="seq-num">{{ em.response_rate }}%</div>
         </div>
-        {% endif %}{% endfor %}
+        {% endif %}
+        {% endfor %}
       </div>
     </div>
 
-    <div class="v4-card">
-      <div class="section-head"><div class="section-title">Top Industries</div></div>
-      <div class="stack">
+    <div class="v2-card v2-pad v2-light">
+      <div class="section-title" style="margin-bottom:12px;">Top Industries</div>
+      <div class="list-lines">
         {% set max_i = metrics.industry_breakdown.data[0] if metrics.industry_breakdown.data else 1 %}
-        {% for i in range(metrics.industry_breakdown.labels|length) %}{% if i < 6 %}
+        {% for i in range(metrics.industry_breakdown.labels|length) %}
+        {% if i < 6 %}
         <div>
-          <div class="line"><div class="line-name">{{ metrics.industry_breakdown.labels[i] }}</div><div class="line-val">{{ metrics.industry_breakdown.data[i] }}</div></div>
-          <div class="bar"><span style="width:{{ (metrics.industry_breakdown.data[i]/max_i*100)|int if max_i else 0 }}%; background:#8fa8ff;"></span></div>
+          <div class="line">
+            <div class="line-name">{{ metrics.industry_breakdown.labels[i] }}</div>
+            <div class="line-val">{{ metrics.industry_breakdown.data[i] }}</div>
+          </div>
+          <div class="bar"><span style="width:{{ (metrics.industry_breakdown.data[i]/max_i*100)|int if max_i else 0 }}%;background:var(--blue);"></span></div>
         </div>
-        {% endif %}{% endfor %}
+        {% endif %}
+        {% endfor %}
       </div>
     </div>
 
-    <div class="v4-card">
-      <div class="section-head"><div class="section-title">Top Countries</div></div>
-      <div class="stack">
+    <div class="v2-card v2-pad v2-light">
+      <div class="section-title" style="margin-bottom:12px;">Top Countries</div>
+      <div class="list-lines">
         {% set max_c = metrics.geography.countries[0][1] if metrics.geography.countries else 1 %}
         {% for country, count in metrics.geography.countries[:6] %}
         <div>
-          <div class="line"><div class="line-name">{{ country }}</div><div class="line-val">{{ count }}</div></div>
-          <div class="bar"><span style="width:{{ (count/max_c*100)|int if max_c else 0 }}%; background:#86d1b4;"></span></div>
+          <div class="line">
+            <div class="line-name">{{ country }}</div>
+            <div class="line-val">{{ count }}</div>
+          </div>
+          <div class="bar"><span style="width:{{ (count/max_c*100)|int if max_c else 0 }}%;background:var(--sage);"></span></div>
         </div>
         {% endfor %}
       </div>
     </div>
   </div>
 
-  <div class="v4-grid v4-charts">
-    <div class="v4-card">
+  <!-- CHARTS (restored modules) -->
+  <div class="v2-row v2-charts">
+    <div class="v2-card v2-pad">
       <div class="section-head"><div class="section-title">Outreach Trend (14 days)</div></div>
       <div id="chart-trend" class="chart-box"></div>
     </div>
-    <div class="v4-card">
+    <div class="v2-card v2-pad">
       <div class="section-head"><div class="section-title">Industry Mix</div></div>
       <div id="chart-industry" class="chart-box"></div>
     </div>
   </div>
 
-  <div class="v4-card" x-data="leadsTable()">
-    <div class="section-head"><div class="section-title">Pipeline + Activity</div></div>
-
-    <div class="pipeline">
-      <div class="p-stage"><div class="p-name">New</div><div class="p-num">{{ metrics.pipeline.new }}</div></div>
-      <div class="p-stage"><div class="p-name">Queued</div><div class="p-num" style="color:#5b72df;">{{ metrics.pipeline.queued }}</div></div>
-      <div class="p-stage"><div class="p-name">Contacted</div><div class="p-num" style="color:#2f8469;">{{ metrics.pipeline.contacted }}</div></div>
-      <div class="p-stage"><div class="p-name">Replied</div><div class="p-num" style="color:#9f6f22;">{{ metrics.pipeline.replied }}</div></div>
-      <div class="p-stage"><div class="p-name">Won</div><div class="p-num" style="color:#1d9464;">{{ metrics.pipeline.won }}</div></div>
+  <!-- PIPELINE + ACTIVITY -->
+  <div class="v2-card v2-pad">
+    <div class="section-head"><div class="section-title">Pipeline Flow</div></div>
+    <div class="pipeline" style="margin-bottom:16px;">
+      <div class="pipe-cell"><div class="pipe-name">New</div><div class="pipe-num">{{ metrics.pipeline.new }}</div></div>
+      <div class="pipe-cell"><div class="pipe-name">Queued</div><div class="pipe-num" style="color:var(--blue);">{{ metrics.pipeline.queued }}</div></div>
+      <div class="pipe-cell"><div class="pipe-name">Contacted</div><div class="pipe-num" style="color:var(--sage);">{{ metrics.pipeline.contacted }}</div></div>
+      <div class="pipe-cell"><div class="pipe-name">Replied</div><div class="pipe-num" style="color:var(--sand);">{{ metrics.pipeline.replied }}</div></div>
+      <div class="pipe-cell"><div class="pipe-name">Won</div><div class="pipe-num" style="color:var(--mint);">{{ metrics.pipeline.won }}</div></div>
     </div>
 
-    <div class="v4-grid v4-bottom">
+    <div class="activity-wrap" x-data="leadsTable()">
       <div>
-        <div class="section-title" style="margin-bottom:8px;">Quick Filters</div>
-        <div class="quick">
-          <button :class="statusFilter===''?'active':''" @click="statusFilter=''">All</button>
-          <button :class="statusFilter==='new'?'active':''" @click="statusFilter='new'">New</button>
-          <button :class="statusFilter==='contacted'?'active':''" @click="statusFilter='contacted'">Contacted</button>
-          <button :class="statusFilter==='replied'?'active':''" @click="statusFilter='replied'">Needs Reply</button>
-          <button :class="statusFilter==='won'?'active':''" @click="statusFilter='won'">Won</button>
+        <div class="section-title" style="margin-bottom:10px;">Quick Filters</div>
+        <div class="chips" style="margin-bottom:12px;">
+          <button class="chip" :class="statusFilter===''?'active':''" @click="statusFilter=''">All</button>
+          <button class="chip" :class="statusFilter==='new'?'active':''" @click="statusFilter='new'">New</button>
+          <button class="chip" :class="statusFilter==='contacted'?'active':''" @click="statusFilter='contacted'">Contacted</button>
+          <button class="chip" :class="statusFilter==='replied'?'active':''" @click="statusFilter='replied'">Needs Reply</button>
+          <button class="chip" :class="statusFilter==='won'?'active':''" @click="statusFilter='won'">Won</button>
         </div>
-
-        <div class="section-title" style="margin-bottom:8px;">Recent lead activity</div>
+        <div class="section-title" style="margin-bottom:10px;">Recent Lead Activity</div>
         <div class="recent-list">
           <template x-for="lead in filtered.slice(0,8)" :key="lead.id">
             <div class="recent-item">
@@ -231,7 +213,7 @@
         </div>
       </div>
 
-      <div class="table-shell">
+      <div style="overflow:auto;">
         <table class="dtbl">
           <thead>
             <tr>
@@ -245,11 +227,11 @@
           <tbody>
             <template x-for="lead in filtered.slice(0,30)" :key="lead.id">
               <tr>
-                <td style="font-weight:700;color:#2b3250;" x-text="lead.company || '—'"></td>
+                <td style="color:var(--tx1);font-weight:600;" x-text="lead.company || '—'"></td>
                 <td x-text="lead.contact_name || '—'"></td>
                 <td x-text="lead.status || '—'"></td>
                 <td x-text="lead.opens || '0'"></td>
-                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="lead.response || '—'"></td>
+                <td x-text="lead.response || '—'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></td>
               </tr>
             </template>
           </tbody>
@@ -265,7 +247,7 @@
 {% block scripts %}
 {% if metrics %}
 <script>
-function dashboardV4(){
+function dashboardV2(){
   return { num(v){ return Number(v || 0).toLocaleString(); } }
 }
 
@@ -295,31 +277,31 @@ function leadsTable(){
 
 (function renderCharts(){
   const trendOpts = {
-    chart: { type: 'area', height: 230, toolbar: { show:false }, background:'transparent' },
+    chart: { type: 'area', height: 220, toolbar: { show:false }, background:'transparent' },
     series: [
       { name: 'Sent', data: [22,18,27,19,24,20,25,23,21,26,24,22,28,23] },
       { name: 'Replies', data: [1,1,2,1,2,1,2,2,1,3,2,1,3,2] }
     ],
     stroke: { curve: 'smooth', width: [3,2] },
-    colors: ['#61bf9b','#e7b262'],
-    fill: { type:'gradient', gradient:{ shadeIntensity:.15, opacityFrom:.35, opacityTo:.05 } },
-    grid: { borderColor:'rgba(120,130,170,.25)' },
-    xaxis: { categories:['D1','D2','D3','D4','D5','D6','D7','D8','D9','D10','D11','D12','D13','D14'], labels:{style:{colors:'#7d85a8'}} },
-    yaxis: { labels:{style:{colors:'#7d85a8'}} },
-    legend: { labels:{ colors:'#7d85a8' } },
-    tooltip: { theme:'light' }
+    colors: ['#7bb5a4','#c4a87a'],
+    fill: { type:'gradient', gradient:{ shadeIntensity:.2, opacityFrom:.28, opacityTo:.03 } },
+    grid: { borderColor:'rgba(82,87,110,.25)' },
+    xaxis: { categories:['D1','D2','D3','D4','D5','D6','D7','D8','D9','D10','D11','D12','D13','D14'], labels:{style:{colors:'#9098b8'}} },
+    yaxis: { labels:{style:{colors:'#9098b8'}} },
+    legend: { labels: { colors:'#9098b8' } },
+    tooltip: { theme:'dark' }
   };
   new ApexCharts(document.querySelector('#chart-trend'), trendOpts).render();
 
   const labels = {{ metrics.industry_breakdown.labels | tojson }};
   const data = {{ metrics.industry_breakdown.data | tojson }};
   const industryOpts = {
-    chart: { type:'donut', height:230, background:'transparent' },
+    chart: { type:'donut', height:220, background:'transparent' },
     labels,
     series: data,
-    colors: ['#86d1b4','#8fa8ff','#f3c07b','#9b8bd1','#7ec5e9','#b7d98c'],
-    stroke: { width:0 },
-    legend: { position:'bottom', labels:{ colors:'#7d85a8' } },
+    colors: ['#7bb5a4','#7898c8','#c4a87a','#9b8bd1','#72b08a','#5f7da8'],
+    stroke: { width: 0 },
+    legend: { position:'bottom', labels:{ colors:'#9098b8' } },
     dataLabels: { enabled:false }
   };
   new ApexCharts(document.querySelector('#chart-industry'), industryOpts).render();
