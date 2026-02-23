@@ -2,270 +2,549 @@
 
 {% block extra_head %}
 <style>
-  .v2-wrap { display:flex; flex-direction:column; gap:16px; }
-  .v2-row { display:grid; gap:16px; }
-  .v2-hero { grid-template-columns: 2.2fr 1fr; }
-  .v2-diag { grid-template-columns: 2fr 1fr 1fr; }
-  .v2-charts { grid-template-columns: 2fr 1fr; }
+  :root {
+    --bg: #f8f7f4;
+    --surface: #ffffff;
+    --surface-elevated: #fafaf8;
+    --ink: #1a1a1a;
+    --ink-secondary: #6b6b6b;
+    --ink-tertiary: #9a9a9a;
+    --border: #e8e8e6;
+    --border-light: #f0f0ee;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    --accent-blue: #3b82f6;
+    --accent-purple: #8b5cf6;
+    --accent-teal: #14b8a6;
+  }
 
-  .v2-card { border-radius:22px; border:1px solid var(--border); background:linear-gradient(180deg, #1e2233 0%, #1a1e2d 100%); }
-  .v2-soft { background:linear-gradient(180deg, #232945 0%, #1f243a 100%); }
-  .v2-light { background:linear-gradient(180deg, #2a3152 0%, #222843 100%); }
-  .v2-pad { padding:24px; }
+  body { background: var(--bg); color: var(--ink); }
 
-  .v2-eyebrow { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--tx3); font-weight:700; }
-  .v2-big { font-size:64px; line-height:1; letter-spacing:-.04em; font-weight:800; color:var(--tx1); font-variant-numeric:tabular-nums; }
-  .v2-mid { font-size:32px; line-height:1.05; letter-spacing:-.03em; font-weight:800; color:var(--tx1); font-variant-numeric:tabular-nums; }
-  .v2-small { font-size:12px; color:var(--tx2); }
+  .dashboard { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+  .header-left { display: flex; align-items: baseline; gap: 16px; }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  .header-meta { color: var(--ink-tertiary); font-size: 14px; }
+  
+  /* Grid layouts */
+  .grid { display: grid; gap: 20px; }
+  .grid-hero { grid-template-columns: 1.8fr 1fr; }
+  .grid-mid { grid-template-columns: 1.5fr 1fr 1fr; }
+  .grid-charts { grid-template-columns: 2fr 1fr; }
+  .grid-bottom { grid-template-columns: 1fr 1.5fr; }
 
-  .hero-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
-  .hero-meta { display:flex; gap:8px; flex-wrap:wrap; }
-  .hero-kpi { margin:8px 0 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:14px; }
-  .hero-mini-stack { display:flex; gap:8px; }
-  .mini-bubble { width:68px; height:68px; border-radius:22px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.01) 100%); display:flex; flex-direction:column; justify-content:center; align-items:center; }
-  .mini-bubble .n { font-size:18px; font-weight:800; line-height:1; }
-  .mini-bubble .l { font-size:9px; color:var(--tx3); margin-top:3px; text-transform:uppercase; letter-spacing:.1em; }
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(0,0,0,0.04);
+  }
+  
+  .card-elevated {
+    background: linear-gradient(135deg, #fafaf8 0%, #f5f5f3 100%);
+  }
 
-  .chip { border-radius:999px; padding:6px 10px; font-size:11px; font-weight:700; border:1px solid var(--borderl); }
-  .chip-open { color:var(--sage); background:rgba(123,181,164,.12); border-color:rgba(123,181,164,.35); }
-  .chip-reply { color:var(--sand); background:rgba(196,168,122,.12); border-color:rgba(196,168,122,.35); }
+  /* Hero section */
+  .hero-main {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  
+  .hero-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .stat-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background: var(--surface-elevated);
+    border-radius: 16px;
+    border: 1px solid var(--border-light);
+  }
+  
+  .stat-pill-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  
+  .stat-pill-icon.green { background: #d1fae5; color: #065f46; }
+  .stat-pill-icon.amber { background: #fef3c7; color: #92400e; }
+  .stat-pill-icon.blue { background: #dbeafe; color: #1e40af; }
+  
+  .stat-pill-content { display: flex; flex-direction: column; }
+  .stat-pill-value { font-size: 20px; font-weight: 700; line-height: 1; }
+  .stat-pill-label { font-size: 11px; color: var(--ink-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
 
-  .outcomes { display:grid; grid-template-rows:1fr 1fr 1fr; gap:12px; }
-  .out-card { border-radius:18px; border:1px solid var(--border); padding:14px 16px; background:var(--card2); display:flex; align-items:center; justify-content:space-between; }
-  .out-pill { border-radius:999px; padding:6px 10px; font-size:10px; border:1px solid var(--borderl); color:var(--tx3); }
-  .out-label { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
-  .out-val { margin-top:8px; font-size:40px; font-weight:800; line-height:1; letter-spacing:-.03em; }
+  /* Big number display */
+  .hero-big {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+  }
+  
+  .hero-number {
+    font-size: 96px;
+    font-weight: 800;
+    line-height: 0.9;
+    letter-spacing: -0.04em;
+    background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  
+  .hero-context {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 12px;
+  }
+  
+  .hero-context-label { font-size: 14px; color: var(--ink-secondary); }
+  .hero-context-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #d1fae5;
+    color: #065f46;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
 
-  .section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
-  .section-title { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
+  /* Mini cards stack */
+  .mini-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .mini-card {
+    padding: 20px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .mini-card-amber { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 1px solid #fde68a; }
+  .mini-card-green { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #a7f3d0; }
+  .mini-card-rose { background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%); border: 1px solid #fecdd3; }
+  
+  .mini-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .mini-card-label { font-size: 12px; font-weight: 600; color: var(--ink-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .mini-card-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+  .badge-rose { background: #ffe4e6; color: #9f1239; }
+  
+  .mini-card-value { font-size: 36px; font-weight: 800; line-height: 1; }
 
-  .pipeline { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
-  .pipe-cell { border-radius:14px; background:rgba(255,255,255,.02); border:1px solid var(--border); padding:12px; }
-  .pipe-name { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--tx3); font-weight:700; }
-  .pipe-num { margin-top:6px; font-size:28px; font-weight:800; letter-spacing:-.03em; color:var(--tx1); }
+  /* Section headers */
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+  }
 
-  .seq-list { display:flex; flex-direction:column; gap:10px; }
-  .seq-item { display:grid; grid-template-columns:90px 52px 52px 1fr 46px; gap:8px; align-items:center; }
-  .seq-name { font-size:12px; color:var(--tx2); }
-  .seq-num { font-size:14px; font-weight:700; color:var(--tx1); text-align:right; }
+  /* Sequence performance */
+  .sequence-list { display: flex; flex-direction: column; gap: 12px; }
+  .sequence-row {
+    display: grid;
+    grid-template-columns: 100px 60px 60px 1fr 50px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface-elevated);
+    border-radius: 12px;
+  }
+  .seq-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .seq-metric { font-size: 13px; color: var(--ink-secondary); text-align: right; }
+  .seq-metric strong { color: var(--ink); font-weight: 700; }
+  .seq-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .seq-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .seq-rate { font-size: 13px; font-weight: 700; text-align: right; }
 
-  .bar { height:7px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; }
-  .bar > span { display:block; height:100%; border-radius:999px; }
+  /* Distribution cards */
+  .dist-list { display: flex; flex-direction: column; gap: 10px; }
+  .dist-row {
+    display: grid;
+    grid-template-columns: 1fr 40px;
+    align-items: center;
+    gap: 12px;
+  }
+  .dist-label { font-size: 13px; color: var(--ink-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dist-value { font-size: 13px; font-weight: 700; color: var(--ink); text-align: right; }
+  .dist-bar-bg {
+    grid-column: 1 / -1;
+    height: 4px;
+    background: var(--border-light);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .dist-bar-fill { height: 100%; border-radius: 2px; }
 
-  .list-lines { display:flex; flex-direction:column; gap:10px; }
-  .chart-box { min-height:220px; }
-  .line { display:grid; grid-template-columns:1fr 42px; gap:8px; align-items:center; }
-  .line-name { font-size:12px; color:var(--tx2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .line-val { font-size:12px; font-weight:700; color:var(--tx1); text-align:right; }
+  /* Pipeline */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .pipeline-stage {
+    padding: 16px;
+    background: var(--surface-elevated);
+    border-radius: 16px;
+    border: 1px solid var(--border-light);
+    text-align: center;
+  }
+  .pipeline-stage-label { font-size: 11px; color: var(--ink-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .pipeline-stage-value { font-size: 28px; font-weight: 800; color: var(--ink); }
 
-  .activity-wrap { display:grid; grid-template-columns:1.1fr 2fr; gap:16px; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; }
-  .chips .chip { cursor:pointer; background:transparent; color:var(--tx2); }
-  .chips .chip.active { color:var(--tx1); border-color:var(--sage); background:rgba(123,181,164,.1); }
+  /* Activity section */
+  .activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  
+  .filter-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-pill {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .filter-pill:hover { border-color: var(--ink-tertiary); }
+  .filter-pill.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
-  .recent-list { display:flex; flex-direction:column; gap:8px; max-height:170px; overflow:auto; }
-  .recent-item { border:1px solid var(--border); border-radius:12px; padding:10px; background:rgba(255,255,255,.02); }
-  .recent-main { font-size:12px; color:var(--tx1); font-weight:600; }
-  .recent-sub { font-size:11px; color:var(--tx3); margin-top:2px; }
+  /* Recent activity */
+  .activity-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
+  .activity-item {
+    padding: 12px 16px;
+    background: var(--surface-elevated);
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+  }
+  .activity-company { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .activity-meta { font-size: 12px; color: var(--ink-tertiary); margin-top: 2px; }
 
-  @media (max-width: 1024px){
-    .v2-hero, .v2-diag, .v2-charts, .activity-wrap { grid-template-columns:1fr; }
-    .pipeline { grid-template-columns:repeat(2,1fr); }
-    .v2-big { font-size:50px; }
+  /* Table */
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .data-table th {
+    background: var(--surface-elevated);
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--ink);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: var(--surface-elevated); }
+
+  /* Charts */
+  .chart-container { min-height: 240px; }
+
+  @media (max-width: 1100px) {
+    .grid-hero, .grid-mid, .grid-charts, .grid-bottom { grid-template-columns: 1fr; }
+    .pipeline-grid { grid-template-columns: repeat(3, 1fr); }
+    .hero-number { font-size: 64px; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
 {% if error %}
-<div style="background:rgba(196,136,136,.1);border:1px solid rgba(196,136,136,.3);border-radius:12px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:var(--rose);">
-  <strong>Error:</strong> {{ error }}
+<div class="dashboard">
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 16px; padding: 20px; color: #991b1b;">
+    <strong>Error:</strong> {{ error }}
+  </div>
 </div>
 {% endif %}
 
 {% if metrics %}
-<div class="v2-wrap" x-data="dashboardV2()">
+<div class="dashboard" x-data="dashboard()">
+  <div class="header">
+    <div class="header-left">
+      <h1>Outreach Dashboard</h1>
+      <span class="header-meta">{{ metrics.last_updated }}</span>
+    </div>
+  </div>
 
-  <!-- HERO -->
-  <div class="v2-row v2-hero">
-    <div class="v2-card v2-soft v2-pad">
-      <div class="hero-top">
-        <div class="v2-eyebrow">Pipeline Health</div>
-        <div class="v2-small">{{ metrics.last_updated }}</div>
-      </div>
-      <div class="hero-kpi">
-        <div>
-          <div class="v2-big" x-text="num({{ metrics.summary.contacted }})"></div>
-          <div class="v2-small" style="margin-top:4px;">contacted leads</div>
-        </div>
-        <div class="hero-mini-stack">
-          <div class="mini-bubble">
-            <div class="n" x-text="num({{ metrics.summary.total_leads }})"></div>
-            <div class="l">Total</div>
-          </div>
-          <div class="mini-bubble" style="border-radius:50%;">
-            <div class="n" style="color:var(--sage);">{{ metrics.summary.open_rate }}%</div>
-            <div class="l">Open</div>
+  <!-- Hero Section -->
+  <div class="grid grid-hero" style="margin-bottom: 20px;">
+    <div class="card card-elevated hero-main">
+      <div class="hero-stats">
+        <div class="stat-pill">
+          <div class="stat-pill-icon green">{{ metrics.summary.open_rate }}%</div>
+          <div class="stat-pill-content">
+            <span class="stat-pill-value" x-text="num({{ metrics.summary.opens }})"></span>
+            <span class="stat-pill-label">Opens</span>
           </div>
         </div>
+        <div class="stat-pill">
+          <div class="stat-pill-icon amber">{{ metrics.summary.response_rate }}%</div>
+          <div class="stat-pill-content">
+            <span class="stat-pill-value" x-text="num({{ metrics.summary.total_responses }})"></span>
+            <span class="stat-pill-label">Replies</span>
+          </div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-pill-icon blue" x-text="num({{ metrics.summary.total_leads }})"></div>
+          <div class="stat-pill-content">
+            <span class="stat-pill-value" x-text="num({{ metrics.summary.total_leads }})"></span>
+            <span class="stat-pill-label">Total Leads</span>
+          </div>
+        </div>
       </div>
-      <div class="hero-meta">
-        <span class="chip chip-open">Open {{ metrics.summary.open_rate }}%</span>
-        <span class="chip chip-reply">Reply {{ metrics.summary.response_rate }}%</span>
-        <span class="chip">{{ metrics.summary.total_responses }} replies</span>
+      
+      <div class="hero-big">
+        <div class="hero-number" x-text="num({{ metrics.summary.contacted }})"></div>
+        <div class="hero-context">
+          <span class="hero-context-label">Contacted leads</span>
+          <span class="hero-context-trend">+{{ metrics.summary.leads_today }} today</span>
+        </div>
       </div>
     </div>
 
-    <div class="outcomes">
-      <div class="out-card">
-        <div>
-          <div class="out-label">Replied</div>
-          <div class="out-pill">needs action</div>
+    <div class="mini-stack">
+      <div class="mini-card mini-card-amber">
+        <div class="mini-card-header">
+          <span class="mini-card-label">Replied</span>
+          <span class="mini-card-badge badge-amber">Action needed</span>
         </div>
-        <div class="out-val" style="color:var(--sand);" x-text="num({{ metrics.pipeline.replied }})"></div>
+        <div class="mini-card-value" style="color: #92400e;" x-text="num({{ metrics.pipeline.replied }})"></div>
       </div>
-      <div class="out-card">
-        <div>
-          <div class="out-label">Won</div>
-          <div class="out-pill">closed</div>
+      <div class="mini-card mini-card-green">
+        <div class="mini-card-header">
+          <span class="mini-card-label">Won</span>
+          <span class="mini-card-badge badge-green">Closed</span>
         </div>
-        <div class="out-val" style="color:var(--mint);" x-text="num({{ metrics.pipeline.won }})"></div>
+        <div class="mini-card-value" style="color: #065f46;" x-text="num({{ metrics.pipeline.won }})"></div>
       </div>
-      <div class="out-card">
-        <div>
-          <div class="out-label">Lost</div>
-          <div class="out-pill">dropped</div>
+      <div class="mini-card mini-card-rose">
+        <div class="mini-card-header">
+          <span class="mini-card-label">Lost</span>
+          <span class="mini-card-badge badge-rose">Dropped</span>
         </div>
-        <div class="out-val" style="color:var(--rose);" x-text="num({{ metrics.pipeline.lost }})"></div>
+        <div class="mini-card-value" style="color: #9f1239;" x-text="num({{ metrics.pipeline.lost }})"></div>
       </div>
     </div>
   </div>
 
-  <!-- DIAG -->
-  <div class="v2-row v2-diag">
-    <div class="v2-card v2-pad">
-      <div class="section-head"><div class="section-title">Sequence Performance</div></div>
-      <div class="seq-list">
+  <!-- Middle Section -->
+  <div class="grid grid-mid" style="margin-bottom: 20px;">
+    <div class="card">
+      <div class="section-title">Sequence Performance</div>
+      <div class="sequence-list">
         {% for em in metrics.email_sequence %}
         {% if em.sent > 0 %}
-        <div class="seq-item">
+        <div class="sequence-row">
           <div class="seq-name">{{ em.name }}</div>
-          <div class="seq-num">{{ em.sent }}</div>
-          <div class="seq-num">{{ em.responses }}</div>
-          <div class="bar"><span style="width:{{ [em.response_rate*7,100]|min }}%;background:{% if em.response_rate >= 10 %}var(--mint){% elif em.response_rate >= 4 %}var(--sand){% else %}var(--tx3){% endif %};"></span></div>
-          <div class="seq-num">{{ em.response_rate }}%</div>
+          <div class="seq-metric"><strong>{{ em.sent }}</strong> sent</div>
+          <div class="seq-metric"><strong>{{ em.responses }}</strong> replies</div>
+          <div class="seq-bar-bg">
+            <div class="seq-bar-fill" style="width: {{ [em.response_rate*5, 100]|min }}%; background: {% if em.response_rate >= 8 %}#10b981{% elif em.response_rate >= 3 %}#f59e0b{% else %}#9ca3af{% endif %};"></div>
+          </div>
+          <div class="seq-rate" style="color: {% if em.response_rate >= 8 %}#059669{% elif em.response_rate >= 3 %}#d97706{% else %}#6b7280{% endif %};">{{ em.response_rate }}%</div>
         </div>
         {% endif %}
         {% endfor %}
       </div>
     </div>
 
-    <div class="v2-card v2-pad v2-light">
-      <div class="section-title" style="margin-bottom:12px;">Top Industries</div>
-      <div class="list-lines">
+    <div class="card">
+      <div class="section-title">Top Industries</div>
+      <div class="dist-list">
         {% set max_i = metrics.industry_breakdown.data[0] if metrics.industry_breakdown.data else 1 %}
         {% for i in range(metrics.industry_breakdown.labels|length) %}
-        {% if i < 6 %}
-        <div>
-          <div class="line">
-            <div class="line-name">{{ metrics.industry_breakdown.labels[i] }}</div>
-            <div class="line-val">{{ metrics.industry_breakdown.data[i] }}</div>
+        {% if i < 5 %}
+        <div class="dist-row">
+          <div class="dist-label">{{ metrics.industry_breakdown.labels[i] }}</div>
+          <div class="dist-value">{{ metrics.industry_breakdown.data[i] }}</div>
+          <div class="dist-bar-bg">
+            <div class="dist-bar-fill" style="width: {{ (metrics.industry_breakdown.data[i]/max_i*100)|int if max_i else 0 }}%; background: #3b82f6;"></div>
           </div>
-          <div class="bar"><span style="width:{{ (metrics.industry_breakdown.data[i]/max_i*100)|int if max_i else 0 }}%;background:var(--blue);"></span></div>
         </div>
         {% endif %}
         {% endfor %}
       </div>
     </div>
 
-    <div class="v2-card v2-pad v2-light">
-      <div class="section-title" style="margin-bottom:12px;">Top Countries</div>
-      <div class="list-lines">
+    <div class="card">
+      <div class="section-title">Top Countries</div>
+      <div class="dist-list">
         {% set max_c = metrics.geography.countries[0][1] if metrics.geography.countries else 1 %}
-        {% for country, count in metrics.geography.countries[:6] %}
-        <div>
-          <div class="line">
-            <div class="line-name">{{ country }}</div>
-            <div class="line-val">{{ count }}</div>
+        {% for country, count in metrics.geography.countries[:5] %}
+        <div class="dist-row">
+          <div class="dist-label">{{ country }}</div>
+          <div class="dist-value">{{ count }}</div>
+          <div class="dist-bar-bg">
+            <div class="dist-bar-fill" style="width: {{ (count/max_c*100)|int if max_c else 0 }}%; background: #14b8a6;"></div>
           </div>
-          <div class="bar"><span style="width:{{ (count/max_c*100)|int if max_c else 0 }}%;background:var(--sage);"></span></div>
         </div>
         {% endfor %}
       </div>
     </div>
   </div>
 
-  <!-- CHARTS (restored modules) -->
-  <div class="v2-row v2-charts">
-    <div class="v2-card v2-pad">
-      <div class="section-head"><div class="section-title">Outreach Trend (14 days)</div></div>
-      <div id="chart-trend" class="chart-box"></div>
+  <!-- Charts -->
+  <div class="grid grid-charts" style="margin-bottom: 20px;">
+    <div class="card">
+      <div class="section-title">Outreach Trend (14 days)</div>
+      <div id="chart-trend" class="chart-container"></div>
     </div>
-    <div class="v2-card v2-pad">
-      <div class="section-head"><div class="section-title">Industry Mix</div></div>
-      <div id="chart-industry" class="chart-box"></div>
+    <div class="card">
+      <div class="section-title">Industry Mix</div>
+      <div id="chart-industry" class="chart-container"></div>
     </div>
   </div>
 
-  <!-- PIPELINE + ACTIVITY -->
-  <div class="v2-card v2-pad">
-    <div class="section-head"><div class="section-title">Pipeline Flow</div></div>
-    <div class="pipeline" style="margin-bottom:16px;">
-      <div class="pipe-cell"><div class="pipe-name">New</div><div class="pipe-num">{{ metrics.pipeline.new }}</div></div>
-      <div class="pipe-cell"><div class="pipe-name">Queued</div><div class="pipe-num" style="color:var(--blue);">{{ metrics.pipeline.queued }}</div></div>
-      <div class="pipe-cell"><div class="pipe-name">Contacted</div><div class="pipe-num" style="color:var(--sage);">{{ metrics.pipeline.contacted }}</div></div>
-      <div class="pipe-cell"><div class="pipe-name">Replied</div><div class="pipe-num" style="color:var(--sand);">{{ metrics.pipeline.replied }}</div></div>
-      <div class="pipe-cell"><div class="pipe-name">Won</div><div class="pipe-num" style="color:var(--mint);">{{ metrics.pipeline.won }}</div></div>
+  <!-- Pipeline & Activity -->
+  <div class="card" x-data="leadsTable()">
+    <div class="section-title">Pipeline Flow</div>
+    <div class="pipeline-grid">
+      <div class="pipeline-stage">
+        <div class="pipeline-stage-label">New</div>
+        <div class="pipeline-stage-value">{{ metrics.pipeline.new }}</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-stage-label">Queued</div>
+        <div class="pipeline-stage-value" style="color: #3b82f6;">{{ metrics.pipeline.queued }}</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-stage-label">Contacted</div>
+        <div class="pipeline-stage-value" style="color: #10b981;">{{ metrics.pipeline.contacted }}</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-stage-label">Replied</div>
+        <div class="pipeline-stage-value" style="color: #f59e0b;">{{ metrics.pipeline.replied }}</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-stage-label">Won</div>
+        <div class="pipeline-stage-value" style="color: #059669;">{{ metrics.pipeline.won }}</div>
+      </div>
     </div>
 
-    <div class="activity-wrap" x-data="leadsTable()">
+    <div class="grid grid-bottom">
       <div>
-        <div class="section-title" style="margin-bottom:10px;">Quick Filters</div>
-        <div class="chips" style="margin-bottom:12px;">
-          <button class="chip" :class="statusFilter===''?'active':''" @click="statusFilter=''">All</button>
-          <button class="chip" :class="statusFilter==='new'?'active':''" @click="statusFilter='new'">New</button>
-          <button class="chip" :class="statusFilter==='contacted'?'active':''" @click="statusFilter='contacted'">Contacted</button>
-          <button class="chip" :class="statusFilter==='replied'?'active':''" @click="statusFilter='replied'">Needs Reply</button>
-          <button class="chip" :class="statusFilter==='won'?'active':''" @click="statusFilter='won'">Won</button>
+        <div class="activity-header">
+          <span class="section-title" style="margin: 0;">Recent Activity</span>
         </div>
-        <div class="section-title" style="margin-bottom:10px;">Recent Lead Activity</div>
-        <div class="recent-list">
-          <template x-for="lead in filtered.slice(0,8)" :key="lead.id">
-            <div class="recent-item">
-              <div class="recent-main" x-text="lead.company || '—'"></div>
-              <div class="recent-sub"><span x-text="lead.status || 'unknown'"></span> · <span x-text="lead.contact_name || 'no contact'"></span></div>
+        <div class="filter-pills" style="margin-bottom: 16px;">
+          <button class="filter-pill" :class="filter===''?'active':''" @click="filter=''">All</button>
+          <button class="filter-pill" :class="filter==='new'?'active':''" @click="filter='new'">New</button>
+          <button class="filter-pill" :class="filter==='contacted'?'active':''" @click="filter='contacted'">Contacted</button>
+          <button class="filter-pill" :class="filter==='replied'?'active':''" @click="filter='replied'">Needs Reply</button>
+          <button class="filter-pill" :class="filter==='won'?'active':''" @click="filter='won'">Won</button>
+        </div>
+        <div class="activity-list">
+          <template x-for="lead in filtered.slice(0, 6)" :key="lead.id">
+            <div class="activity-item">
+              <div class="activity-company" x-text="lead.company || 'Unknown Company'"></div>
+              <div class="activity-meta">
+                <span x-text="lead.status || 'unknown'"></span> · 
+                <span x-text="lead.contact_name || 'no contact'"></span>
+                <span x-show="lead.opens">· <span x-text="lead.opens"></span> opens</span>
+              </div>
             </div>
           </template>
         </div>
       </div>
 
-      <div style="overflow:auto;">
-        <table class="dtbl">
-          <thead>
-            <tr>
-              <th>Company</th>
-              <th>Contact</th>
-              <th>Status</th>
-              <th>Opens</th>
-              <th>Response</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="lead in filtered.slice(0,30)" :key="lead.id">
+      <div>
+        <div class="section-title">Lead Details</div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td style="color:var(--tx1);font-weight:600;" x-text="lead.company || '—'"></td>
-                <td x-text="lead.contact_name || '—'"></td>
-                <td x-text="lead.status || '—'"></td>
-                <td x-text="lead.opens || '0'"></td>
-                <td x-text="lead.response || '—'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></td>
+                <th>Company</th>
+                <th>Contact</th>
+                <th>Status</th>
+                <th>Opens</th>
+                <th>Latest Response</th>
               </tr>
-            </template>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              <template x-for="lead in filtered.slice(0, 8)" :key="lead.id">
+                <tr>
+                  <td style="font-weight: 600;" x-text="lead.company || '—'"></td>
+                  <td x-text="lead.contact_name || '—'"></td>
+                  <td>
+                    <span style="padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;"
+                      :style="getStatusStyle(lead.status)"
+                      x-text="lead.status || 'unknown'"></span>
+                  </td>
+                  <td x-text="lead.opens || '0'"></td>
+                  <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-secondary);" x-text="lead.response || '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
-
 </div>
 {% endif %}
 {% endblock %}
@@ -273,11 +552,13 @@
 {% block scripts %}
 {% if metrics %}
 <script>
-function dashboardV2(){
-  return { num(v){ return Number(v || 0).toLocaleString(); } }
+function dashboard() {
+  return {
+    num(v) { return Number(v || 0).toLocaleString(); }
+  };
 }
 
-const RAW_LEADS = [
+const LEADS_DATA = [
   {% for lead in leads_view %}
   {
     id: {{ loop.index }},
@@ -290,47 +571,119 @@ const RAW_LEADS = [
   {% endfor %}
 ];
 
-function leadsTable(){
+function leadsTable() {
   return {
-    statusFilter: '',
-    get filtered(){
-      let list = RAW_LEADS;
-      if(this.statusFilter){ list = list.filter(l => (l.status||'').toLowerCase() === this.statusFilter); }
-      return list;
+    filter: '',
+    get filtered() {
+      if (!this.filter) return LEADS_DATA;
+      return LEADS_DATA.filter(l => (l.status || '').toLowerCase() === this.filter);
+    },
+    getStatusStyle(status) {
+      const s = (status || '').toLowerCase();
+      const styles = {
+        new: 'background: #f3f4f6; color: #374151;',
+        contacted: 'background: #dbeafe; color: #1e40af;',
+        replied: 'background: #fef3c7; color: #92400e;',
+        won: 'background: #d1fae5; color: #065f46;',
+        lost: 'background: #ffe4e6; color: #9f1239;'
+      };
+      return styles[s] || 'background: #f3f4f6; color: #374151;';
     }
-  }
+  };
 }
 
-(function renderCharts(){
-  const trendOpts = {
-    chart: { type: 'area', height: 220, toolbar: { show:false }, background:'transparent' },
+(function initCharts() {
+  // Trend Chart
+  new ApexCharts(document.querySelector('#chart-trend'), {
+    chart: { 
+      type: 'area', 
+      height: 240, 
+      toolbar: { show: false }, 
+      background: 'transparent',
+      fontFamily: 'inherit'
+    },
     series: [
       { name: 'Sent', data: {{ metrics.trend.sent | tojson }} },
       { name: 'Replies', data: {{ metrics.trend.replies | tojson }} }
     ],
-    stroke: { curve: 'smooth', width: [3,2] },
-    colors: ['#7bb5a4','#c4a87a'],
-    fill: { type:'gradient', gradient:{ shadeIntensity:.2, opacityFrom:.28, opacityTo:.03 } },
-    grid: { borderColor:'rgba(82,87,110,.25)' },
-    xaxis: { categories: {{ metrics.trend.labels | tojson }}, labels:{style:{colors:'#9098b8'}} },
-    yaxis: { labels:{style:{colors:'#9098b8'}} },
-    legend: { labels: { colors:'#9098b8' } },
-    tooltip: { theme:'dark' }
-  };
-  new ApexCharts(document.querySelector('#chart-trend'), trendOpts).render();
+    stroke: { curve: 'smooth', width: [3, 2] },
+    colors: ['#3b82f6', '#10b981'],
+    fill: { 
+      type: 'gradient', 
+      gradient: { shadeIntensity: 0.1, opacityFrom: 0.4, opacityTo: 0.05 } 
+    },
+    grid: { 
+      borderColor: '#e5e7eb',
+      strokeDashArray: 4
+    },
+    xaxis: { 
+      categories: {{ metrics.trend.labels | tojson }}, 
+      labels: { style: { colors: '#9ca3af', fontSize: '11px' } },
+      axisBorder: { show: false },
+      axisTicks: { show: false }
+    },
+    yaxis: { 
+      labels: { style: { colors: '#9ca3af', fontSize: '11px' } }
+    },
+    legend: { 
+      position: 'top',
+      horizontalAlign: 'right',
+      fontSize: '12px',
+      markers: { radius: 4 }
+    },
+    dataLabels: { enabled: false },
+    tooltip: { 
+      theme: 'light',
+      style: { fontSize: '12px' }
+    }
+  }).render();
 
-  const labels = {{ metrics.industry_breakdown.labels | tojson }};
-  const data = {{ metrics.industry_breakdown.data | tojson }};
-  const industryOpts = {
-    chart: { type:'donut', height:220, background:'transparent' },
-    labels,
-    series: data,
-    colors: ['#7bb5a4','#7898c8','#c4a87a','#9b8bd1','#72b08a','#5f7da8'],
+  // Industry Donut
+  new ApexCharts(document.querySelector('#chart-industry'), {
+    chart: { 
+      type: 'donut', 
+      height: 240, 
+      background: 'transparent',
+      fontFamily: 'inherit'
+    },
+    labels: {{ metrics.industry_breakdown.labels | tojson }},
+    series: {{ metrics.industry_breakdown.data | tojson }},
+    colors: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#14b8a6', '#f43f5e'],
     stroke: { width: 0 },
-    legend: { position:'bottom', labels:{ colors:'#9098b8' } },
-    dataLabels: { enabled:false }
-  };
-  new ApexCharts(document.querySelector('#chart-industry'), industryOpts).render();
+    legend: { 
+      position: 'bottom', 
+      fontSize: '11px',
+      markers: { radius: 3 },
+      itemMargin: { horizontal: 8, vertical: 4 }
+    },
+    dataLabels: { enabled: false },
+    plotOptions: {
+      pie: {
+        donut: {
+          size: '65%',
+          labels: {
+            show: true,
+            name: { show: false },
+            value: { 
+              show: true, 
+              fontSize: '24px', 
+              fontWeight: 700,
+              color: '#1a1a1a'
+            },
+            total: {
+              show: true,
+              showAlways: true,
+              label: 'Total',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#9a9a9a'
+            }
+          }
+        }
+      }
+    },
+    tooltip: { theme: 'light' }
+  }).render();
 })();
 </script>
 {% endif %}
