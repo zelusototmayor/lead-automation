@@ -1,7 +1,7 @@
 """Metrics calculations for the dashboard."""
 
 from collections import Counter
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Any
 
 
@@ -23,152 +23,163 @@ def calculate_metrics(rows: list[list[str]], header: list[str] | None = None) ->
 
 
 def normalize_rows(rows: list[list[str]], header: list[str] | None = None) -> list[dict]:
-    """Normalize raw sheet rows into lead dicts for template rendering."""
     return [_row_to_dict(row, header) for row in rows]
 
 
 def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
-    """Convert a row to a dictionary.
+    """Drift-tolerant row parser for live sheet quirks."""
 
-    Uses header mapping first (drift-safe), then falls back to known index map.
-    """
-    if header:
-        norm = {str(h).strip().lower(): i for i, h in enumerate(header)}
+    def txt(i: int) -> str:
+        return row[i].strip() if i < len(row) else ""
 
-        def val(*names: str, default: str = "") -> str:
-            for name in names:
-                idx = norm.get(name.lower())
-                if idx is not None and idx < len(row):
-                    return row[idx]
-            return default
+    def is_dt(v: str) -> bool:
+        if not v:
+            return False
+        try:
+            datetime.strptime(v.split()[0], "%Y-%m-%d")
+            return True
+        except Exception:
+            return False
 
-        return {
-            "id": val("id"),
-            "company": val("company"),
-            "contact_name": val("contact", "contact name"),
-            "email": val("email"),
-            "phone": val("phone"),
-            "contacted_flag": val("contacted"),
-            "website": val("website"),
-            "industry": val("industry"),
-            "employee_count": val("employeecount", "employee count"),
-            "city": val("city"),
-            "country": val("country"),
-            "lead_score": val("leadscore", "lead score"),
-            "status": val("status"),
-            "date_added": val("dateadded", "date added"),
-            "last_contact": val("lastcontact", "last contact"),
-            "email_1_sent": val("email1sent", "email 1 sent"),
-            "email_2_sent": val("email2sent", "email 2 sent"),
-            "email_3_sent": val("email3sent", "email 3 sent"),
-            "email_4_sent": val("email4sent", "email 4 sent"),
-            "opens": val("opens"),
-            "clicks": val("clicks"),
-            "response": val("response"),
-            "notes": val("notes"),
-            "source": val("source"),
-            "linkedin": val("linkedin"),
-            "title": val("title"),
-        }
+    def is_url(v: str) -> bool:
+        v = (v or "").lower()
+        return v.startswith("http://") or v.startswith("https://")
 
-    while len(row) < 26:
-        row.append("")
+    def is_email(v: str) -> bool:
+        return "@" in (v or "") and "." in (v or "")
 
-    return {
-        "id":            row[0],
-        "company":       row[1],
-        "contact_name":  row[2],
-        "email":         row[3],
-        "phone":         row[4],
-        "contacted_flag":row[5],
-        "website":       row[6],
-        "industry":      row[7],
-        "employee_count":row[8],
-        "city":          row[9],
-        "country":       row[10],
-        "lead_score":    row[11],
-        "status":        row[12],
-        "date_added":    row[13],
-        "last_contact":  row[14],
-        "email_1_sent":  row[15],
-        "email_2_sent":  row[16],
-        "email_3_sent":  row[17],
-        "email_4_sent":  row[18],
-        "opens":         row[19],
-        "clicks":        row[20],
-        "response":      row[21],
-        "notes":         row[22],
-        "source":        row[23],
-        "linkedin":      row[24],
-        "title":         row[25],
+    def is_bool(v: str) -> bool:
+        return (v or "").strip().upper() in ("TRUE", "FALSE")
+
+    out = {
+        "id": txt(0),
+        "company": txt(1),
+        "contact_name": txt(2),
+        "email": txt(3),
+        "phone": txt(4),
+        "status": txt(5),
+        "notes": txt(6),
+        "website": txt(7) if is_url(txt(7)) else "",
+        "industry": txt(8),
+        "employee_count": txt(9),
+        "city": txt(10),
+        "country": txt(11),
+        "lead_score": "",
+        "date_added": "",
+        "last_contact": "",
+        "email_1_sent": "",
+        "email_2_sent": "",
+        "email_3_sent": "",
+        "email_4_sent": "",
+        "opens": "",
+        "clicks": "",
+        "response": "",
+        "source": "",
+        "linkedin": "",
+        "title": "",
     }
+
+    for i in range(12, min(len(row), 23)):
+        v = txt(i)
+        if not out["date_added"] and is_dt(v):
+            out["date_added"] = v
+        elif is_bool(v):
+            if not out["email_1_sent"]:
+                out["email_1_sent"] = v
+            elif not out["email_2_sent"]:
+                out["email_2_sent"] = v
+            elif not out["email_3_sent"]:
+                out["email_3_sent"] = v
+            elif not out["email_4_sent"]:
+                out["email_4_sent"] = v
+        elif v.isdigit() and out["opens"] == "":
+            out["opens"] = v
+        elif v.isdigit() and out["clicks"] == "":
+            out["clicks"] = v
+        elif "repl" in v.lower() and not out["response"]:
+            out["response"] = v
+
+    for i in range(22, len(row)):
+        v = txt(i)
+        if not v:
+            continue
+        if "linkedin.com" in v.lower() and not out["linkedin"]:
+            out["linkedin"] = v
+        elif is_email(v) and not out["email"]:
+            out["email"] = v
+        elif any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import"]) and not out["source"]:
+            out["source"] = v
+        elif any(k in v.lower() for k in ["ceo", "founder", "director", "manager", "owner", "president"]) and not out["title"]:
+            out["title"] = v
+        elif v.lower() in ("active", "completed", "unknown (-1)"):
+            pass
+        elif "repl" in v.lower() and not out["response"]:
+            out["response"] = v
+
+    if not out["last_contact"]:
+        out["last_contact"] = out["date_added"]
+
+    return out
 
 
 def _calculate_summary(leads: list[dict], today: date) -> dict:
     total = len(leads)
 
-    # Emails sent today (last_contact date = today)
-    sent_today = 0
+    leads_today = 0
     for lead in leads:
-        if lead["last_contact"]:
+        if lead["date_added"]:
             try:
-                lc_date = datetime.strptime(lead["last_contact"].split()[0], "%Y-%m-%d").date()
-                if lc_date == today:
-                    sent_today += 1
+                lead_date = datetime.strptime(lead["date_added"].split()[0], "%Y-%m-%d").date()
+                if lead_date == today:
+                    leads_today += 1
             except (ValueError, IndexError):
                 pass
 
-    # Contacts with at least email 1 sent
-    contacted = sum(1 for lead in leads if lead["email_1_sent"] == "TRUE")
-
-    # Real replies: response field has actual text (not empty, not TRUE/FALSE)
-    def is_real_reply(r: str) -> bool:
-        if not r:
+    def is_real_reply(v: str) -> bool:
+        if not v:
             return False
-        r_clean = r.strip().upper()
-        return r_clean not in ("", "TRUE", "FALSE", "N/A", "-", "NONE")
+        t = str(v).strip().upper()
+        return t not in ("", "0", "FALSE", "NO", "N/A", "NONE", "-")
 
-    responses = sum(1 for lead in leads if is_real_reply(lead["response"]))
+    responses = sum(1 for lead in leads if is_real_reply(lead.get("response", "")))
+    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    opens = sum(1 for lead in leads if str(lead.get("opens", "")).strip() not in ("", "0"))
 
-    # Open rate
-    opens = sum(1 for lead in leads if lead.get("opens", "0") not in ("", "0"))
-
-    # Response rate against contacted
-    response_rate = round((responses / contacted * 100), 1) if contacted > 0 else 0.0
-    open_rate = round((opens / contacted * 100), 1) if contacted > 0 else 0.0
+    response_rate = (responses / contacted * 100) if contacted > 0 else 0
+    open_rate = (opens / contacted * 100) if contacted > 0 else 0
 
     return {
-        "leads_today":    sent_today,
-        "total_leads":    total,
-        "total_responses":responses,
-        "response_rate":  response_rate,
-        "contacted":      contacted,
-        "opens":          opens,
-        "open_rate":      open_rate,
+        "leads_today": leads_today,
+        "total_leads": total,
+        "total_responses": responses,
+        "response_rate": round(response_rate, 1),
+        "contacted": contacted,
+        "opens": opens,
+        "open_rate": round(open_rate, 1),
     }
 
 
 def _calculate_pipeline(leads: list[dict]) -> dict:
-    status_counts = Counter(
-        lead["status"].strip().lower()
-        for lead in leads
-        if lead["status"]
-    )
+    status_counts = Counter((lead.get("status", "") or "").strip().lower() for lead in leads if lead.get("status"))
 
-    queued = sum(
-        1 for lead in leads
-        if lead["status"].strip().lower() == "new"
-        and lead["email"]
-        and lead["email_1_sent"] != "TRUE"
-    )
+    def has_real_reply(lead: dict) -> bool:
+        v = str(lead.get("response", "")).strip().lower()
+        return bool(v) and v not in ("0", "false", "none", "n/a", "-")
+
+    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    replied = sum(1 for lead in leads if has_real_reply(lead))
+    won = status_counts.get("won", 0)
+    lost = status_counts.get("lost", 0)
+    queued = sum(1 for lead in leads if lead.get("email") and str(lead.get("email_1_sent", "")).upper() != "TRUE")
+    new = max(0, len(leads) - contacted)
 
     return {
-        "new":       status_counts.get("new", 0),
-        "queued":    queued,
-        "contacted": status_counts.get("contacted", 0),
-        "replied":   status_counts.get("replied", 0),
-        "won":       status_counts.get("won", 0),
-        "lost":      status_counts.get("lost", 0),
+        "new": new,
+        "queued": queued,
+        "contacted": contacted,
+        "replied": replied,
+        "won": won,
+        "lost": lost,
     }
 
 
@@ -181,19 +192,19 @@ def _calculate_email_sequence(leads: list[dict]) -> list[dict]:
 
         responses = 0
         for lead in leads:
-            if lead["response"] and lead["response"].strip().upper() not in ("TRUE", "FALSE", "") and lead.get(sent_key) == "TRUE":
+            if lead["response"] and lead.get(sent_key) == "TRUE":
                 next_key = f"email_{step + 1}_sent" if step < 4 else None
                 if next_key is None or lead.get(next_key) != "TRUE":
                     responses += 1
 
-        response_rate = round((responses / sent * 100), 1) if sent > 0 else 0.0
+        response_rate = (responses / sent * 100) if sent > 0 else 0
 
         sequence.append({
             "step": step,
-            "name": "Initial" if step == 1 else f"Follow-up {step - 1}",
+            "name": f"Email {step}" if step == 1 else f"Follow-up {step - 1}",
             "sent": sent,
             "responses": responses,
-            "response_rate": response_rate,
+            "response_rate": round(response_rate, 1),
         })
 
     return sequence
@@ -201,6 +212,7 @@ def _calculate_email_sequence(leads: list[dict]) -> list[dict]:
 
 def _calculate_score_distribution(leads: list[dict]) -> dict:
     scores = Counter()
+
     for lead in leads:
         if lead["lead_score"]:
             try:
@@ -212,20 +224,16 @@ def _calculate_score_distribution(leads: list[dict]) -> dict:
 
     return {
         "labels": list(range(1, 11)),
-        "data":   [scores.get(i, 0) for i in range(1, 11)],
+        "data": [scores.get(i, 0) for i in range(1, 11)],
     }
 
 
 def _calculate_industry_breakdown(leads: list[dict]) -> dict:
-    industries = Counter(
-        lead["industry"].strip()
-        for lead in leads
-        if lead["industry"] and lead["industry"].strip()
-    )
+    industries = Counter(lead["industry"].strip() for lead in leads if lead["industry"] and lead["industry"].strip())
     top_10 = industries.most_common(10)
     return {
         "labels": [item[0] for item in top_10],
-        "data":   [item[1] for item in top_10],
+        "data": [item[1] for item in top_10],
     }
 
 
@@ -235,50 +243,47 @@ def _calculate_company_size(leads: list[dict]) -> dict:
         if lead["employee_count"]:
             try:
                 n = int(lead["employee_count"].replace(",", "").replace("+", ""))
-                if n <= 10:      buckets["1–10"] += 1
-                elif n <= 50:    buckets["11–50"] += 1
-                elif n <= 200:   buckets["51–200"] += 1
-                elif n <= 500:   buckets["201–500"] += 1
-                else:            buckets["500+"] += 1
+                if n <= 10:
+                    buckets["1–10"] += 1
+                elif n <= 50:
+                    buckets["11–50"] += 1
+                elif n <= 200:
+                    buckets["51–200"] += 1
+                elif n <= 500:
+                    buckets["201–500"] += 1
+                else:
+                    buckets["500+"] += 1
             except ValueError:
                 pass
 
     return {
         "labels": list(buckets.keys()),
-        "data":   list(buckets.values()),
+        "data": list(buckets.values()),
     }
 
 
 def _calculate_geography(leads: list[dict]) -> dict:
-    countries = Counter(
-        lead["country"].strip()
-        for lead in leads
-        if lead["country"] and lead["country"].strip()
-    )
-    cities = Counter(
-        lead["city"].strip()
-        for lead in leads
-        if lead["city"] and lead["city"].strip()
-    )
+    countries = Counter(lead["country"].strip() for lead in leads if lead["country"] and lead["country"].strip())
+    cities = Counter(lead["city"].strip() for lead in leads if lead["city"] and lead["city"].strip())
     return {
         "countries": countries.most_common(10),
-        "cities":    cities.most_common(10),
+        "cities": cities.most_common(10),
     }
 
 
 def _calculate_trend(leads: list[dict], today: date) -> dict:
-    """Build last 14 days trend from real CRM fields (last_contact + response)."""
     days = [today.fromordinal(today.toordinal() - i) for i in range(13, -1, -1)]
     sent_map = {d: 0 for d in days}
     reply_map = {d: 0 for d in days}
 
-    def is_real_reply(r: str) -> bool:
-        if not r:
+    def is_real_reply(v: str) -> bool:
+        if not v:
             return False
-        return r.strip().upper() not in ("", "TRUE", "FALSE", "N/A", "-", "NONE")
+        t = str(v).strip().upper()
+        return t not in ("", "0", "FALSE", "NO", "N/A", "NONE", "-")
 
     for lead in leads:
-        raw = (lead.get("last_contact") or "").strip()
+        raw = (lead.get("last_contact") or lead.get("date_added") or "").strip()
         if not raw:
             continue
         try:
@@ -290,9 +295,8 @@ def _calculate_trend(leads: list[dict], today: date) -> dict:
             if is_real_reply(lead.get("response", "")):
                 reply_map[d] += 1
 
-    labels = [d.strftime("%d %b") for d in days]
     return {
-        "labels": labels,
+        "labels": [d.strftime("%d %b") for d in days],
         "sent": [sent_map[d] for d in days],
         "replies": [reply_map[d] for d in days],
     }
