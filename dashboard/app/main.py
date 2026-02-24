@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.crm.sheets import GoogleSheetsCRM
+from src.crm.local_services_sheet import LocalServicesCRM
 
 # Import directly to avoid loading personalize.py which requires anthropic
 from src.outreach.instantly_client import InstantlyClient
@@ -34,15 +35,17 @@ CREDENTIALS_FILE = os.getenv(
     "config/google_credentials.json"
 )
 SHEET_NAME = os.getenv("SHEET_NAME", "Leads")
+LS_SHEET_NAME = os.getenv("LS_SHEET_NAME", "Local Services")
 
-# Global CRM instance
+# Global CRM instances
 crm: GoogleSheetsCRM | None = None
+ls_crm: LocalServicesCRM | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize CRM on startup."""
-    global crm
+    """Initialize CRM instances on startup."""
+    global crm, ls_crm
     try:
         crm = GoogleSheetsCRM(
             credentials_file=CREDENTIALS_FILE,
@@ -53,6 +56,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to initialize CRM: {e}")
         crm = None
+
+    try:
+        ls_crm = LocalServicesCRM(
+            credentials_file=CREDENTIALS_FILE,
+            spreadsheet_id=SPREADSHEET_ID,
+            sheet_name=LS_SHEET_NAME,
+        )
+        print(f"Local Services CRM initialized: {LS_SHEET_NAME}")
+    except Exception as e:
+        print(f"Failed to initialize Local Services CRM: {e}")
+        ls_crm = None
     yield
 
 
@@ -167,6 +181,122 @@ async def sync_replies(username: str = Depends(authenticate)):
     try:
         results = _sync_instantly_replies(INSTANTLY_API_KEY, crm)
         return JSONResponse(results)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Cold Calling CRM Routes ──────────────────────────────────────────
+
+@app.get("/cold-calling", response_class=HTMLResponse)
+async def cold_calling_page(request: Request):
+    """Serve cold calling CRM page (publicly accessible, data requires auth)."""
+    return templates.TemplateResponse("cold_calling.html", {"request": request})
+
+
+@app.get("/api/cold-calling/leads")
+async def cold_calling_leads(
+    view: str = "queue",
+    vertical: str = "",
+    city: str = "",
+    status: str = "",
+    username: str = Depends(authenticate),
+):
+    """Get leads for cold calling. view=queue returns call queue, view=all returns everything."""
+    if not ls_crm:
+        return JSONResponse({"error": "Local Services CRM not initialized"}, status_code=503)
+
+    try:
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        if view == "queue":
+            leads = ls_crm.get_call_queue(today)
+        else:
+            leads = ls_crm.get_all_leads()
+
+        # Apply filters
+        if vertical:
+            v_lower = vertical.lower()
+            leads = [l for l in leads if (l.get("vertical") or "").lower() == v_lower]
+        if city:
+            c_lower = city.lower()
+            leads = [l for l in leads if (l.get("city") or "").lower() == c_lower]
+        if status:
+            s_lower = status.lower()
+            leads = [l for l in leads if (l.get("status") or "").lower() == s_lower]
+
+        return JSONResponse({"leads": leads, "count": len(leads)})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/cold-calling/stats")
+async def cold_calling_stats(username: str = Depends(authenticate)):
+    """Pipeline stats for KPI strip."""
+    if not ls_crm:
+        return JSONResponse({"error": "Local Services CRM not initialized"}, status_code=503)
+    try:
+        stats = ls_crm.get_pipeline_stats()
+        return JSONResponse(stats)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/cold-calling/log-call")
+async def cold_calling_log_call(request: Request, username: str = Depends(authenticate)):
+    """Log a call outcome with notes and optional follow-up."""
+    if not ls_crm:
+        return JSONResponse({"error": "Local Services CRM not initialized"}, status_code=503)
+    try:
+        body = await request.json()
+        lead_id = body.get("lead_id")
+        call_status = body.get("call_status", "")
+        notes = body.get("notes", "")
+        followup_date = body.get("followup_date", "")
+        new_status = body.get("new_status", "")
+
+        if not lead_id or not call_status:
+            return JSONResponse({"error": "lead_id and call_status required"}, status_code=400)
+
+        ok = ls_crm.log_call(lead_id, call_status, notes, followup_date, new_status)
+        if ok:
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({"error": "Lead not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/cold-calling/update-status")
+async def cold_calling_update_status(request: Request, username: str = Depends(authenticate)):
+    """Quick status change for a lead."""
+    if not ls_crm:
+        return JSONResponse({"error": "Local Services CRM not initialized"}, status_code=503)
+    try:
+        body = await request.json()
+        lead_id = body.get("lead_id")
+        new_status = body.get("status")
+
+        if not lead_id or not new_status:
+            return JSONResponse({"error": "lead_id and status required"}, status_code=400)
+
+        ok = ls_crm.update_lead(lead_id, {"status": new_status})
+        if ok:
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({"error": "Lead not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/cold-calling/refresh")
+async def cold_calling_refresh(username: str = Depends(authenticate)):
+    """Force cache refresh from Google Sheets."""
+    if not ls_crm:
+        return JSONResponse({"error": "Local Services CRM not initialized"}, status_code=503)
+    try:
+        ls_crm._refresh_cache()
+        return JSONResponse({"success": True, "rows": len(ls_crm._cache)})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -1,0 +1,489 @@
+{% extends "base.html" %}
+{% block nav_cold_calling %}active{% endblock %}
+{% block title %}Cold Calling CRM{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .cc-wrap { display: flex; gap: 20px; height: calc(100vh - 140px); }
+  .cc-left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .cc-right { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; }
+
+  /* KPI Strip */
+  .kpi-strip { display: flex; gap: 12px; margin-bottom: 20px; }
+  .kpi-card {
+    flex: 1; padding: 14px 18px; border-radius: 14px;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx3); margin-bottom: 4px; }
+  .kpi-val { font-size: 24px; font-weight: 800; letter-spacing: -0.03em; }
+  .kpi-val.green { color: var(--green); }
+  .kpi-val.blue { color: var(--blue); }
+  .kpi-val.amber { color: var(--amber); }
+  .kpi-val.purple { color: var(--purple); }
+  .kpi-val.rose { color: var(--rose); }
+
+  /* Filters */
+  .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-toggle {
+    display: flex; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border); background: var(--bg2);
+  }
+  .filter-toggle button {
+    padding: 6px 16px; font-size: 12px; font-weight: 600; border: none;
+    cursor: pointer; background: transparent; color: var(--tx3); transition: all 140ms;
+  }
+  .filter-toggle button.active { background: var(--green); color: #0a1a14; }
+  .filter-search {
+    flex: 1; min-width: 180px; padding: 7px 14px; border-radius: 10px;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--tx1);
+    font-size: 12px; outline: none;
+  }
+  .filter-search:focus { border-color: var(--green); }
+  .filter-search::placeholder { color: var(--tx3); }
+  .pill-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill {
+    padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--bg2); color: var(--tx3);
+    transition: all 140ms;
+  }
+  .pill.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  /* Leads Table */
+  .leads-table-wrap { flex: 1; overflow-y: auto; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); }
+  .leads-table { width: 100%; border-collapse: collapse; }
+  .leads-table th {
+    position: sticky; top: 0; background: var(--surface2); z-index: 2;
+    padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx3);
+    border-bottom: 1px solid var(--border);
+  }
+  .leads-table td {
+    padding: 10px 14px; font-size: 12px; color: var(--tx2);
+    border-bottom: 1px solid rgba(37,42,58,.5);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;
+  }
+  .leads-table tr { cursor: pointer; transition: background 100ms; }
+  .leads-table tr:hover { background: var(--surface2); }
+  .leads-table tr.selected { background: var(--green-dim); }
+  .leads-table tr.selected td { color: var(--tx1); }
+
+  /* Status badges */
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 6px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge-new { background: var(--blue-dim); color: var(--blue); }
+  .badge-contacted { background: var(--amber-dim); color: var(--amber); }
+  .badge-follow-up { background: var(--purple-dim); color: var(--purple); }
+  .badge-interested { background: var(--green-dim); color: var(--green); }
+  .badge-meeting { background: var(--green-mid); color: var(--green); }
+  .badge-won { background: var(--green); color: #0a1a14; }
+  .badge-dead { background: var(--surface3); color: var(--tx3); }
+
+  /* Detail Panel */
+  .detail-panel {
+    flex: 1; overflow-y: auto; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--surface); padding: 20px;
+  }
+  .detail-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--tx3); font-size: 13px; }
+  .detail-header { margin-bottom: 18px; }
+  .detail-company { font-size: 18px; font-weight: 800; color: var(--tx1); letter-spacing: -0.02em; margin-bottom: 2px; }
+  .detail-meta { font-size: 12px; color: var(--tx3); }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx3); margin-bottom: 8px; }
+  .detail-field { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; }
+  .detail-field .label { color: var(--tx3); }
+  .detail-field .value { color: var(--tx1); font-weight: 500; text-align: right; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .detail-field .value a { color: var(--blue); text-decoration: none; }
+  .detail-field .value a:hover { text-decoration: underline; }
+
+  /* Call Buttons */
+  .call-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .call-btn {
+    padding: 6px 14px; border-radius: 8px; font-size: 11px; font-weight: 700;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--tx2); transition: all 140ms;
+  }
+  .call-btn:hover { border-color: var(--border-l); color: var(--tx1); }
+  .call-btn.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  /* Outcome buttons */
+  .outcome-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .outcome-btn {
+    padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--tx2); transition: all 140ms;
+  }
+  .outcome-btn:hover { border-color: var(--border-l); color: var(--tx1); }
+  .outcome-btn.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  /* Notes textarea */
+  .notes-input {
+    width: 100%; min-height: 60px; padding: 10px; border-radius: 10px;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--tx1);
+    font-size: 12px; resize: vertical; outline: none; font-family: 'Inter', sans-serif;
+  }
+  .notes-input:focus { border-color: var(--green); }
+
+  /* Follow-up date */
+  .followup-input {
+    padding: 7px 12px; border-radius: 8px; background: var(--bg2);
+    border: 1px solid var(--border); color: var(--tx1); font-size: 12px; outline: none;
+  }
+  .followup-input:focus { border-color: var(--green); }
+
+  /* Existing notes display */
+  .notes-history {
+    max-height: 160px; overflow-y: auto; padding: 10px; border-radius: 10px;
+    background: var(--bg2); font-size: 11px; color: var(--tx2); line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  .submit-row { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--tx3); font-size: 13px; }
+
+  @media (max-width: 900px) {
+    .cc-wrap { flex-direction: column; height: auto; }
+    .cc-right { width: 100%; }
+    .kpi-strip { flex-wrap: wrap; }
+    .kpi-card { min-width: 120px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="coldCallingApp()" x-init="init()">
+
+  <!-- KPI Strip -->
+  <div class="kpi-strip">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Leads</div>
+      <div class="kpi-val" x-text="stats.total || 0"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Call Queue</div>
+      <div class="kpi-val green" x-text="stats.queue || 0"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Follow-ups Due</div>
+      <div class="kpi-val amber" x-text="stats.followups_due || 0"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Interested</div>
+      <div class="kpi-val purple" x-text="(stats.by_status || {})['Interested'] || 0"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Meetings Booked</div>
+      <div class="kpi-val blue" x-text="(stats.by_status || {})['Meeting Booked'] || 0"></div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <div class="filter-toggle">
+      <button :class="{ active: view === 'queue' }" @click="view = 'queue'; loadLeads()">Queue</button>
+      <button :class="{ active: view === 'all' }" @click="view = 'all'; loadLeads()">All</button>
+    </div>
+    <input class="filter-search" type="text" placeholder="Search company, name, phone..." x-model="search">
+    <div class="pill-bar">
+      <template x-for="v in verticals" :key="v">
+        <span class="pill" :class="{ active: filterVertical === v }" @click="filterVertical = (filterVertical === v ? '' : v); loadLeads()" x-text="v"></span>
+      </template>
+    </div>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="cc-wrap">
+    <!-- Left: Leads Table -->
+    <div class="cc-left">
+      <div class="leads-table-wrap">
+        <template x-if="loading">
+          <div class="loading">Loading leads...</div>
+        </template>
+        <template x-if="!loading && filteredLeads.length === 0">
+          <div class="loading">No leads found</div>
+        </template>
+        <template x-if="!loading && filteredLeads.length > 0">
+          <table class="leads-table">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Contact</th>
+                <th>Phone</th>
+                <th>Vertical</th>
+                <th>Status</th>
+                <th>Call</th>
+                <th>Follow-up</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="lead in filteredLeads" :key="lead.id">
+                <tr :class="{ selected: selected?.id === lead.id }" @click="selectLead(lead)">
+                  <td x-text="lead.company"></td>
+                  <td x-text="lead.poc_name"></td>
+                  <td x-text="lead.phone"></td>
+                  <td x-text="lead.vertical"></td>
+                  <td><span class="badge" :class="badgeClass(lead.status)" x-text="lead.status || 'New'"></span></td>
+                  <td><span x-text="lead.call_status || '—'" :style="lead.call_status ? 'color:var(--tx1)' : ''"></span></td>
+                  <td x-text="lead.followup || '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+      </div>
+    </div>
+
+    <!-- Right: Detail Panel -->
+    <div class="cc-right">
+      <div class="detail-panel">
+        <template x-if="!selected">
+          <div class="detail-empty">Select a lead to view details</div>
+        </template>
+        <template x-if="selected">
+          <div>
+            <!-- Header -->
+            <div class="detail-header">
+              <div class="detail-company" x-text="selected.company"></div>
+              <div class="detail-meta" x-text="selected.vertical + ' · ' + selected.city + ', ' + selected.state"></div>
+            </div>
+
+            <!-- Contact Info -->
+            <div class="detail-section">
+              <div class="detail-section-title">Contact</div>
+              <div class="detail-field">
+                <span class="label">Name</span>
+                <span class="value" x-text="selected.poc_name || '—'"></span>
+              </div>
+              <div class="detail-field">
+                <span class="label">Title</span>
+                <span class="value" x-text="selected.poc_title || '—'"></span>
+              </div>
+              <div class="detail-field">
+                <span class="label">Phone</span>
+                <span class="value"><a :href="'tel:' + selected.phone" x-text="selected.phone || '—'"></a></span>
+              </div>
+              <div class="detail-field">
+                <span class="label">Email</span>
+                <span class="value"><a :href="'mailto:' + selected.email" x-text="selected.email || '—'"></a></span>
+              </div>
+              <div class="detail-field" x-show="selected.website">
+                <span class="label">Website</span>
+                <span class="value"><a :href="selected.website" target="_blank" x-text="selected.website"></a></span>
+              </div>
+              <div class="detail-field">
+                <span class="label">Status</span>
+                <span class="value"><span class="badge" :class="badgeClass(selected.status)" x-text="selected.status || 'New'"></span></span>
+              </div>
+            </div>
+
+            <!-- Call Logging -->
+            <div class="detail-section">
+              <div class="detail-section-title">Log Call</div>
+
+              <!-- Call Status Buttons -->
+              <div class="call-btns">
+                <template x-for="cs in callStatuses" :key="cs">
+                  <button class="call-btn" :class="{ active: form.call_status === cs }" @click="setCallStatus(cs)" x-text="cs"></button>
+                </template>
+              </div>
+
+              <!-- Outcome buttons (shown when Reached) -->
+              <template x-if="form.call_status === 'Reached'">
+                <div>
+                  <div class="detail-section-title" style="margin-top:4px;">Outcome</div>
+                  <div class="outcome-btns">
+                    <template x-for="oc in reachedOutcomes" :key="oc">
+                      <button class="outcome-btn" :class="{ active: form.new_status === oc }" @click="form.new_status = (form.new_status === oc ? '' : oc)" x-text="oc"></button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Follow-up date (shown for Voicemail/Gatekeeper/No Answer) -->
+              <template x-if="showFollowup">
+                <div style="margin-bottom: 10px;">
+                  <div class="detail-section-title" style="margin-top:4px;">Follow-up Date</div>
+                  <input type="date" class="followup-input" x-model="form.followup_date" :min="today">
+                </div>
+              </template>
+
+              <!-- Notes -->
+              <textarea class="notes-input" placeholder="Add notes about this call..." x-model="form.notes"></textarea>
+
+              <!-- Submit -->
+              <div class="submit-row">
+                <button class="btn btn-primary" style="flex:1;" @click="submitCall()" :disabled="!form.call_status || submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Log Call & Next'"></span>
+                </button>
+                <button class="btn btn-ghost" @click="skipLead()">Skip</button>
+              </div>
+            </div>
+
+            <!-- Existing Notes -->
+            <div class="detail-section" x-show="selected.notes">
+              <div class="detail-section-title">Notes History</div>
+              <div class="notes-history" x-text="selected.notes"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function coldCallingApp() {
+  return {
+    // State
+    leads: [],
+    stats: {},
+    selected: null,
+    loading: true,
+    submitting: false,
+    view: 'queue',
+    search: '',
+    filterVertical: '',
+    verticals: [],
+    today: new Date().toISOString().slice(0, 10),
+
+    // Call form
+    form: { call_status: '', notes: '', followup_date: '', new_status: '' },
+    callStatuses: ['Reached', 'Voicemail', 'No Answer', 'Gatekeeper', 'Wrong Number'],
+    reachedOutcomes: ['Interested', 'Meeting Booked', 'Follow-up', 'Not Interested', 'Not a Fit'],
+
+    get showFollowup() {
+      return ['Voicemail', 'Gatekeeper', 'No Answer'].includes(this.form.call_status);
+    },
+
+    get filteredLeads() {
+      if (!this.search) return this.leads;
+      const q = this.search.toLowerCase();
+      return this.leads.filter(l =>
+        (l.company || '').toLowerCase().includes(q) ||
+        (l.poc_name || '').toLowerCase().includes(q) ||
+        (l.phone || '').includes(q) ||
+        (l.email || '').toLowerCase().includes(q)
+      );
+    },
+
+    async init() {
+      await this.loadStats();
+      await this.loadLeads();
+    },
+
+    async loadStats() {
+      try {
+        const r = await fetch('/api/cold-calling/stats', { headers: getAuthHeader() });
+        if (r.ok) {
+          this.stats = await r.json();
+          // Extract verticals
+          const verts = Object.keys(this.stats.by_vertical || {}).filter(v => v !== 'Unknown').sort();
+          this.verticals = verts;
+        } else if (r.status === 401) {
+          // Not logged in yet — will load after login
+        }
+      } catch (e) { console.error('Stats error:', e); }
+    },
+
+    async loadLeads() {
+      this.loading = true;
+      try {
+        let url = `/api/cold-calling/leads?view=${this.view}`;
+        if (this.filterVertical) url += `&vertical=${encodeURIComponent(this.filterVertical)}`;
+        const r = await fetch(url, { headers: getAuthHeader() });
+        if (r.ok) {
+          const data = await r.json();
+          this.leads = data.leads || [];
+        } else if (r.status === 401) {
+          this.leads = [];
+        }
+      } catch (e) { console.error('Leads error:', e); }
+      this.loading = false;
+    },
+
+    selectLead(lead) {
+      this.selected = lead;
+      this.resetForm();
+    },
+
+    resetForm() {
+      this.form = { call_status: '', notes: '', followup_date: '', new_status: '' };
+    },
+
+    setCallStatus(cs) {
+      this.form.call_status = (this.form.call_status === cs) ? '' : cs;
+      // Reset outcome when changing call status
+      this.form.new_status = '';
+      // Auto-set follow-up to 2 days for voicemail/gatekeeper
+      if (this.showFollowup && !this.form.followup_date) {
+        const d = new Date();
+        d.setDate(d.getDate() + 2);
+        this.form.followup_date = d.toISOString().slice(0, 10);
+      }
+    },
+
+    async submitCall() {
+      if (!this.selected || !this.form.call_status) return;
+      this.submitting = true;
+      try {
+        const body = {
+          lead_id: this.selected.id,
+          call_status: this.form.call_status,
+          notes: this.form.notes,
+          followup_date: this.form.followup_date,
+          new_status: this.form.new_status,
+        };
+        const r = await fetch('/api/cold-calling/log-call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+          body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          notify('Call logged for ' + this.selected.company, 'ok');
+          this.advanceToNext();
+          // Reload in background
+          this.loadLeads();
+          this.loadStats();
+        } else {
+          const d = await r.json();
+          notify(d.error || 'Failed to log call', 'err');
+        }
+      } catch (e) { notify('Error: ' + e.message, 'err'); }
+      this.submitting = false;
+    },
+
+    skipLead() {
+      this.advanceToNext();
+    },
+
+    advanceToNext() {
+      const list = this.filteredLeads;
+      const idx = list.findIndex(l => l.id === this.selected?.id);
+      if (idx >= 0 && idx < list.length - 1) {
+        this.selectLead(list[idx + 1]);
+      } else if (list.length > 0) {
+        this.selectLead(list[0]);
+      } else {
+        this.selected = null;
+      }
+    },
+
+    badgeClass(status) {
+      const s = (status || '').toLowerCase();
+      if (s === 'new') return 'badge-new';
+      if (s === 'contacted') return 'badge-contacted';
+      if (s === 'follow-up') return 'badge-follow-up';
+      if (s === 'interested') return 'badge-interested';
+      if (s === 'meeting booked') return 'badge-meeting';
+      if (s === 'won') return 'badge-won';
+      return 'badge-dead';
+    },
+  };
+}
+</script>
+{% endblock %}

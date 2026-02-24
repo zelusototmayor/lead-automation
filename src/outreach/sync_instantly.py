@@ -40,14 +40,6 @@ class InstantlySyncer:
         crm: GoogleSheetsCRM,
         campaign_id: str = None
     ):
-        """
-        Initialize the syncer.
-
-        Args:
-            instantly_api_key: Instantly API key
-            crm: GoogleSheetsCRM instance
-            campaign_id: Optional specific campaign ID to sync
-        """
         self.instantly = InstantlyClient(instantly_api_key)
         self.crm = crm
         self.campaign_id = campaign_id
@@ -59,18 +51,38 @@ class InstantlySyncer:
             return [campaign] if campaign else []
         return self.instantly.list_campaigns()
 
-    def sync_all_leads(self) -> dict:
-        """
-        Sync all lead data from Instantly to CRM.
+    def _determine_emails_sent(self, lead: dict) -> int:
+        """Determine how many emails have been sent based on Instantly lead data."""
+        status = lead.get("status", 0)
 
-        Returns:
-            Summary of sync results
-        """
+        # Not started = 0 emails
+        if status == 0:
+            return 0
+
+        # Completed = all 4 emails sent
+        if status == 3:
+            return 4
+
+        # Try to get exact step from available fields
+        for field in ("lead_last_step", "last_step", "subsequence_index"):
+            step = lead.get(field)
+            if step is not None:
+                try:
+                    return int(step) + 1  # Steps are 0-indexed in Instantly
+                except (ValueError, TypeError):
+                    continue
+
+        # Fallback: any active/non-zero status means at least 1 email sent
+        return 1
+
+    def sync_all_leads(self) -> dict:
+        """Sync all lead data from Instantly to CRM."""
         results = {
             "campaigns_checked": 0,
             "leads_checked": 0,
             "crm_updated": 0,
             "replies_found": 0,
+            "emails_sent_updated": 0,
             "not_in_crm": 0,
             "errors": []
         }
@@ -87,24 +99,45 @@ class InstantlySyncer:
             logger.info("Syncing campaign", name=campaign_name)
 
             try:
-                # Get all leads from campaign (API limit is ~100)
                 leads = self.instantly.list_leads(campaign_id, limit=100)
                 results["leads_checked"] += len(leads)
+
+                # Log raw fields from first lead for debugging step detection
+                if leads:
+                    sample = leads[0]
+                    logger.info(
+                        "Sample Instantly lead fields",
+                        campaign=campaign_name,
+                        lead_keys=sorted(list(sample.keys())),
+                        sample_fields={
+                            k: sample.get(k)
+                            for k in [
+                                "status", "lead_last_step", "last_step",
+                                "subsequence_index", "email_open_count",
+                                "email_click_count", "email_reply_count"
+                            ] if k in sample
+                        }
+                    )
 
                 for lead in leads:
                     email = lead.get("email")
                     if not email:
                         continue
 
-                    # Prepare data to sync
+                    emails_sent = self._determine_emails_sent(lead)
+
                     sync_data = {
                         "opens": lead.get("email_open_count", 0),
                         "clicks": lead.get("email_click_count", 0),
                         "instantly_status": INSTANTLY_STATUS.get(
                             lead.get("status", 0),
                             f"Unknown ({lead.get('status')})"
-                        )
+                        ),
+                        "emails_sent_count": emails_sent
                     }
+
+                    if emails_sent > 0:
+                        results["emails_sent_updated"] += 1
 
                     # Check for replies
                     reply_count = lead.get("email_reply_count", 0)
@@ -129,7 +162,8 @@ class InstantlySyncer:
             "Instantly sync complete",
             leads_checked=results["leads_checked"],
             crm_updated=results["crm_updated"],
-            replies_found=results["replies_found"]
+            replies_found=results["replies_found"],
+            emails_sent_updated=results["emails_sent_updated"]
         )
 
         return results
@@ -141,18 +175,7 @@ def sync_from_instantly(
     spreadsheet_id: str = None,
     campaign_id: str = None
 ) -> dict:
-    """
-    Convenience function to sync from Instantly.
-
-    Args:
-        instantly_api_key: Instantly API key (or from env)
-        credentials_file: Path to Google credentials JSON
-        spreadsheet_id: Google Sheets spreadsheet ID
-        campaign_id: Optional specific campaign to sync
-
-    Returns:
-        Sync results summary
-    """
+    """Convenience function to sync from Instantly."""
     # Get config from environment if not provided
     api_key = instantly_api_key or os.getenv("INSTANTLY_API_KEY")
     creds_file = credentials_file or os.getenv(

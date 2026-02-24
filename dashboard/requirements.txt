@@ -5,3 +5,4 @@ python-multipart==0.0.9
 gspread==6.1.2
 google-auth==2.34.0
 structlog==24.4.0
+tenacity>=8.2.0

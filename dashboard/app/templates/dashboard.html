@@ -1,172 +1,222 @@
 {% extends "base.html" %}
+{% block nav_dashboard %}active{% endblock %}
 
-{% block extra_head %}
+{% block extra_styles %}
 <style>
-  /* ── DASHBOARD LAYOUT ──────────────────── */
   .dash { width: 100%; }
-  .dash-header { margin-bottom: 28px; }
-  .dash-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--tx1); }
-  .dash-header p { font-size: 12px; color: var(--tx3); margin-top: 4px; }
 
-  .grid { display: grid; gap: 16px; margin-bottom: 16px; }
-  .g-hero { grid-template-columns: 1fr 340px; }
-  .g-3 { grid-template-columns: repeat(3, 1fr); }
-  .g-2 { grid-template-columns: 1.6fr 1fr; }
-  .g-pipe { grid-template-columns: repeat(5, 1fr); }
-  .g-bottom { grid-template-columns: 1fr 1.4fr; }
-
-  /* ── COLORED FEATURE CARDS ─────────────── */
-  .fcard {
-    border-radius: 18px;
-    padding: 24px 28px;
-    position: relative;
-    overflow: hidden;
-    border: none;
+  /* Section label */
+  .sec-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--tx3); margin-bottom: 14px;
   }
 
-  /* Navy / primary metrics */
-  .fcard-navy {
-    background: linear-gradient(135deg, #1e2340 0%, #252b4a 100%);
-    border: 1px solid rgba(100,120,180,0.15);
+  /* ── KPI STRIP (Instantly-style) ────────── */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 20px;
   }
-
-  /* Teal / pipeline */
-  .fcard-teal {
-    background: linear-gradient(135deg, #14302c 0%, #1a3d38 100%);
-    border: 1px solid rgba(100,200,170,0.12);
-  }
-
-  /* Lavender / sequences */
-  .fcard-lav {
-    background: linear-gradient(135deg, #252040 0%, #2d2650 100%);
-    border: 1px solid rgba(140,120,200,0.15);
-  }
-
-  .fcard-sh {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.12em; margin-bottom: 20px; opacity: 0.5;
-  }
-
-  /* ── HERO METRICS (inside navy card) ───── */
-  .hero-row { display: flex; align-items: flex-end; gap: 32px; flex-wrap: wrap; }
-  
-  .hero-block { display: flex; flex-direction: column; }
-  .hero-label { font-size: 11px; color: var(--tx3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-  .hero-num {
-    font-size: 56px; font-weight: 800; line-height: 1;
-    letter-spacing: -0.03em; color: #fff;
-  }
-  .hero-num.mid { font-size: 36px; }
-  .hero-sub { font-size: 12px; color: var(--tx3); margin-top: 6px; }
-  .hero-trend {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 600; padding: 3px 10px;
-    border-radius: 20px; margin-top: 8px;
-  }
-  .trend-up { background: rgba(114,176,138,0.15); color: var(--mint); }
-  .trend-flat { background: rgba(120,152,200,0.15); color: var(--blue); }
-
-  /* ── RATE CARDS (right stack) ──────────── */
-  .rate-stack { display: flex; flex-direction: column; gap: 12px; }
-
-  .rate-card {
-    border-radius: 16px;
+  .kpi-card {
     padding: 20px 22px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    border: none;
+    display: flex; flex-direction: column; gap: 6px;
   }
-  .rate-card-green {
-    background: linear-gradient(135deg, #133028 0%, #1a4038 100%);
-    border: 1px solid rgba(114,176,138,0.2);
-  }
-  .rate-card-blue {
-    background: linear-gradient(135deg, #161e35 0%, #1c2845 100%);
-    border: 1px solid rgba(120,152,200,0.2);
-  }
-  .rate-card-amber {
-    background: linear-gradient(135deg, #2a2010 0%, #352818 100%);
-    border: 1px solid rgba(196,168,122,0.2);
+  .kpi-label { font-size: 12px; color: var(--tx3); font-weight: 500; }
+  .kpi-value { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .kpi-sub { font-size: 12px; color: var(--tx3); font-weight: 500; }
+  .kpi-sub strong { color: var(--tx2); }
+
+  /* ── HERO ROW ───────────────────────────── */
+  .grid-hero {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
   }
 
-  .rate-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.6; }
-  .rate-card-row { display: flex; align-items: baseline; gap: 10px; }
-  .rate-card-num { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
-  .rate-card-pct { font-size: 14px; font-weight: 700; opacity: 0.7; }
-  .rate-card-sub { font-size: 11px; opacity: 0.4; }
+  /* Campaign Performance card */
+  .perf-card {
+    padding: 28px;
+    background: linear-gradient(135deg, var(--surface) 0%, rgba(96,165,250,.04) 100%);
+  }
+  .perf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .perf-title { font-size: 15px; font-weight: 700; }
+  .perf-badge {
+    padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    background: var(--green-dim); color: var(--green); border: 1px solid rgba(52,211,153,.2);
+  }
 
-  .rc-green .rate-card-num { color: var(--mint); }
-  .rc-blue .rate-card-num { color: var(--blue); }
-  .rc-amber .rate-card-num { color: var(--sand); }
-
-  /* ── PIPELINE STAGES ───────────────────── */
-  .pipe-card {
-    text-align: center;
-    padding: 18px 12px;
+  .perf-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .perf-metric {
+    padding: 16px 18px;
+    background: var(--surface2);
     border-radius: 14px;
-    background: var(--card);
     border: 1px solid var(--border);
   }
-  .pipe-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--tx3); margin-bottom: 8px; }
-  .pipe-num { font-size: 28px; font-weight: 800; color: var(--tx1); }
-  .pipe-arrow { display: flex; align-items: center; justify-content: center; color: var(--tx3); font-size: 16px; }
+  .perf-metric-label { font-size: 11px; color: var(--tx3); font-weight: 500; margin-bottom: 6px; }
+  .perf-metric-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+  .perf-metric-sub { font-size: 11px; color: var(--tx3); margin-top: 4px; }
 
-  /* ── SEQUENCE ROWS ─────────────────────── */
-  .seq-rows { display: flex; flex-direction: column; gap: 10px; }
+  /* Pipeline Health card */
+  .health-card {
+    padding: 24px;
+    background: linear-gradient(135deg, var(--surface) 0%, rgba(52,211,153,.05) 100%);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .health-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+
+  .health-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    flex: 1;
+  }
+  .health-tile {
+    padding: 16px;
+    border-radius: 16px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .health-tile-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .health-tile-value { font-size: 36px; font-weight: 900; line-height: 1; letter-spacing: -0.03em; }
+  .health-tile-sub { font-size: 11px; margin-top: 4px; }
+
+  .tile-green { background: var(--green-dim); border: 1px solid rgba(52,211,153,.15); }
+  .tile-green .health-tile-label { color: var(--green); }
+  .tile-green .health-tile-value { color: var(--green); }
+  .tile-green .health-tile-sub { color: rgba(52,211,153,.6); }
+
+  .tile-blue { background: var(--blue-dim); border: 1px solid rgba(96,165,250,.15); }
+  .tile-blue .health-tile-label { color: var(--blue); }
+  .tile-blue .health-tile-value { color: var(--blue); }
+  .tile-blue .health-tile-sub { color: rgba(96,165,250,.6); }
+
+  .tile-amber { background: var(--amber-dim); border: 1px solid rgba(251,191,36,.15); }
+  .tile-amber .health-tile-label { color: var(--amber); }
+  .tile-amber .health-tile-value { color: var(--amber); }
+  .tile-amber .health-tile-sub { color: rgba(251,191,36,.6); }
+
+  .tile-teal { background: var(--teal-dim); border: 1px solid rgba(45,212,191,.15); }
+  .tile-teal .health-tile-label { color: var(--teal); }
+  .tile-teal .health-tile-value { color: var(--teal); }
+  .tile-teal .health-tile-sub { color: rgba(45,212,191,.6); }
+
+  /* ── CHART ROW ──────────────────────────── */
+  .grid-charts {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .chart-card { padding: 24px; }
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .chart-title { font-size: 14px; font-weight: 700; }
+
+  /* ── SEQUENCE + PIPELINE ROW ────────────── */
+  .grid-mid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  /* Sequence */
+  .seq-card { padding: 24px; }
+  .seq-list { display: flex; flex-direction: column; gap: 10px; }
   .seq-row {
     display: grid;
-    grid-template-columns: 90px 1fr 60px 52px;
-    align-items: center;
-    gap: 14px;
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.03);
-    border-radius: 10px;
+    grid-template-columns: 110px 1fr 60px 60px 55px;
+    align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border-radius: 12px;
+    border: 1px solid var(--border);
   }
   .seq-name { font-size: 13px; font-weight: 600; color: var(--tx1); }
-  .seq-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; }
-  .seq-bar-inner { height: 100%; border-radius: 3px; }
-  .seq-sent { font-size: 11px; color: var(--tx3); text-align: right; }
+  .seq-bar { height: 6px; background: var(--surface3); border-radius: 99px; overflow: hidden; }
+  .seq-bar-fill { height: 100%; border-radius: 99px; transition: width .6s ease; }
+  .seq-stat { font-size: 12px; color: var(--tx2); text-align: right; }
+  .seq-stat strong { color: var(--tx1); font-weight: 700; }
   .seq-rate { font-size: 13px; font-weight: 700; text-align: right; }
 
-  /* ── DISTRIBUTION LISTS ────────────────── */
-  .dist-rows { display: flex; flex-direction: column; gap: 12px; }
-  .dist-row { display: flex; flex-direction: column; gap: 5px; }
-  .dist-row-top { display: flex; justify-content: space-between; align-items: baseline; }
-  .dist-label { font-size: 12px; color: var(--tx2); }
-  .dist-val { font-size: 12px; font-weight: 700; color: var(--tx1); }
-  .dist-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; }
-  .dist-bar-inner { height: 100%; border-radius: 2px; }
-
-  /* ── CHARTS ────────────────────────────── */
-  .chart-wrap { min-height: 220px; }
-
-  /* ── ACTIVITY FILTERS + LIST ───────────── */
-  .fpills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-  .fpill {
-    padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
-    background: rgba(255,255,255,0.04); color: var(--tx3);
-    border: 1px solid var(--border); cursor: pointer; transition: all 120ms;
+  /* Pipeline */
+  .pipeline-card { padding: 24px; }
+  .pipeline-stages { display: flex; flex-direction: column; gap: 10px; }
+  .pipeline-stage {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 18px;
+    background: var(--surface2);
+    border-radius: 14px;
+    border: 1px solid var(--border);
   }
-  .fpill:hover { border-color: var(--borderl); color: var(--tx2); }
-  .fpill.active { background: var(--sage); color: #0d1a16; border-color: var(--sage); }
+  .stage-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .stage-label { font-size: 13px; font-weight: 500; color: var(--tx2); flex: 1; }
+  .stage-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .stage-bar-bg { flex: 1; height: 4px; background: var(--surface3); border-radius: 99px; overflow: hidden; min-width: 60px; }
+  .stage-bar-fill { height: 100%; border-radius: 99px; transition: width .6s ease; }
 
-  .act-list { display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; }
-  .act-item {
-    padding: 10px 14px; border-radius: 10px;
-    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.04);
-    transition: background 120ms;
+  /* ── BOTTOM ROW ─────────────────────────── */
+  .grid-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.5fr;
+    gap: 16px;
+    margin-bottom: 20px;
   }
-  .act-item:hover { background: rgba(255,255,255,0.05); }
-  .act-company { font-size: 13px; font-weight: 600; color: var(--tx1); }
-  .act-meta { font-size: 11px; color: var(--tx3); margin-top: 2px; }
 
-  /* ── RESPONSIVE ────────────────────────── */
-  @media (max-width: 900px) {
-    .g-hero, .g-3, .g-2, .g-bottom { grid-template-columns: 1fr; }
-    .g-pipe { grid-template-columns: repeat(3, 1fr); }
-    .hero-num { font-size: 42px; }
-    .hero-num.mid { font-size: 28px; }
+  /* Distribution lists */
+  .dist-card { padding: 24px; }
+  .dist-list { display: flex; flex-direction: column; gap: 10px; }
+  .dist-row { display: flex; align-items: center; gap: 12px; }
+  .dist-label { font-size: 13px; color: var(--tx2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dist-value { font-size: 13px; font-weight: 700; color: var(--tx1); min-width: 30px; text-align: right; }
+  .dist-bar { flex: 1; height: 4px; background: var(--surface3); border-radius: 99px; overflow: hidden; min-width: 40px; }
+  .dist-bar-fill { height: 100%; border-radius: 99px; }
+
+  /* Leads table */
+  .table-card { padding: 24px; }
+  .leads-table { width: 100%; border-collapse: collapse; }
+  .leads-table th {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--tx3); padding: 8px 12px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .leads-table td {
+    font-size: 13px; color: var(--tx2); padding: 10px 12px;
+    border-bottom: 1px solid rgba(37,42,58,.5);
+  }
+  .leads-table tr:last-child td { border-bottom: none; }
+  .leads-table tbody tr { transition: background 120ms; }
+  .leads-table tbody tr:hover td { background: rgba(255,255,255,.02); color: var(--tx1); }
+
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+
+  /* Filter pills */
+  .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-pill {
+    padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    border: 1px solid var(--border); background: transparent; color: var(--tx3);
+    cursor: pointer; transition: all .15s;
+  }
+  .filter-pill:hover { border-color: var(--border-l); color: var(--tx2); }
+  .filter-pill.active { background: var(--tx1); color: var(--bg); border-color: var(--tx1); }
+
+  /* Responsive */
+  @media (max-width: 1100px) {
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    .grid-hero, .grid-charts, .grid-mid { grid-template-columns: 1fr; }
+    .grid-bottom { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 700px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    main { padding: 16px !important; }
   }
 </style>
 {% endblock %}
@@ -174,132 +224,182 @@
 {% block content %}
 {% if error %}
 <div class="dash">
-  <div style="background: rgba(196,136,136,0.1); border: 1px solid rgba(196,136,136,0.2); border-radius: 14px; padding: 20px; color: var(--rose);">
+  <div style="background: var(--rose-dim); border: 1px solid rgba(251,113,133,.2); border-radius: 16px; padding: 20px; color: var(--rose);">
     <strong>Error:</strong> {{ error }}
   </div>
 </div>
 {% endif %}
 
 {% if metrics %}
-<div class="dash" x-data="leadsTable()">
+<div class="dash" x-data="dashApp()">
 
-  <div class="dash-header">
-    <h1>Outreach Dashboard</h1>
-    <p>{{ metrics.last_updated }}</p>
-  </div>
-
-  <!-- ═══ HERO ROW ═══════════════════════════ -->
-  <div class="grid g-hero">
-
-    <!-- Main metrics card (navy) -->
-    <div class="fcard fcard-navy">
-      <div class="fcard-sh">Campaign Overview</div>
-      <div class="hero-row">
-        <div class="hero-block">
-          <span class="hero-label">Contacted</span>
-          <span class="hero-num">{{ metrics.summary.contacted }}</span>
-          <span class="hero-trend trend-up">+{{ metrics.summary.leads_today }} today</span>
-        </div>
-        <div class="hero-block">
-          <span class="hero-label">Total Leads</span>
-          <span class="hero-num mid">{{ metrics.summary.total_leads }}</span>
-        </div>
-        <div class="hero-block">
-          <span class="hero-label">Opens</span>
-          <span class="hero-num mid">{{ metrics.summary.opens }}</span>
-          <span class="hero-sub">{{ metrics.summary.open_rate }}% open rate</span>
-        </div>
-      </div>
+  <!-- ═══ KPI STRIP (Instantly-style) ═══ -->
+  <div class="kpi-strip">
+    <div class="card kpi-card">
+      <span class="kpi-label">Sequences Started</span>
+      <span class="kpi-value" style="color:var(--tx1);">{{ metrics.summary.contacted }}</span>
+      <span class="kpi-sub">leads contacted</span>
     </div>
-
-    <!-- Rate cards stack -->
-    <div class="rate-stack">
-      <div class="rate-card rate-card-green rc-green">
-        <span class="rate-card-label">Open Rate</span>
-        <div class="rate-card-row">
-          <span class="rate-card-num">{{ metrics.summary.open_rate }}%</span>
-          <span class="rate-card-sub">{{ metrics.summary.opens }} opens</span>
-        </div>
-      </div>
-      <div class="rate-card rate-card-blue rc-blue">
-        <span class="rate-card-label">Reply Rate</span>
-        <div class="rate-card-row">
-          <span class="rate-card-num">{{ metrics.summary.response_rate }}%</span>
-          <span class="rate-card-sub">{{ metrics.summary.total_responses }} replies</span>
-        </div>
-      </div>
-      <div class="rate-card rate-card-amber rc-amber">
-        <span class="rate-card-label">Pipeline</span>
-        <div class="rate-card-row">
-          <span class="rate-card-num">{{ metrics.pipeline.replied }}</span>
-          <span class="rate-card-pct">replied</span>
-          <span class="rate-card-num" style="margin-left: auto;">{{ metrics.pipeline.won }}</span>
-          <span class="rate-card-pct">won</span>
-        </div>
-      </div>
+    <div class="card kpi-card">
+      <span class="kpi-label">Open Rate</span>
+      <span class="kpi-value" style="color:var(--blue);">{{ metrics.summary.open_rate }}%</span>
+      <span class="kpi-sub"><strong>{{ metrics.summary.opens }}</strong> unique opens</span>
+    </div>
+    <div class="card kpi-card">
+      <span class="kpi-label">Reply Rate</span>
+      <span class="kpi-value" style="color:var(--green);">{{ metrics.summary.response_rate }}%</span>
+      <span class="kpi-sub"><strong>{{ metrics.summary.total_responses }}</strong> total replies</span>
+    </div>
+    <div class="card kpi-card">
+      <span class="kpi-label">Opportunities</span>
+      <span class="kpi-value" style="color:var(--amber);">{{ metrics.pipeline.replied }}</span>
+      <span class="kpi-sub">replies to qualify</span>
+    </div>
+    <div class="card kpi-card">
+      <span class="kpi-label">Conversions</span>
+      <span class="kpi-value" style="color:var(--green);">{{ metrics.pipeline.won }}</span>
+      <span class="kpi-sub">deals closed</span>
     </div>
   </div>
 
-  <!-- ═══ PIPELINE FLOW ══════════════════════ -->
-  <div class="grid g-pipe">
-    <div class="pipe-card">
-      <div class="pipe-label">New</div>
-      <div class="pipe-num">{{ metrics.pipeline.new }}</div>
+  <!-- ═══ HERO ROW ═══ -->
+  <div class="grid-hero">
+    <!-- Campaign Performance -->
+    <div class="card perf-card">
+      <div class="perf-header">
+        <span class="perf-title">Campaign Performance</span>
+        <span class="perf-badge">+{{ metrics.summary.leads_today }} today</span>
+      </div>
+      <div class="perf-metrics">
+        <div class="perf-metric">
+          <div class="perf-metric-label">Total Prospects</div>
+          <div class="perf-metric-value" style="color:var(--tx1);">{{ metrics.summary.total_leads }}</div>
+          <div class="perf-metric-sub">in pipeline</div>
+        </div>
+        <div class="perf-metric">
+          <div class="perf-metric-label">Emails Opened</div>
+          <div class="perf-metric-value" style="color:var(--blue);">{{ metrics.engagement.total_opens }}</div>
+          <div class="perf-metric-sub">{{ metrics.engagement.avg_opens_per_lead }}x avg per lead</div>
+        </div>
+        <div class="perf-metric">
+          <div class="perf-metric-label">Active Sequences</div>
+          <div class="perf-metric-value" style="color:var(--teal);">{{ metrics.pipeline.contacted - metrics.pipeline.replied - metrics.pipeline.won - metrics.pipeline.lost }}</div>
+          <div class="perf-metric-sub">in progress</div>
+        </div>
+      </div>
+      <div id="chart-mini-trend" style="margin: -10px -8px -8px;"></div>
     </div>
-    <div class="pipe-card">
-      <div class="pipe-label">Queued</div>
-      <div class="pipe-num" style="color: var(--blue);">{{ metrics.pipeline.queued }}</div>
-    </div>
-    <div class="pipe-card">
-      <div class="pipe-label">Contacted</div>
-      <div class="pipe-num" style="color: var(--sage);">{{ metrics.pipeline.contacted }}</div>
-    </div>
-    <div class="pipe-card">
-      <div class="pipe-label">Replied</div>
-      <div class="pipe-num" style="color: var(--sand);">{{ metrics.pipeline.replied }}</div>
-    </div>
-    <div class="pipe-card">
-      <div class="pipe-label">Won</div>
-      <div class="pipe-num" style="color: var(--mint);">{{ metrics.pipeline.won }}</div>
+
+    <!-- Pipeline Health -->
+    <div class="card health-card">
+      <span class="health-title">Pipeline Health</span>
+      <div class="health-grid">
+        <div class="health-tile tile-green">
+          <div class="health-tile-label">Contacted</div>
+          <div class="health-tile-value">{{ metrics.pipeline.contacted }}</div>
+          <div class="health-tile-sub">outreach sent</div>
+        </div>
+        <div class="health-tile tile-blue">
+          <div class="health-tile-label">In Queue</div>
+          <div class="health-tile-value">{{ metrics.pipeline.queued }}</div>
+          <div class="health-tile-sub">pending send</div>
+        </div>
+        <div class="health-tile tile-amber">
+          <div class="health-tile-label">Replied</div>
+          <div class="health-tile-value">{{ metrics.pipeline.replied }}</div>
+          <div class="health-tile-sub">action needed</div>
+        </div>
+        <div class="health-tile tile-teal">
+          <div class="health-tile-label">Won</div>
+          <div class="health-tile-value">{{ metrics.pipeline.won }}</div>
+          <div class="health-tile-sub">closed deals</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ═══ MIDDLE ROW: Sequences + Distributions ═══ -->
-  <div class="grid g-3">
+  <!-- ═══ CHART ROW ═══ -->
+  <div class="grid-charts">
+    <div class="card chart-card">
+      <div class="chart-header">
+        <span class="chart-title">Outreach Activity (30 days)</span>
+        <div style="display:flex;gap:14px;">
+          <span style="font-size:11px;color:var(--blue);font-weight:600;">&#9679; Sent</span>
+          <span style="font-size:11px;color:var(--green);font-weight:600;">&#9679; Replies</span>
+        </div>
+      </div>
+      <div id="chart-activity" style="min-height:280px;"></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-header">
+        <span class="chart-title">Industry Mix</span>
+      </div>
+      <div id="chart-industry" style="min-height:280px;"></div>
+    </div>
+  </div>
 
-    <!-- Sequence performance (lavender card) -->
-    <div class="fcard fcard-lav">
-      <div class="fcard-sh">Sequence Performance</div>
-      <div class="seq-rows">
+  <!-- ═══ SEQUENCE + PIPELINE ROW ═══ -->
+  <div class="grid-mid">
+    <div class="card seq-card">
+      <div class="sec-label" style="margin-bottom:16px;">Email Sequence Performance</div>
+      <div class="seq-list">
         {% for em in metrics.email_sequence %}
         {% if em.sent > 0 %}
         <div class="seq-row">
           <div class="seq-name">{{ em.name }}</div>
           <div class="seq-bar">
-            <div class="seq-bar-inner" style="width: {{ [em.response_rate * 5, 100]|min }}%; background: {% if em.response_rate >= 8 %}var(--mint){% elif em.response_rate >= 3 %}var(--sand){% else %}var(--tx3){% endif %};"></div>
+            <div class="seq-bar-fill" style="width: {{ [em.response_rate * 5, 100]|min }}%; background: {% if em.response_rate >= 8 %}var(--green){% elif em.response_rate >= 3 %}var(--amber){% else %}var(--tx3){% endif %};"></div>
           </div>
-          <div class="seq-sent">{{ em.sent }} sent</div>
-          <div class="seq-rate" style="color: {% if em.response_rate >= 8 %}var(--mint){% elif em.response_rate >= 3 %}var(--sand){% else %}var(--tx3){% endif %};">{{ em.response_rate }}%</div>
+          <div class="seq-stat"><strong>{{ em.sent }}</strong> sent</div>
+          <div class="seq-stat"><strong>{{ em.responses }}</strong> replies</div>
+          <div class="seq-rate" style="color:{% if em.response_rate >= 8 %}var(--green){% elif em.response_rate >= 3 %}var(--amber){% else %}var(--tx3){% endif %};">{{ em.response_rate }}%</div>
         </div>
         {% endif %}
         {% endfor %}
       </div>
     </div>
 
-    <!-- Industries -->
-    <div class="card card-p">
-      <div class="sh">Top Industries</div>
-      <div class="dist-rows">
+    <div class="card pipeline-card">
+      <div class="sec-label" style="margin-bottom:16px;">Pipeline Stages</div>
+      {% set total_p = metrics.pipeline.new + metrics.pipeline.queued + metrics.pipeline.contacted + metrics.pipeline.replied + metrics.pipeline.won %}
+      {% set stages = [
+        ('New', metrics.pipeline.new, '--tx3', '#505672'),
+        ('Queued', metrics.pipeline.queued, '--blue', '#60a5fa'),
+        ('Contacted', metrics.pipeline.contacted, '--green', '#34d399'),
+        ('Replied', metrics.pipeline.replied, '--amber', '#fbbf24'),
+        ('Won', metrics.pipeline.won, '--teal', '#2dd4bf')
+      ] %}
+      <div class="pipeline-stages">
+        {% for name, count, var, color in stages %}
+        <div class="pipeline-stage">
+          <div class="stage-dot" style="background:{{ color }};"></div>
+          <div class="stage-label">{{ name }}</div>
+          <div class="stage-bar-bg">
+            <div class="stage-bar-fill" style="width:{{ (count / total_p * 100)|int if total_p else 0 }}%;background:{{ color }};"></div>
+          </div>
+          <div class="stage-value" style="color:{{ color }};">{{ count }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ BOTTOM ROW ═══ -->
+  <div class="grid-bottom">
+    <!-- Top Industries -->
+    <div class="card dist-card">
+      <div class="sec-label" style="margin-bottom:16px;">Top Industries</div>
+      <div class="dist-list">
         {% set max_i = metrics.industry_breakdown.data[0] if metrics.industry_breakdown.data else 1 %}
         {% for i in range(metrics.industry_breakdown.labels|length) %}
         {% if i < 6 %}
-        <div class="dist-row">
-          <div class="dist-row-top">
-            <span class="dist-label">{{ metrics.industry_breakdown.labels[i] }}</span>
-            <span class="dist-val">{{ metrics.industry_breakdown.data[i] }}</span>
+        <div>
+          <div class="dist-row">
+            <div class="dist-label">{{ metrics.industry_breakdown.labels[i] }}</div>
+            <div class="dist-value">{{ metrics.industry_breakdown.data[i] }}</div>
           </div>
-          <div class="dist-bar">
-            <div class="dist-bar-inner" style="width: {{ (metrics.industry_breakdown.data[i] / max_i * 100)|int if max_i else 0 }}%; background: var(--blue);"></div>
+          <div class="dist-bar" style="margin-top:4px;">
+            <div class="dist-bar-fill" style="width:{{ (metrics.industry_breakdown.data[i]/max_i*100)|int if max_i else 0 }}%;background:var(--blue);"></div>
           </div>
         </div>
         {% endif %}
@@ -307,85 +407,53 @@
       </div>
     </div>
 
-    <!-- Countries -->
-    <div class="card card-p">
-      <div class="sh">Top Countries</div>
-      <div class="dist-rows">
-        {% set max_c = metrics.geography.countries[0][1] if metrics.geography.countries else 1 %}
-        {% for country, count in metrics.geography.countries[:6] %}
-        <div class="dist-row">
-          <div class="dist-row-top">
-            <span class="dist-label">{{ country }}</span>
-            <span class="dist-val">{{ count }}</span>
+    <!-- Top Cities -->
+    <div class="card dist-card">
+      <div class="sec-label" style="margin-bottom:16px;">Top Cities</div>
+      <div class="dist-list">
+        {% set max_city = metrics.top_cities[0][1] if metrics.top_cities else 1 %}
+        {% for city, count in metrics.top_cities[:6] %}
+        <div>
+          <div class="dist-row">
+            <div class="dist-label">{{ city }}</div>
+            <div class="dist-value">{{ count }}</div>
           </div>
-          <div class="dist-bar">
-            <div class="dist-bar-inner" style="width: {{ (count / max_c * 100)|int if max_c else 0 }}%; background: var(--sage);"></div>
+          <div class="dist-bar" style="margin-top:4px;">
+            <div class="dist-bar-fill" style="width:{{ (count/max_city*100)|int if max_city else 0 }}%;background:var(--teal);"></div>
           </div>
         </div>
         {% endfor %}
       </div>
     </div>
-  </div>
 
-  <!-- ═══ CHARTS ROW ═════════════════════════ -->
-  <div class="grid g-2">
-    <div class="card card-p">
-      <div class="sh">Outreach Trend (14 days)</div>
-      <div id="chart-trend" class="chart-wrap"></div>
-    </div>
-    <div class="card card-p">
-      <div class="sh">Industry Mix</div>
-      <div id="chart-industry" class="chart-wrap"></div>
-    </div>
-  </div>
-
-  <!-- ═══ BOTTOM: Activity + Table ═══════════ -->
-  <div class="grid g-bottom">
-
-    <div class="card card-p">
-      <div class="sh">Recent Activity</div>
-      <div class="fpills">
-        <button class="fpill" :class="filter==='' && 'active'" @click="filter=''">All</button>
-        <button class="fpill" :class="filter==='new' && 'active'" @click="filter='new'">New</button>
-        <button class="fpill" :class="filter==='contacted' && 'active'" @click="filter='contacted'">Contacted</button>
-        <button class="fpill" :class="filter==='replied' && 'active'" @click="filter='replied'">Replied</button>
-        <button class="fpill" :class="filter==='won' && 'active'" @click="filter='won'">Won</button>
+    <!-- Recent Leads -->
+    <div class="card table-card" x-data="leadsTable()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div class="sec-label" style="margin:0;">Recent Leads</div>
+        <div class="filter-pills">
+          <button class="filter-pill" :class="filter===''?'active':''" @click="filter=''">All</button>
+          <button class="filter-pill" :class="filter==='contacted'?'active':''" @click="filter='contacted'">Contacted</button>
+          <button class="filter-pill" :class="filter==='replied'?'active':''" @click="filter='replied'">Replied</button>
+          <button class="filter-pill" :class="filter==='won'?'active':''" @click="filter='won'">Won</button>
+        </div>
       </div>
-      <div class="act-list">
-        <template x-for="lead in filtered.slice(0, 8)" :key="lead.id">
-          <div class="act-item">
-            <div class="act-company" x-text="lead.company || 'Unknown'"></div>
-            <div class="act-meta">
-              <span class="badge" :class="getBadge(lead.status)" x-text="lead.status || 'unknown'" style="margin-right: 6px;"></span>
-              <span x-text="lead.contact_name || ''"></span>
-              <span x-show="lead.opens"> &middot; <span x-text="lead.opens"></span> opens</span>
-            </div>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <div class="card card-p">
-      <div class="sh">Lead Details</div>
-      <div style="overflow-x: auto;">
-        <table class="dtbl">
+      <div style="max-height:340px;overflow-y:auto;">
+        <table class="leads-table">
           <thead>
             <tr>
               <th>Company</th>
               <th>Contact</th>
               <th>Status</th>
               <th>Opens</th>
-              <th>Response</th>
             </tr>
           </thead>
           <tbody>
-            <template x-for="lead in filtered.slice(0, 10)" :key="lead.id">
+            <template x-for="lead in filtered.slice(0, 12)" :key="lead.id">
               <tr>
-                <td style="font-weight: 600; color: var(--tx1);" x-text="lead.company || '—'"></td>
-                <td x-text="lead.contact_name || '—'"></td>
-                <td><span class="badge" :class="getBadge(lead.status)" x-text="lead.status || '?'"></span></td>
+                <td style="font-weight:600;color:var(--tx1);" x-text="lead.company || '---'"></td>
+                <td x-text="lead.contact_name || '---'"></td>
+                <td><span class="status-badge" :style="getStatusStyle(lead.status)" x-text="lead.status || 'new'"></span></td>
                 <td x-text="lead.opens || '0'"></td>
-                <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" x-text="lead.response || '—'"></td>
               </tr>
             </template>
           </tbody>
@@ -401,9 +469,22 @@
 {% block scripts %}
 {% if metrics %}
 <script>
-const LEADS = [
+function dashApp() {
+  return {
+    num(v) { return Number(v || 0).toLocaleString(); }
+  };
+}
+
+const LEADS_DATA = [
   {% for lead in leads_view %}
-  { id:{{ loop.index }}, company:{{ (lead.company or '')|tojson }}, contact_name:{{ (lead.contact_name or '')|tojson }}, status:{{ (lead.status or '')|tojson|lower }}, opens:{{ (lead.opens or '0')|tojson }}, response:{{ (lead.response or '')|tojson }} },
+  {
+    id: {{ loop.index }},
+    company: {{ (lead.company or '') | tojson }},
+    contact_name: {{ (lead.contact_name or '') | tojson }},
+    status: {{ (lead.status or '') | tojson | lower }},
+    opens: {{ (lead.opens or '0') | tojson }},
+    response: {{ (lead.response or '') | tojson }},
+  },
   {% endfor %}
 ];
 
@@ -411,45 +492,103 @@ function leadsTable() {
   return {
     filter: '',
     get filtered() {
-      if (!this.filter) return LEADS;
-      return LEADS.filter(l => (l.status||'').toLowerCase() === this.filter);
+      if (!this.filter) return LEADS_DATA;
+      return LEADS_DATA.filter(l => (l.status || '').toLowerCase() === this.filter);
     },
-    getBadge(s) {
-      const m = { contacted:'badge-sage', replied:'badge-sand', won:'badge-mint', lost:'badge-rose', new:'badge-sand' };
-      return m[(s||'').toLowerCase()] || 'badge-sage';
+    getStatusStyle(status) {
+      const s = (status || '').toLowerCase();
+      const m = {
+        new: 'background:rgba(80,86,114,.2);color:#8b92ab;',
+        queued: 'background:rgba(96,165,250,.15);color:#60a5fa;',
+        contacted: 'background:rgba(52,211,153,.15);color:#34d399;',
+        replied: 'background:rgba(251,191,36,.15);color:#fbbf24;',
+        won: 'background:rgba(45,212,191,.15);color:#2dd4bf;',
+        lost: 'background:rgba(251,113,133,.15);color:#fb7185;'
+      };
+      return m[s] || m['new'];
     }
   };
 }
 
-/* ── Charts ─────────────────────────────── */
-new ApexCharts(document.querySelector('#chart-trend'), {
-  chart: { type:'area', height:220, toolbar:{show:false}, background:'transparent', fontFamily:'Inter, sans-serif' },
-  series: [
-    { name:'Sent', data:{{ metrics.trend.sent|tojson }} },
-    { name:'Replies', data:{{ metrics.trend.replies|tojson }} }
-  ],
-  stroke: { curve:'smooth', width:[2.5, 2] },
-  colors: ['#7898c8','#72b08a'],
-  fill: { type:'gradient', gradient:{ shadeIntensity:0.05, opacityFrom:0.35, opacityTo:0.02 } },
-  grid: { borderColor:'rgba(42,46,66,0.7)', strokeDashArray:4 },
-  xaxis: { categories:{{ metrics.trend.labels|tojson }}, labels:{ style:{ colors:'#52576e', fontSize:'10px' } }, axisBorder:{show:false}, axisTicks:{show:false} },
-  yaxis: { labels:{ style:{ colors:'#52576e', fontSize:'10px' } } },
-  legend: { position:'top', horizontalAlign:'right', fontSize:'11px', labels:{ colors:'#9098b8' }, markers:{ radius:3 } },
-  dataLabels: { enabled:false },
-  tooltip: { theme:'dark' }
-}).render();
+(function initCharts() {
+  const chartTheme = {
+    chart: { background: 'transparent', fontFamily: 'Inter, system-ui, sans-serif' },
+    grid: { borderColor: 'rgba(37,42,58,.6)', strokeDashArray: 3 },
+    tooltip: { theme: 'dark' }
+  };
 
-new ApexCharts(document.querySelector('#chart-industry'), {
-  chart: { type:'donut', height:220, background:'transparent', fontFamily:'Inter, sans-serif' },
-  labels: {{ metrics.industry_breakdown.labels|tojson }},
-  series: {{ metrics.industry_breakdown.data|tojson }},
-  colors: ['#7898c8','#72b08a','#c4a87a','#8b7cc8','#7bb5a4','#c48888'],
-  stroke: { width:0 },
-  legend: { position:'bottom', fontSize:'10px', labels:{ colors:'#9098b8' }, markers:{ radius:3 }, itemMargin:{ horizontal:6, vertical:3 } },
-  dataLabels: { enabled:false },
-  plotOptions: { pie:{ donut:{ size:'68%', labels:{ show:true, name:{show:false}, value:{ show:true, fontSize:'22px', fontWeight:700, color:'#e8eaf2' }, total:{ show:true, showAlways:true, label:'Total', fontSize:'11px', fontWeight:600, color:'#52576e' } } } } },
-  tooltip: { theme:'dark' }
-}).render();
+  // ── Main Activity Chart (Instantly-style area) ──
+  new ApexCharts(document.querySelector('#chart-activity'), {
+    ...chartTheme,
+    chart: { ...chartTheme.chart, type: 'area', height: 280, toolbar: { show: false } },
+    series: [
+      { name: 'Sent', data: {{ metrics.trend.sent | tojson }} },
+      { name: 'Replies', data: {{ metrics.trend.replies | tojson }} }
+    ],
+    stroke: { curve: 'smooth', width: [3, 2.5] },
+    colors: ['#60a5fa', '#34d399'],
+    fill: {
+      type: 'gradient',
+      gradient: { shadeIntensity: 0.1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 95] }
+    },
+    grid: { ...chartTheme.grid, padding: { left: 8, right: 8 } },
+    xaxis: {
+      categories: {{ metrics.trend.labels | tojson }},
+      labels: { style: { colors: '#505672', fontSize: '10px' }, rotate: -45, rotateAlways: false },
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      tickAmount: 10
+    },
+    yaxis: { labels: { style: { colors: '#505672', fontSize: '10px' } } },
+    legend: { show: false },
+    dataLabels: { enabled: false },
+    tooltip: { ...chartTheme.tooltip, x: { show: true } }
+  }).render();
+
+  // ── Mini Sparkline in Performance Card ──
+  new ApexCharts(document.querySelector('#chart-mini-trend'), {
+    chart: { type: 'area', height: 80, sparkline: { enabled: true }, background: 'transparent' },
+    series: [{ data: {{ metrics.trend.sent | tojson }} }],
+    stroke: { curve: 'smooth', width: 2 },
+    colors: ['#60a5fa'],
+    fill: {
+      type: 'gradient',
+      gradient: { shadeIntensity: 0.1, opacityFrom: 0.25, opacityTo: 0.01 }
+    },
+    tooltip: { enabled: false }
+  }).render();
+
+  // ── Industry Donut ──
+  new ApexCharts(document.querySelector('#chart-industry'), {
+    chart: { type: 'donut', height: 280, background: 'transparent', fontFamily: 'Inter, sans-serif' },
+    labels: {{ metrics.industry_breakdown.labels | tojson }},
+    series: {{ metrics.industry_breakdown.data | tojson }},
+    colors: ['#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#2dd4bf', '#fb7185', '#f97316', '#818cf8'],
+    stroke: { width: 2, colors: ['#171a25'] },
+    legend: {
+      position: 'bottom',
+      fontSize: '11px',
+      labels: { colors: '#8b92ab' },
+      markers: { radius: 4 },
+      itemMargin: { horizontal: 8, vertical: 4 }
+    },
+    dataLabels: { enabled: false },
+    plotOptions: {
+      pie: {
+        donut: {
+          size: '68%',
+          labels: {
+            show: true,
+            name: { show: false },
+            value: { show: true, fontSize: '22px', fontWeight: 700, color: '#f1f3f9' },
+            total: { show: true, showAlways: true, label: 'Total', fontSize: '11px', fontWeight: 600, color: '#505672' }
+          }
+        }
+      }
+    },
+    tooltip: { theme: 'dark' }
+  }).render();
+})();
 </script>
 {% endif %}
 {% endblock %}

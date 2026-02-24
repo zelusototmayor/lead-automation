@@ -61,25 +61,24 @@ YOUR TASK:
 Generate personalized email components for this lead. Be specific, reference real details about their company, and identify relevant pain points.
 
 Return a JSON object with these fields:
-1. "personalized_opener": 1-2 sentences referencing something specific about their company or work. Don't be generic.
-2. "specific_pain_point": 1-2 sentences about a likely automation opportunity based on what they do. Be concrete.
-3. "industry_specific_insight": A valuable observation about automation trends in their industry.
-4. "suggested_subject": A compelling, non-spammy subject line.
+1. "personalized_opener": 1-2 short sentences referencing something specific about their company or work. Max 25 words.
+2. "specific_pain_point": 1-2 short sentences about a likely automation opportunity based on what they do. Max 25 words.
+3. "industry_specific_insight": 1-2 short sentences about an automation trend in their industry. Max 25 words.
+4. "suggested_subject": A compelling, non-spammy subject line. Max 8 words.
 
 Guidelines:
 - Be conversational, not salesy
 - Reference specific details (their services, size, industry)
-- The opener should show you did research
-- Pain points should be realistic for agencies of their size/type
-- Keep each component concise (1-3 sentences max)
+- Keep it concise — these snippets are inserted into a short email, so every word must earn its place
 - Avoid clichés like "I hope this finds you well" or "I noticed your company"
+- No filler phrases like "It's clear that" or "As a company that" — get straight to the point
 
 Return ONLY valid JSON, no other text."""
 
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=500,
+                max_tokens=250,
                 messages=[{"role": "user", "content": prompt}]
             )
 

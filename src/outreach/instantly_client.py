@@ -17,12 +17,6 @@ class InstantlyClient:
     BASE_URL = "https://api.instantly.ai/api/v2"
 
     def __init__(self, api_key: str):
-        """
-        Initialize the Instantly client.
-
-        Args:
-            api_key: Instantly API key (Bearer token)
-        """
         self.api_key = api_key
         self.headers = {
             "Authorization": f"Bearer {api_key}",
@@ -71,15 +65,7 @@ class InstantlyClient:
         return self._make_request("GET", f"campaigns/{campaign_id}")
 
     def create_campaign(self, name: str) -> Optional[dict]:
-        """
-        Create a new campaign.
-
-        Args:
-            name: Campaign name
-
-        Returns:
-            Campaign data or None
-        """
+        """Create a new campaign."""
         data = {"name": name}
         result = self._make_request("POST", "campaigns", data=data)
 
@@ -93,16 +79,7 @@ class InstantlyClient:
         campaign_id: str,
         leads: list[dict]
     ) -> Optional[dict]:
-        """
-        Add leads to a campaign.
-
-        Args:
-            campaign_id: Campaign ID
-            leads: List of lead dictionaries with email, first_name, last_name, etc.
-
-        Returns:
-            API response or None
-        """
+        """Add leads to a campaign."""
         results = []
 
         for lead in leads:
@@ -165,17 +142,41 @@ class InstantlyClient:
         return self._make_request("GET", f"campaigns/{campaign_id}/analytics")
 
     def list_leads(self, campaign_id: str = None, limit: int = 100) -> list[dict]:
-        """List leads in a campaign. V2 uses POST /leads/list."""
-        data = {"limit": limit}
-        if campaign_id:
-            data["campaign_id"] = campaign_id
+        """List leads in a campaign with cursor-based pagination."""
+        all_leads = []
+        starting_after = None
 
-        result = self._make_request("POST", "leads/list", data=data)
+        while True:
+            data = {"limit": limit}
+            if campaign_id:
+                data["campaign_id"] = campaign_id
+            if starting_after:
+                data["starting_after"] = starting_after
 
-        # V2 returns {items: [...]}
-        if result and "items" in result:
-            return result["items"]
-        return result.get("leads", []) if result else []
+            result = self._make_request("POST", "leads/list", data=data)
+
+            if not result:
+                break
+
+            items = result.get("items", [])
+            if not items:
+                items = result.get("leads", [])
+
+            all_leads.extend(items)
+
+            # Check for next page cursor
+            next_cursor = result.get("next_starting_after")
+            if not next_cursor or len(items) < limit:
+                break
+
+            starting_after = next_cursor
+            logger.debug(
+                "Fetching next page of leads",
+                cursor=next_cursor,
+                fetched_so_far=len(all_leads)
+            )
+
+        return all_leads
 
     def get_lead_status(self, email: str, campaign_id: str = None) -> Optional[dict]:
         """Get status of a specific lead."""
@@ -208,16 +209,7 @@ class InstantlyClient:
         end_hour: int = 17,
         timezone: str = "America/New_York"
     ) -> Optional[dict]:
-        """
-        Set campaign sending schedule.
-
-        Args:
-            campaign_id: Campaign ID
-            days: Days to send (0=Sunday through 6=Saturday)
-            start_hour: Hour to start sending (24h format)
-            end_hour: Hour to stop sending (24h format)
-            timezone: Timezone for the schedule
-        """
+        """Set campaign sending schedule."""
         if days is None:
             days = [1, 2, 3, 4, 5]  # Monday to Friday
 
@@ -238,18 +230,7 @@ class InstantlyClient:
         campaign_id: str,
         sequences: list[dict]
     ) -> Optional[dict]:
-        """
-        Set email sequences for a campaign.
-
-        Args:
-            campaign_id: Campaign ID
-            sequences: List of sequence steps with subject and body
-
-        Each sequence item should have:
-        - subject: Email subject
-        - body: Email body (can include {{variables}})
-        - delay: Days to wait before sending (0 for first email)
-        """
+        """Set email sequences for a campaign."""
         data = {
             "campaign_id": campaign_id,
             "sequences": sequences
@@ -264,18 +245,7 @@ def setup_campaign(
     email_sequences: list[dict],
     schedule: dict = None
 ) -> Optional[str]:
-    """
-    Set up a complete campaign in Instantly.
-
-    Args:
-        api_key: Instantly API key
-        campaign_name: Name for the campaign
-        email_sequences: List of email sequence steps
-        schedule: Sending schedule configuration
-
-    Returns:
-        Campaign ID if successful
-    """
+    """Set up a complete campaign in Instantly."""
     client = InstantlyClient(api_key)
 
     # Check if campaign already exists

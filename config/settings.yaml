@@ -15,7 +15,8 @@ google_sheets:
 
 # Lead Sourcing Settings
 lead_sourcing:
-  daily_target: 10  # Number of leads to find per day
+  daily_target: 50  # Number of leads to find per day
+  apollo_credit_budget: 200  # Max Apollo enrichment credits per run (0 = unlimited)
 
   # Target cities for agency search (US only for this campaign)
   target_cities:
@@ -109,3 +110,49 @@ personalization:
     Zelu Sottomayor builds automated outbound systems for agencies. He helps
     them get consistent lead flow without spending hours on prospecting.
     He also does custom automation for other business processes.
+
+# Local Services Pipeline (separate from agency outreach)
+# ICP: Businesses with automatable pain, budget for custom AI/automation, and phone-reachable decision-makers
+local_services:
+  sheet_name: "Local Services"
+  daily_target: 50
+  max_per_query: 5
+
+  target_metros:
+    - name: "New York"
+      state: "NY"
+    - name: "Los Angeles"
+      state: "CA"
+    - name: "Chicago"
+      state: "IL"
+    - name: "Dallas"
+      state: "TX"
+    - name: "Houston"
+      state: "TX"
+    - name: "Atlanta"
+      state: "GA"
+    - name: "Miami"
+      state: "FL"
+    - name: "Phoenix"
+      state: "AZ"
+    - name: "Denver"
+      state: "CO"
+    - name: "Charlotte"
+      state: "NC"
+
+  verticals:
+    recruiting:
+      queries: ["staffing agency", "recruiting firm", "employment agency", "headhunter", "talent acquisition firm"]
+      exclude: ["temp labor", "day labor"]
+    real_estate:
+      queries: ["real estate brokerage", "realty group", "real estate office", "real estate company"]
+      exclude: ["commercial real estate", "real estate investment"]
+    logistics:
+      queries: ["freight broker", "logistics company", "trucking company", "freight forwarding", "shipping broker"]
+      exclude: ["international freight", "ocean freight"]
+    property_management:
+      queries: ["property management company", "property management", "rental management company", "HOA management"]
+      exclude: ["self storage"]
+    insurance:
+      queries: ["insurance agency", "insurance broker", "independent insurance agent", "insurance office"]
+      exclude: []

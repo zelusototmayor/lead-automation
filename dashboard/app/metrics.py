@@ -18,6 +18,8 @@ def calculate_metrics(rows: list[list[str]], header: list[str] | None = None) ->
         "company_size": _calculate_company_size(leads),
         "geography": _calculate_geography(leads),
         "trend": _calculate_trend(leads, today),
+        "engagement": _calculate_engagement(leads),
+        "top_cities": _calculate_top_cities(leads),
         "last_updated": datetime.now().strftime("%H:%M, %d %b %Y"),
     }
 
@@ -276,8 +278,39 @@ def _calculate_geography(leads: list[dict]) -> dict:
     }
 
 
+def _calculate_engagement(leads: list[dict]) -> dict:
+    total_opens = 0
+    total_clicks = 0
+    leads_with_opens = 0
+    leads_with_clicks = 0
+
+    for lead in leads:
+        opens = int(lead.get("opens") or 0) if str(lead.get("opens", "")).strip().isdigit() else 0
+        clicks = int(lead.get("clicks") or 0) if str(lead.get("clicks", "")).strip().isdigit() else 0
+        total_opens += opens
+        total_clicks += clicks
+        if opens > 0:
+            leads_with_opens += 1
+        if clicks > 0:
+            leads_with_clicks += 1
+
+    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    return {
+        "total_opens": total_opens,
+        "total_clicks": total_clicks,
+        "leads_with_opens": leads_with_opens,
+        "leads_with_clicks": leads_with_clicks,
+        "avg_opens_per_lead": round(total_opens / contacted, 1) if contacted else 0,
+    }
+
+
+def _calculate_top_cities(leads: list[dict]) -> list[tuple[str, int]]:
+    cities = Counter(lead["city"].strip() for lead in leads if lead["city"] and lead["city"].strip())
+    return cities.most_common(8)
+
+
 def _calculate_trend(leads: list[dict], today: date) -> dict:
-    days = [today.fromordinal(today.toordinal() - i) for i in range(13, -1, -1)]
+    days = [today.fromordinal(today.toordinal() - i) for i in range(29, -1, -1)]
     sent_map = {d: 0 for d in days}
     reply_map = {d: 0 for d in days}
 

@@ -1,30 +1,43 @@
 """
 Google Sheets CRM Integration
 =============================
-Manages leads in a Google Sheets CRM.
+Manages leads in a Google Sheets CRM with retry logic and rate limiting.
 """
 
 import gspread
+from gspread.exceptions import APIError
+from gspread.cell import Cell
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 from typing import Optional
+import time
 import structlog
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception,
+)
 
 logger = structlog.get_logger()
 
-# Define the scopes
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
-# CRM Column headers
+# Minimum seconds between API calls (Google quota: 60 req/min per user)
+_API_CALL_INTERVAL = 1.5
+
+# CRM Column headers — must match the actual Google Sheet exactly
 CRM_HEADERS = [
     "ID",
     "Company",
     "Contact Name",
     "Email",
     "Phone",
+    "Status call",
+    "Notes",
     "Website",
     "Industry",
     "Employee Count",
@@ -41,157 +54,190 @@ CRM_HEADERS = [
     "Opens",
     "Clicks",
     "Response",
-    "Notes",
+    "Notes",       # Legacy notes column — kept for existing data
+    "Title",
+    "Instantly Status",
     "Source",
     "LinkedIn",
-    "Title",
-    "Instantly Status"
 ]
+
+# Column index lookup. "Notes" appears twice (6 and 23); first occurrence wins
+# so COL["notes"] = 6 (active column G). Legacy notes at 23 is left alone.
+COL = {}
+for i, header in enumerate(CRM_HEADERS):
+    key = header.lower().replace(" ", "_")
+    if key not in COL:
+        COL[key] = i
+
+
+def _is_retryable(exc):
+    """Check if a gspread error is retryable (rate limit or transient)."""
+    if isinstance(exc, APIError):
+        return exc.response.status_code in (429, 500, 503)
+    return False
+
+
+_sheets_retry = retry(
+    retry=retry_if_exception(_is_retryable),
+    wait=wait_exponential(multiplier=2, min=5, max=120),
+    stop=stop_after_attempt(5),
+    before_sleep=lambda rs: logger.warning(
+        "Retrying after Sheets API error",
+        attempt=rs.attempt_number,
+    ),
+)
 
 
 class GoogleSheetsCRM:
-    """Google Sheets CRM manager."""
+    """Google Sheets CRM manager with retry logic and rate limiting."""
 
     def __init__(self, credentials_file: str, spreadsheet_id: str, sheet_name: str = "Leads"):
-        """
-        Initialize the CRM.
-
-        Args:
-            credentials_file: Path to service account JSON file
-            spreadsheet_id: Google Sheets spreadsheet ID
-            sheet_name: Name of the sheet to use
-        """
         self.spreadsheet_id = spreadsheet_id
         self.sheet_name = sheet_name
+        self._last_api_call = 0
+        self._cache = []
 
-        # Authenticate
         creds = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
         self.client = gspread.authorize(creds)
 
-        # Open spreadsheet
-        self.spreadsheet = self.client.open_by_key(spreadsheet_id)
-
-        # Get or create the leads sheet
+        self.spreadsheet = self._api_call(self.client.open_by_key, spreadsheet_id)
         self.sheet = self._get_or_create_sheet(sheet_name)
-
-        # Ensure headers exist
         self._ensure_headers()
+        self._refresh_cache()
 
         logger.info("CRM initialized", spreadsheet_id=spreadsheet_id, sheet=sheet_name)
 
+    def _throttle(self):
+        """Rate-limit API calls to stay under Google Sheets quota."""
+        elapsed = time.time() - self._last_api_call
+        if elapsed < _API_CALL_INTERVAL:
+            time.sleep(_API_CALL_INTERVAL - elapsed)
+        self._last_api_call = time.time()
+
+    @_sheets_retry
+    def _api_call(self, func, *args, **kwargs):
+        """Execute a Sheets API call with throttling and automatic retry on 429/503."""
+        self._throttle()
+        return func(*args, **kwargs)
+
+    def _refresh_cache(self):
+        """Load all sheet data into local cache (single API call)."""
+        all_values = self._api_call(self.sheet.get_all_values)
+        self._cache = all_values[1:] if len(all_values) > 1 else []
+        logger.info("Sheet cache refreshed", rows=len(self._cache))
+
     def _get_or_create_sheet(self, sheet_name: str):
-        """Get existing sheet or create new one."""
         try:
-            return self.spreadsheet.worksheet(sheet_name)
+            return self._api_call(self.spreadsheet.worksheet, sheet_name)
         except gspread.WorksheetNotFound:
             logger.info("Creating new sheet", sheet_name=sheet_name)
-            return self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(CRM_HEADERS))
+            return self._api_call(
+                self.spreadsheet.add_worksheet,
+                title=sheet_name, rows=1000, cols=len(CRM_HEADERS)
+            )
 
     def _ensure_headers(self):
-        """Ensure the sheet has proper headers."""
-        current_headers = self.sheet.row_values(1)
-        if not current_headers or current_headers != CRM_HEADERS:
-            self.sheet.update("A1", [CRM_HEADERS])
-            logger.info("Headers updated")
+        """Ensure headers exist on an empty sheet. Does NOT overwrite existing headers."""
+        current_headers = self._api_call(self.sheet.row_values, 1)
+        if not current_headers:
+            self._api_call(self.sheet.update, "A1", [CRM_HEADERS])
+            logger.info("Headers written to empty sheet")
 
     def _generate_id(self) -> str:
-        """Generate a unique lead ID."""
         return f"LEAD-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
+    def _find_in_cache(self, col_index: int, value: str) -> Optional[tuple]:
+        """Find a row in cache by column value.
+
+        Returns (row_number, row_data) or None.
+        row_number is 1-indexed (header=row 1, first data=row 2).
+        """
+        value_lower = value.lower()
+        for i, row in enumerate(self._cache):
+            if len(row) > col_index and row[col_index].lower() == value_lower:
+                return (i + 2, row)
+        return None
+
     def add_lead(self, lead_data: dict) -> Optional[str]:
-        """
-        Add a new lead to the CRM.
-
-        Args:
-            lead_data: Dictionary with lead information
-
-        Returns:
-            Lead ID if successful, None otherwise
-        """
-        # Check for duplicates by email
+        """Add a new lead to the CRM."""
+        # Duplicate check by email (local cache, no API call)
         email = lead_data.get("email", "")
-        if email and self.find_lead_by_email(email):
+        if email and self._find_in_cache(COL["email"], email):
             logger.info("Duplicate lead skipped", email=email)
             return None
 
-        # Check for duplicates by company name + city
+        # Duplicate check by company+city (local cache, no API call)
         company = lead_data.get("company", "")
         city = lead_data.get("city", "")
-        if company and self.find_lead_by_company(company, city):
-            logger.info("Duplicate company skipped", company=company, city=city)
-            return None
+        if company:
+            company_lower = company.lower()
+            city_lower = city.lower() if city else ""
+            for row in self._cache:
+                if (len(row) > COL["city"]
+                        and row[COL["company"]].lower() == company_lower
+                        and (not city or row[COL["city"]].lower() == city_lower)):
+                    logger.info("Duplicate company skipped", company=company, city=city)
+                    return None
 
         lead_id = self._generate_id()
 
-        row = [
-            lead_id,
-            lead_data.get("company", ""),
-            lead_data.get("contact_name", ""),
-            lead_data.get("email", ""),
-            lead_data.get("phone", ""),
-            lead_data.get("website", ""),
-            lead_data.get("industry", ""),
-            str(lead_data.get("employee_count", "")),
-            lead_data.get("city", ""),
-            lead_data.get("country", ""),
-            str(lead_data.get("lead_score", "")),
-            lead_data.get("status", "New"),
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "",  # Last Contact
-            "FALSE",  # Email 1 Sent
-            "FALSE",  # Email 2 Sent
-            "FALSE",  # Email 3 Sent
-            "FALSE",  # Email 4 Sent
-            "0",  # Opens
-            "0",  # Clicks
-            "",  # Response
-            lead_data.get("notes", ""),
-            lead_data.get("source", ""),
-            lead_data.get("linkedin", ""),
-            lead_data.get("title", ""),
-            ""  # Instantly Status
-        ]
+        row = [""] * len(CRM_HEADERS)
+        row[COL["id"]] = lead_id
+        row[COL["company"]] = lead_data.get("company", "")
+        row[COL["contact_name"]] = lead_data.get("contact_name", "")
+        row[COL["email"]] = lead_data.get("email", "")
+        row[COL["phone"]] = lead_data.get("phone", "")
+        row[COL["status_call"]] = ""
+        row[COL["notes"]] = lead_data.get("notes", "")
+        row[COL["website"]] = lead_data.get("website", "")
+        row[COL["industry"]] = lead_data.get("industry", "")
+        row[COL["employee_count"]] = str(lead_data.get("employee_count", ""))
+        row[COL["city"]] = lead_data.get("city", "")
+        row[COL["country"]] = lead_data.get("country", "")
+        row[COL["lead_score"]] = str(lead_data.get("lead_score", ""))
+        row[COL["status"]] = lead_data.get("status", "New")
+        row[COL["date_added"]] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row[COL["last_contact"]] = ""
+        row[COL["email_1_sent"]] = "FALSE"
+        row[COL["email_2_sent"]] = "FALSE"
+        row[COL["email_3_sent"]] = "FALSE"
+        row[COL["email_4_sent"]] = "FALSE"
+        row[COL["opens"]] = "0"
+        row[COL["clicks"]] = "0"
+        row[COL["response"]] = ""
+        # Index 23 is the legacy Notes column — leave empty
+        row[COL["title"]] = lead_data.get("title", "")
+        row[COL["instantly_status"]] = ""
+        row[COL["source"]] = lead_data.get("source", "")
+        row[COL["linkedin"]] = lead_data.get("linkedin", "")
 
-        self.sheet.append_row(row)
+        self._api_call(self.sheet.append_row, row, table_range="A1")
+        self._cache.append(row)  # Update local cache immediately
         logger.info("Lead added", lead_id=lead_id, company=lead_data.get("company"))
         return lead_id
 
     def find_lead_by_email(self, email: str) -> Optional[dict]:
-        """Find a lead by email address."""
-        try:
-            cell = self.sheet.find(email, in_column=4)  # Email is column D (4)
-            if cell:
-                row_values = self.sheet.row_values(cell.row)
-                return self._row_to_dict(row_values)
-        except gspread.exceptions.CellNotFound:
-            pass
+        """Find a lead by email address (uses local cache)."""
+        match = self._find_in_cache(COL["email"], email)
+        if match:
+            return self._row_to_dict(list(match[1]))
         return None
 
     def find_lead_by_company(self, company: str, city: str = None) -> Optional[dict]:
-        """Find a lead by company name (and optionally city)."""
-        try:
-            cells = self.sheet.findall(company, in_column=2)  # Company is column B (2)
-            for cell in cells:
-                row_values = self.sheet.row_values(cell.row)
-                lead = self._row_to_dict(row_values)
-                if city and lead.get("city", "").lower() != city.lower():
+        """Find a lead by company name and optionally city (uses local cache)."""
+        company_lower = company.lower()
+        for row in self._cache:
+            if len(row) > COL["company"] and row[COL["company"]].lower() == company_lower:
+                if city and len(row) > COL["city"] and row[COL["city"]].lower() != city.lower():
                     continue
-                return lead
-        except gspread.exceptions.CellNotFound:
-            pass
+                return self._row_to_dict(list(row))
         return None
 
     def get_leads_for_outreach(self, limit: int = 10) -> list[dict]:
-        """
-        Get leads that are ready for email outreach.
-
-        Returns leads with status 'New' and no emails sent yet.
-        """
-        all_rows = self.sheet.get_all_values()[1:]  # Skip header
-
+        """Get leads ready for email outreach (uses local cache)."""
         leads = []
-        for row in all_rows:
-            lead = self._row_to_dict(row)
+        for row in self._cache:
+            lead = self._row_to_dict(list(row))
             if (
                 lead.get("status") == "New"
                 and lead.get("email")
@@ -200,64 +246,50 @@ class GoogleSheetsCRM:
                 leads.append(lead)
                 if len(leads) >= limit:
                     break
-
         logger.info("Found leads for outreach", count=len(leads))
         return leads
 
     def get_leads_for_followup(self, step: int = 2) -> list[dict]:
-        """
-        Get leads that need follow-up emails.
-
-        Args:
-            step: Which follow-up step (2, 3, or 4)
-        """
-        all_rows = self.sheet.get_all_values()[1:]  # Skip header
-
+        """Get leads that need follow-up emails (uses local cache)."""
         leads = []
-        for row in all_rows:
-            lead = self._row_to_dict(row)
-
-            # Skip if already responded
+        for row in self._cache:
+            lead = self._row_to_dict(list(row))
             if lead.get("response"):
                 continue
-
-            # Check which email should be sent next
             email_key = f"email_{step}_sent"
             prev_email_key = f"email_{step-1}_sent"
-
             if (
                 lead.get("email")
                 and lead.get(prev_email_key) == "TRUE"
                 and lead.get(email_key) == "FALSE"
             ):
                 leads.append(lead)
-
         logger.info("Found leads for followup", step=step, count=len(leads))
         return leads
 
     def update_lead(self, lead_id: str, updates: dict) -> bool:
-        """
-        Update a lead's information.
-
-        Args:
-            lead_id: The lead ID to update
-            updates: Dictionary of field updates
-        """
+        """Update a lead using batch cell update (single API call for all fields)."""
         try:
-            cell = self.sheet.find(lead_id, in_column=1)  # ID is column A (1)
-            if not cell:
+            match = self._find_in_cache(COL["id"], lead_id)
+            if not match:
                 logger.warning("Lead not found", lead_id=lead_id)
                 return False
 
-            row_num = cell.row
+            row_num, _ = match
+            cache_idx = row_num - 2
 
-            # Map field names to column indices
-            field_to_col = {header.lower().replace(" ", "_"): i + 1 for i, header in enumerate(CRM_HEADERS)}
-
+            cells = []
             for field, value in updates.items():
-                col = field_to_col.get(field.lower())
-                if col:
-                    self.sheet.update_cell(row_num, col, str(value))
+                col_idx = COL.get(field.lower())
+                if col_idx is not None:
+                    cells.append(Cell(row=row_num, col=col_idx + 1, value=str(value)))
+                    # Update local cache
+                    while len(self._cache[cache_idx]) <= col_idx:
+                        self._cache[cache_idx].append("")
+                    self._cache[cache_idx][col_idx] = str(value)
+
+            if cells:
+                self._api_call(self.sheet.update_cells, cells)
 
             logger.info("Lead updated", lead_id=lead_id, updates=list(updates.keys()))
             return True
@@ -282,20 +314,16 @@ class GoogleSheetsCRM:
         })
 
     def get_all_emails(self) -> set:
-        """Get all email addresses in the CRM (for deduplication)."""
-        try:
-            email_col = self.sheet.col_values(4)[1:]  # Column D, skip header
-            return set(email.lower() for email in email_col if email)
-        except Exception as e:
-            logger.error("Failed to get emails", error=str(e))
-            return set()
+        """Get all email addresses in the CRM (uses local cache)."""
+        return set(
+            row[COL["email"]].lower() for row in self._cache
+            if len(row) > COL["email"] and row[COL["email"]]
+        )
 
     def get_stats(self) -> dict:
-        """Get CRM statistics."""
-        all_rows = self.sheet.get_all_values()[1:]
-
+        """Get CRM statistics (uses local cache)."""
         stats = {
-            "total_leads": len(all_rows),
+            "total_leads": len(self._cache),
             "new": 0,
             "contacted": 0,
             "replied": 0,
@@ -303,8 +331,8 @@ class GoogleSheetsCRM:
             "lost": 0
         }
 
-        for row in all_rows:
-            status = row[11].lower() if len(row) > 11 else ""  # Status column
+        for row in self._cache:
+            status = row[COL["status"]].lower() if len(row) > COL["status"] else ""
             if status == "new":
                 stats["new"] += 1
             elif status == "contacted":
@@ -319,48 +347,13 @@ class GoogleSheetsCRM:
         return stats
 
     def _row_to_dict(self, row: list) -> dict:
-        """Convert a row to a dictionary."""
-        # Pad row if needed
+        """Convert a row to a dictionary using COL mapping."""
         while len(row) < len(CRM_HEADERS):
             row.append("")
-
-        return {
-            "id": row[0],
-            "company": row[1],
-            "contact_name": row[2],
-            "email": row[3],
-            "phone": row[4],
-            "website": row[5],
-            "industry": row[6],
-            "employee_count": row[7],
-            "city": row[8],
-            "country": row[9],
-            "lead_score": row[10],
-            "status": row[11],
-            "date_added": row[12],
-            "last_contact": row[13],
-            "email_1_sent": row[14],
-            "email_2_sent": row[15],
-            "email_3_sent": row[16],
-            "email_4_sent": row[17],
-            "opens": row[18] if len(row) > 18 else "0",
-            "clicks": row[19] if len(row) > 19 else "0",
-            "response": row[20] if len(row) > 20 else "",
-            "notes": row[21] if len(row) > 21 else "",
-            "source": row[22] if len(row) > 22 else "",
-            "linkedin": row[23] if len(row) > 23 else "",
-            "title": row[24] if len(row) > 24 else "",
-            "instantly_status": row[25] if len(row) > 25 else ""
-        }
+        return {key: row[idx] for key, idx in COL.items()}
 
     def update_from_instantly(self, email: str, instantly_data: dict) -> bool:
-        """
-        Update lead with data synced from Instantly.
-
-        Args:
-            email: Lead email address
-            instantly_data: Dict with opens, clicks, status, etc.
-        """
+        """Update lead with data synced from Instantly."""
         lead = self.find_lead_by_email(email)
         if not lead:
             return False
@@ -373,9 +366,21 @@ class GoogleSheetsCRM:
             updates["clicks"] = str(instantly_data["clicks"])
         if "instantly_status" in instantly_data:
             updates["instantly_status"] = instantly_data["instantly_status"]
+
+        # Update Email X Sent columns based on emails_sent_count
+        emails_sent = instantly_data.get("emails_sent_count", 0)
+        if emails_sent > 0:
+            for step in range(1, min(emails_sent, 4) + 1):
+                updates[f"email_{step}_sent"] = "TRUE"
+            updates["last_contact"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # Handle replies (highest priority status)
         if "response" in instantly_data and instantly_data["response"]:
             updates["response"] = instantly_data["response"]
             updates["status"] = "Replied"
+        # Status upgrade: only promote New/Queued to Contacted, never downgrade
+        elif emails_sent > 0 and lead.get("status") in ("New", "Queued"):
+            updates["status"] = "Contacted"
 
         if updates:
             return self.update_lead(lead["id"], updates)

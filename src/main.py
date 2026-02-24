@@ -16,8 +16,9 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.lead_sourcing import search_agencies, enrich_lead
+from src.lead_sourcing.apollo import ApolloClient
 from src.crm import GoogleSheetsCRM
-from src.outreach import EmailPersonalizer, calculate_lead_score, InstantlyClient, sync_from_instantly
+from src.outreach import EmailPersonalizer, calculate_lead_score, InstantlyClient, InstantlySyncer
 
 # Configure logging
 structlog.configure(
@@ -94,6 +95,8 @@ class LeadAutomation:
         # API keys
         self.google_maps_key = config["api_keys"]["google_maps"]
         self.apollo_key = config["api_keys"]["apollo"]
+        apollo_budget = config.get("lead_sourcing", {}).get("apollo_credit_budget", 0)
+        self.apollo_client = ApolloClient(self.apollo_key, credit_budget=apollo_budget)
 
         logger.info("Lead automation initialized")
 
@@ -156,7 +159,8 @@ class LeadAutomation:
                     api_key=self.apollo_key,
                     company_name=agency["name"],
                     website=agency.get("website"),
-                    city=city
+                    city=city,
+                    client=self.apollo_client,
                 )
 
                 # Get primary contact
@@ -196,14 +200,18 @@ class LeadAutomation:
                     existing_emails.add(email.lower())
                     leads_needed -= 1
 
-                    logger.info(
+                    logger.warning(
                         "Lead added",
                         company=agency["name"],
                         email=email,
-                        score=lead_data["lead_score"]
+                        score=lead_data["lead_score"],
+                        apollo_credits_used=self.apollo_client._credits_used
                     )
 
-        logger.info("Daily sourcing complete", new_leads=len(new_leads))
+        logger.warning("Daily sourcing complete",
+                       new_leads=len(new_leads),
+                       apollo_credits_used=self.apollo_client._credits_used,
+                       apollo_budget=self.apollo_client._credit_budget)
         return new_leads
 
     def personalize_and_queue_leads(self, leads: list[dict] = None) -> int:
@@ -217,7 +225,7 @@ class LeadAutomation:
             Number of leads queued
         """
         if leads is None:
-            leads = self.crm.get_leads_for_outreach(limit=10)
+            leads = self.crm.get_leads_for_outreach(limit=11)
 
         if not leads:
             logger.info("No leads to process")
@@ -290,11 +298,11 @@ class LeadAutomation:
         logger.info("Syncing data from Instantly...")
 
         try:
-            results = sync_from_instantly(
+            syncer = InstantlySyncer(
                 instantly_api_key=self.config.get("instantly", {}).get("api_key", ""),
-                credentials_file=self.config["google_sheets"]["credentials_file"],
-                spreadsheet_id=self.config["google_sheets"]["spreadsheet_id"]
+                crm=self.crm,
             )
+            results = syncer.sync_all_leads()
             logger.info(
                 "Instantly sync complete",
                 leads_synced=results.get("crm_updated", 0),

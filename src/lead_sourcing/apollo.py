@@ -16,13 +16,52 @@ class ApolloClient:
 
     BASE_URL = "https://api.apollo.io/v1"
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, credit_budget: int = 0):
+        """
+        Args:
+            api_key: Apollo API key
+            credit_budget: Max enrichment credits to use (0 = unlimited)
+        """
         self.api_key = api_key
         self.headers = {
             "Content-Type": "application/json",
             "Cache-Control": "no-cache",
             "X-Api-Key": api_key
         }
+        self._credits_exhausted = False
+        self._credit_budget = credit_budget
+        self._credits_used = 0
+
+    @staticmethod
+    def _extract_error_detail(exc: requests.RequestException) -> str:
+        """Extract the response body from a request exception for logging."""
+        if hasattr(exc, "response") and exc.response is not None:
+            try:
+                return str(exc.response.json())
+            except Exception:
+                return exc.response.text[:300]
+        return ""
+
+    def _check_credits_exhausted(self, exc: requests.RequestException) -> bool:
+        """Check if the error is due to insufficient credits and flag it."""
+        detail = self._extract_error_detail(exc)
+        if "insufficient credits" in detail.lower():
+            if not self._credits_exhausted:
+                logger.error("Apollo credits exhausted — skipping remaining credit-consuming calls",
+                             credits_used=self._credits_used)
+                self._credits_exhausted = True
+            return True
+        return False
+
+    def _check_budget(self) -> bool:
+        """Return True if we've hit the credit budget and should stop."""
+        if self._credit_budget and self._credits_used >= self._credit_budget:
+            if not self._credits_exhausted:
+                logger.warning("Apollo credit budget reached — stopping enrichment",
+                               budget=self._credit_budget, credits_used=self._credits_used)
+                self._credits_exhausted = True
+            return True
+        return False
 
     def search_organizations(
         self,
@@ -54,6 +93,9 @@ class ApolloClient:
             domain = domain.replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
             payload["q_organization_domains"] = domain
 
+        if self._credits_exhausted:
+            return None
+
         try:
             response = requests.post(url, json=payload, headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -84,32 +126,22 @@ class ApolloClient:
             }
 
         except requests.RequestException as e:
-            logger.error("Apollo organization search failed", error=str(e))
+            self._check_credits_exhausted(e)
+            detail = self._extract_error_detail(e)
+            logger.error("Apollo organization search failed", error=str(e), response_detail=detail)
             return None
 
-    def find_contacts(
+    def _search_people_free(
         self,
         company_domain: str = None,
         company_name: str = None,
-        titles: list[str] = None,
         seniority: list[str] = None,
-        limit: int = 3
+        limit: int = 6,
     ) -> list[dict]:
         """
-        Find contacts at a company using the new mixed_people/api_search endpoint.
-        Then enrich by ID to get emails (costs credits).
-
-        Args:
-            company_domain: Company website domain
-            company_name: Company name (used if domain not available)
-            titles: Job titles to search for
-            seniority: Seniority levels (e.g., ["owner", "founder", "c_suite", "director"])
-            limit: Maximum contacts to return
-
-        Returns:
-            List of contact dictionaries
+        Search for people using the free mixed_people/api_search endpoint.
+        Returns raw person dicts from Apollo (no credits consumed).
         """
-        # Step 1: Search for people (free, no credits)
         search_url = "https://api.apollo.io/api/v1/mixed_people/api_search"
 
         if not seniority:
@@ -117,7 +149,7 @@ class ApolloClient:
 
         payload = {
             "page": 1,
-            "per_page": limit * 2,  # Get extra in case some don't have emails
+            "per_page": limit,
             "person_seniorities": seniority
         }
 
@@ -136,49 +168,115 @@ class ApolloClient:
             data = response.json()
 
             people = data.get("people", [])
-            logger.info(f"Found {len(people)} people in search", company=company_domain or company_name)
-
-            # Step 2: Enrich people who have email (costs credits)
-            contacts = []
-            for person in people:
-                if len(contacts) >= limit:
-                    break
-
-                # Only enrich if they have email
-                if not person.get("has_email"):
-                    continue
-
-                person_id = person.get("id")
-                if not person_id:
-                    continue
-
-                # Enrich by ID to get full details + email
-                enriched = self._enrich_person_by_id(person_id)
-                if enriched and enriched.get("email"):
-                    contacts.append(enriched)
-
-            logger.info(
-                "Found contacts with emails",
-                company=company_domain or company_name,
-                count=len(contacts)
-            )
-            return contacts
+            logger.info(f"Found {len(people)} people in free search", company=company_domain or company_name)
+            return people
 
         except requests.RequestException as e:
-            logger.error("Apollo contact search failed", error=str(e))
+            detail = self._extract_error_detail(e)
+            logger.error("Apollo free people search failed", error=str(e), response_detail=detail)
             return []
+
+    def find_contacts_free(
+        self,
+        company_domain: str = None,
+        company_name: str = None,
+        seniority: list[str] = None,
+        limit: int = 1,
+    ) -> list[dict]:
+        """
+        Find contacts using ONLY the free search endpoint (no credits).
+        Returns name/title but NOT email addresses.
+        Useful for phone-first pipelines that don't need emails.
+        """
+        people = self._search_people_free(
+            company_domain=company_domain,
+            company_name=company_name,
+            seniority=seniority,
+            limit=limit * 2,
+        )
+
+        contacts = []
+        for person in people:
+            if len(contacts) >= limit:
+                break
+
+            full_name = person.get("name") or ""
+            if not full_name:
+                first = person.get("first_name", "")
+                last = person.get("last_name", "")
+                full_name = f"{first} {last}".strip()
+
+            if not full_name:
+                continue
+
+            contacts.append({
+                "full_name": full_name,
+                "title": person.get("title", ""),
+                "linkedin_url": person.get("linkedin_url", ""),
+            })
+
+        logger.info("Found contacts (free)", company=company_domain or company_name, count=len(contacts))
+        return contacts
+
+    def find_contacts(
+        self,
+        company_domain: str = None,
+        company_name: str = None,
+        titles: list[str] = None,
+        seniority: list[str] = None,
+        limit: int = 3
+    ) -> list[dict]:
+        """
+        Find contacts at a company using the free search, then enrich by ID
+        to get emails (costs credits). Use find_contacts_free() if you don't
+        need emails.
+        """
+        people = self._search_people_free(
+            company_domain=company_domain,
+            company_name=company_name,
+            seniority=seniority,
+            limit=limit * 2,
+        )
+
+        # Enrich people who have email (costs credits)
+        contacts = []
+        for person in people:
+            if len(contacts) >= limit:
+                break
+
+            if not person.get("has_email"):
+                continue
+
+            person_id = person.get("id")
+            if not person_id:
+                continue
+
+            enriched = self._enrich_person_by_id(person_id)
+            if enriched and enriched.get("email"):
+                contacts.append(enriched)
+
+        logger.info(
+            "Found contacts with emails",
+            company=company_domain or company_name,
+            count=len(contacts)
+        )
+        return contacts
 
     def _enrich_person_by_id(self, person_id: str) -> Optional[dict]:
         """
         Enrich a person by their Apollo ID to get full details including email.
         This costs credits.
         """
+        if self._credits_exhausted or self._check_budget():
+            return None
+
         url = f"{self.BASE_URL}/people/match"
         payload = {"id": person_id}
 
         try:
             response = requests.post(url, json=payload, headers=self.headers, timeout=30)
             response.raise_for_status()
+            self._credits_used += 1
             person = response.json().get("person", {})
 
             if not person:
@@ -202,7 +300,9 @@ class ApolloClient:
             }
 
         except requests.RequestException as e:
-            logger.error("Apollo person enrichment failed", error=str(e), person_id=person_id)
+            self._check_credits_exhausted(e)
+            detail = self._extract_error_detail(e)
+            logger.error("Apollo person enrichment failed", error=str(e), person_id=person_id, response_detail=detail)
             return None
 
     def enrich_email(self, email: str) -> Optional[dict]:
@@ -241,7 +341,9 @@ class ApolloClient:
             }
 
         except requests.RequestException as e:
-            logger.error("Apollo email enrichment failed", error=str(e))
+            self._check_credits_exhausted(e)
+            detail = self._extract_error_detail(e)
+            logger.error("Apollo email enrichment failed", error=str(e), response_detail=detail)
             return None
 
 
@@ -249,7 +351,8 @@ def enrich_lead(
     api_key: str,
     company_name: str,
     website: str = None,
-    city: str = None
+    city: str = None,
+    client: ApolloClient = None,
 ) -> dict:
     """
     Enrich a lead with Apollo data.
@@ -259,11 +362,13 @@ def enrich_lead(
         company_name: Company name
         website: Company website
         city: Company city
+        client: Optional reusable ApolloClient (preserves credit-exhaustion state across calls)
 
     Returns:
         Enriched lead data
     """
-    client = ApolloClient(api_key)
+    if client is None:
+        client = ApolloClient(api_key)
 
     result = {
         "company_name": company_name,
@@ -291,11 +396,11 @@ def enrich_lead(
             "keywords": org_data.get("keywords", [])
         })
 
-    # Find decision-maker contacts
+    # Find decision-maker contacts (limit=1: we only use the primary contact)
     contacts = client.find_contacts(
         company_domain=website,
         company_name=company_name,
-        limit=3
+        limit=1
     )
 
     if contacts:
