@@ -79,6 +79,7 @@ def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
         "title": "",
     }
 
+    # First pass: extract known positional fields
     for i in range(12, min(len(row), 23)):
         v = txt(i)
         if not out["date_added"] and is_dt(v):
@@ -96,9 +97,12 @@ def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
             out["opens"] = v
         elif v.isdigit() and out["clicks"] == "":
             out["clicks"] = v
-        elif "repl" in v.lower() and not out["response"]:
+        elif v and not out["response"] and len(v) > 10 and not is_dt(v) and not is_bool(v) and not v.isdigit() and not any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import", "linkedin.com"]):
+            # Heuristic: response is a non-empty, non-date, non-boolean, non-numeric string
+            # that's more than 10 chars and not a known source/linkedIn field
             out["response"] = v
 
+    # Second pass: extract fields from remaining columns using pattern matching
     for i in range(22, len(row)):
         v = txt(i)
         if not v:
@@ -109,11 +113,12 @@ def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
             out["email"] = v
         elif any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import"]) and not out["source"]:
             out["source"] = v
-        elif any(k in v.lower() for k in ["ceo", "founder", "director", "manager", "owner", "president"]) and not out["title"]:
+        elif any(k in v.lower() for k in ["ceo", "founder", "director", "manager", "owner", "president", "head", "vp", "chief"]) and not out["title"]:
             out["title"] = v
-        elif v.lower() in ("active", "completed", "unknown (-1)"):
+        elif v.lower() in ("active", "completed", "unknown (-1)", "true", "false"):
             pass
-        elif "repl" in v.lower() and not out["response"]:
+        elif v and not out["response"] and len(v) > 10 and not is_url(v) and not any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import"]):
+            # Response text is typically longer prose (not URLs, not short codes, not source markers)
             out["response"] = v
 
     if not out["last_contact"]:
