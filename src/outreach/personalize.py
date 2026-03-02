@@ -49,10 +49,10 @@ class EmailPersonalizer:
         prompt = f"""You are helping write a personalized cold email for a boutique automation agency.
 
 SENDER INFORMATION:
-{sender_info.get('bio', 'An automation specialist helping agencies eliminate manual work.')}
+{sender_info.get('bio', 'Builds managed business development systems for professional services firms.')}
 
 VALUE PROPOSITION:
-{sender_info.get('value_proposition', 'Helping agencies automate repetitive processes.')}
+{sender_info.get('value_proposition', 'A managed outbound system that fills your pipeline so you can focus on delivery.')}
 
 LEAD INFORMATION:
 {lead_context}
@@ -62,8 +62,8 @@ Generate personalized email components for this lead. Be specific, reference rea
 
 Return a JSON object with these fields:
 1. "personalized_opener": 1-2 short sentences referencing something specific about their company or work. Max 25 words.
-2. "specific_pain_point": 1-2 short sentences about a likely automation opportunity based on what they do. Max 25 words.
-3. "industry_specific_insight": 1-2 short sentences about an automation trend in their industry. Max 25 words.
+2. "specific_pain_point": 1-2 short sentences about why the sender's offer would help THIS specific company. Max 25 words.
+3. "industry_specific_insight": 1-2 short sentences with a valuable observation about their industry. Max 25 words.
 4. "suggested_subject": A compelling, non-spammy subject line. Max 8 words.
 
 Guidelines:
@@ -107,10 +107,10 @@ Return ONLY valid JSON, no other text."""
             logger.error("Personalization failed", error=str(e))
             # Return fallback content
             return {
-                "personalized_opener": f"I came across {lead.get('company', 'your agency')} and was impressed by your work in {lead.get('industry', 'the industry')}.",
-                "specific_pain_point": "Many agencies spend hours each week on manual data entry and reporting that could be fully automated.",
-                "industry_specific_insight": "Agencies that automate their lead management typically see 40% more time for client work.",
-                "suggested_subject": f"Quick question for {lead.get('company', 'your team')}"
+                "personalized_opener": f"I came across {lead.get('company', 'your firm')} and was impressed by your work in {lead.get('industry', 'the industry')}.",
+                "specific_pain_point": "Most firms this size have principals splitting time between project delivery and chasing new business — that's the gap we fill.",
+                "industry_specific_insight": "Firms that proactively reach potential clients instead of waiting on referrals consistently win more work.",
+                "suggested_subject": f"New project pipeline for {lead.get('company', 'your firm')}"
             }
 
     def generate_full_email(
@@ -231,7 +231,7 @@ def calculate_lead_score(lead: dict) -> int:
         score += 1
 
     # Industry match (+2)
-    good_industries = ["marketing", "advertising", "media", "communications", "pr", "creative", "digital"]
+    good_industries = ["engineering", "architecture", "environmental", "consulting", "construction", "surveying", "geotechnical", "civil", "structural", "mechanical"]
     industry = (lead.get("industry") or "").lower()
     if any(ind in industry for ind in good_industries):
         score += 2

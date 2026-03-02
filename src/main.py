@@ -270,7 +270,7 @@ class LeadAutomation:
 
         # Add to Instantly campaign
         if personalized_leads:
-            campaign_name = self.config.get("instantly", {}).get("campaign_name", "Agency Outreach")
+            campaign_name = self.config.get("instantly", {}).get("campaign_name", "AEC Business Development")
 
             # Find or create campaign
             campaigns = self.instantly.list_campaigns()

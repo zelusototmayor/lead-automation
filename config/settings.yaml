@@ -11,14 +11,14 @@ api_keys:
 google_sheets:
   spreadsheet_id: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
   credentials_file: "config/google_credentials.json"
-  sheet_name: "Leads"
+  sheet_name: "AEC Leads"
 
 # Lead Sourcing Settings
 lead_sourcing:
   daily_target: 50  # Number of leads to find per day
   apollo_credit_budget: 200  # Max Apollo enrichment credits per run (0 = unlimited)
 
-  # Target cities for agency search (US only for this campaign)
+  # Target cities (US metros with strong AEC / development activity)
   target_cities:
     - name: "New York"
       country: "US"
@@ -51,26 +51,31 @@ lead_sourcing:
     - name: "San Diego"
       country: "US"
 
-  # Search queries for finding agencies
+  # Search queries for finding AEC professional services firms
   search_queries:
-    - "marketing agency"
-    - "digital marketing agency"
-    - "PR agency"
-    - "communications agency"
-    - "advertising agency"
-    - "creative agency"
-    - "media agency"
-    - "sports marketing agency"
-    - "branding agency"
-    - "social media agency"
+    - "civil engineering firm"
+    - "structural engineering firm"
+    - "MEP engineering firm"
+    - "environmental consulting firm"
+    - "architecture firm"
+    - "geotechnical engineering firm"
+    - "land surveying company"
+    - "environmental remediation company"
+    - "engineering consulting firm"
 
-  # Industries to exclude (competitors)
+  # Exclude keywords (mega-firms too large for our ICP, institutions)
   exclude_keywords:
-    - "automation"
-    - "AI agency"
-    - "software development"
-    - "web development"
-    - "app development"
+    - "AECOM"
+    - "Jacobs"
+    - "WSP"
+    - "Arcadis"
+    - "Stantec"
+    - "Kimley-Horn"
+    - "HDR"
+    - "Gensler"
+    - "university"
+    - "college"
+    - "government"
 
 # Email Settings
 email:
@@ -91,7 +96,7 @@ email:
 # Instantly.ai Settings
 instantly:
   api_key: ${INSTANTLY_API_KEY}
-  campaign_name: "Agency Outreach"
+  campaign_name: "AEC Business Development"
 
 # Email Personalization
 personalization:
@@ -100,18 +105,20 @@ personalization:
 
   # Your value proposition for the AI to use
   value_proposition: |
-    I build fully automated outbound systems for agencies. The system finds
-    ideal clients, researches them, writes personalized emails, sends sequences,
-    and books calls—all automatically. It's like hiring a salesperson for a
-    fraction of the cost. This very email is proof it works.
+    I build managed business development systems for engineering and architecture
+    firms. The system identifies potential clients (developers, property owners,
+    GCs, facilities managers), researches them, writes personalized introductions,
+    and delivers warm conversations — so your principals can focus on winning work
+    and delivering projects, not prospecting. This very email is proof it works.
 
   # Sender bio for context
   sender_bio: |
-    Zelu Sottomayor builds automated outbound systems for agencies. He helps
-    them get consistent lead flow without spending hours on prospecting.
-    He also does custom automation for other business processes.
+    Zelu Sottomayor builds managed business development systems for AEC firms.
+    He helps engineering and architecture practices generate a steady pipeline
+    of new client introductions without pulling principals away from billable
+    work or relying solely on referrals and RFPs.
 
-# Local Services Pipeline (separate from agency outreach)
+# Local Services Pipeline (separate from AEC outreach)
 # ICP: Businesses with automatable pain, budget for custom AI/automation, and phone-reachable decision-makers
 local_services:
   sheet_name: "Local Services"

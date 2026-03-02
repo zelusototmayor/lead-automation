@@ -3,38 +3,39 @@
 # These templates use placeholders that get filled by Claude AI
 # for maximum personalization.
 #
-# Focus: Automated outbound for agencies - "a salesperson for a fraction of the price"
+# Focus: Managed BD systems for AEC professional services firms
 
 sequences:
   default:
-    name: "Agency Outreach Sequence"
+    name: "AEC Business Development Sequence"
     emails:
       # Email 1: Initial Outreach (Day 0)
       - step: 1
         delay_days: 0
         subject_options:
-          - "How {{company_name}} found new clients this week"
-          - "{{first_name}}, would you hire a sales person for 500$/month"
-          - "You can do outbound on autopilot - this one was :)"
+          - "New project pipeline for {{company_name}}"
+          - "{{first_name}}, quick question about your pipeline"
+          - "How {{company_name}} could win more private-sector work"
         body_template: |
           Hi {{first_name}},
 
           {{personalized_opener}}
 
-          Here's the thing: this email found you, researched {{company_name}},
-          wrote itself, and landed in your inbox—all automatically.
+          Here's the thing: this email found {{company_name}}, researched your firm,
+          wrote itself, and landed in your inbox — all automatically.
 
-          That's what I build for agencies: fully automated outbound.
-          It finds your ideal clients, writes personalized emails, sends them,
-          and follows up. You just show up to the calls.
+          That's what I build for engineering and architecture firms: a managed
+          business development system. It identifies potential clients, writes
+          personalized introductions, sends them, and follows up — so your
+          principals can focus on delivery, not prospecting.
 
-          Think of it as hiring a salesperson for a fraction of the cost—
-          one that works 24/7 and never forgets to follow up.
+          Think of it as having a dedicated BD coordinator filling your pipeline,
+          for a fraction of the cost of a full-time hire.
 
           {{specific_pain_point}}
 
-          If you're curious how this would look for {{company_name}},
-          grab 30 minutes here: https://zelusottomayor.com/book-call
+          If you're open to seeing how this would work for {{company_name}},
+          grab 20 minutes here: https://zelusottomayor.com/book-call
 
           Best,
           Ze Lu Sottomayor
@@ -43,62 +44,62 @@ sequences:
       - step: 2
         delay_days: 3
         subject_options:
-          - "Re: How {{company_name}} found new clients this week"
+          - "Re: New project pipeline for {{company_name}}"
         body_template: |
           Hi {{first_name}},
 
           Quick follow-up.
 
-          Most agencies I talk to have the same problem: great at the work,
-          but outbound is either inconsistent or eating up hours that should
-          go to clients.
+          {{specific_pain_point}}
 
-          What I usually help agencies with is:
-          • Finding companies that match your ideal client profile
-          • Researching each one for personalized outreach
-          • Sending emails + follow-ups automatically
-          • Booking calls directly into your calendar
+          The short version of what we do: we build outbound systems that run
+          in the background so your team doesn't have to spend time on prospecting.
+          You get leads researched, contacted, and followed up with — automatically.
 
-          You focus on closing and delivering. The machine handles the top of funnel.
+          If you're curious about how it works, here's a short video walkthrough:
+          https://zelusottomayor.com/demo
 
-          Worth exploring?
+          What are your thoughts on this?
 
           Best,
           Ze Lu Sottomayor
 
-      # Email 3: Value Add (Day 6)
+      # Email 3: Value Add (Day 7)
       - step: 3
-        delay_days: 6
+        delay_days: 7
         subject_options:
-          - "Re: How {{company_name}} found new clients this week"
+          - "Re: New project pipeline for {{company_name}}"
         body_template: |
           Hi {{first_name}},
 
-          One more thought—
+          One more thought —
 
           {{industry_specific_insight}}
 
-          If outbound isn't the bottleneck right now, I also build custom
-          automation for other parts of the business. But for most agencies,
-          consistent lead flow is the unlock.
+          Most firms I work with rely on referrals and word-of-mouth for
+          new business. Both work, but neither is proactive — you're
+          always waiting for the phone to ring.
 
-          Happy to chat if timing works: https://zelusottomayor.com/book-call
+          A system that runs in the background means your pipeline
+          doesn't depend on timing or luck.
+
+          Happy to walk you through it: https://zelusottomayor.com/book-call
 
           Best,
           Ze Lu Sottomayor
 
-      # Email 4: Breakup (Day 10)
+      # Email 4: Breakup (Day 12)
       - step: 4
-        delay_days: 10
+        delay_days: 12
         subject_options:
           - "Closing the loop"
         body_template: |
           Hi {{first_name}},
 
-          I'll assume the timing isn't right—no worries.
+          I'll assume the timing isn't right — no worries at all.
 
-          If automated outbound (or any other automation) becomes relevant
-          for {{company_name}} later, the door's open:
+          If building a more predictable pipeline ever becomes a priority
+          for {{company_name}}, the door's open.
 
           Cheers,
           Ze Lu Sottomayor
@@ -106,24 +107,42 @@ sequences:
 # Personalization instructions for Claude AI
 personalization_instructions: |
   You are writing personalized cold email components for Zelu Sottomayor,
-  who builds automated outbound systems for agencies.
+  who builds managed business development systems for AEC firms
+  (engineering, architecture, environmental consulting).
 
-  The core offer: A fully automated outbound system that finds ideal clients,
-  researches them, writes personalized emails, sends sequences, and books calls.
-  It's like hiring a salesperson for a fraction of the cost.
+  The core offer: A system that continuously identifies potential clients
+  (developers, property owners, GCs, facilities managers), researches them,
+  writes personalized introductions, sends sequences, and delivers warm
+  conversations — so principals and seller-doers can focus on winning work
+  and delivering projects instead of prospecting.
 
   Your task is to create highly personalized email components based on
-  research about the prospect's company.
+  research about the prospect's firm.
 
   Guidelines:
   - Be conversational and human, not salesy
-  - Reference specific things about their company (services, clients, positioning)
-  - Focus pain points on outbound/sales challenges (inconsistent pipeline, time spent on prospecting, feast-or-famine cycles)
-  - Keep it concise - these are busy people
-  - The tone should be confident but not arrogant
+  - Reference specific things about their firm (services, project types,
+    markets served, specializations)
+  - Focus pain points on challenges common to AEC firms:
+    - Over-reliance on repeat clients and referrals
+    - Principals stretched between delivery and business development
+    - Inconsistent pipeline / feast-or-famine project flow
+    - Missing opportunities because nobody is proactively prospecting
+    - Spending time on proposals they don't win instead of building relationships early
+  - Keep it concise — these are busy technical professionals
+  - The tone should be professional and direct, not hype-y
   - Avoid generic phrases like "I hope this email finds you well"
+  - Use AEC language: "projects" not "deals", "clients" not "customers",
+    "principals" not "executives", "winning work" not "closing sales"
 
   For each lead, generate:
-  1. personalized_opener: 1-2 sentences referencing something specific about their company that shows you did research
-  2. specific_pain_point: 1-2 sentences about why automated outbound would help THIS specific agency (based on their size, services, or market)
-  3. industry_specific_insight: A valuable observation about outbound/sales in their specific industry vertical (e.g., if they're a PR agency, talk about how PR agencies often rely on referrals and miss opportunities)
+  1. personalized_opener: 1-2 sentences referencing something specific about
+     their firm (project types, markets, certifications, specializations).
+     Max 25 words.
+  2. specific_pain_point: 1-2 sentences about why a managed outbound system would
+     help THIS specific firm (based on their size, services, or market).
+     Max 25 words.
+  3. industry_specific_insight: A valuable observation about business
+     development in their specific AEC sub-sector. Max 25 words.
+  4. suggested_subject: A compelling, non-spammy subject line relevant to
+     AEC business development. Max 8 words.
