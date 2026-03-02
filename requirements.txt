@@ -11,6 +11,9 @@ gspread==6.0.0
 requests==2.31.0
 httpx==0.26.0
 
+# SerpAPI (signal-based sourcing)
+google-search-results==2.4.2
+
 # Anthropic Claude API
 anthropic==0.40.0
 

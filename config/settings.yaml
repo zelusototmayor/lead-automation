@@ -6,6 +6,7 @@ api_keys:
   google_maps: ${GOOGLE_MAPS_API_KEY}
   apollo: ${APOLLO_API_KEY}
   anthropic: ${ANTHROPIC_API_KEY}
+  serpapi: ${SERPAPI_API_KEY}
 
 # Google Sheets CRM
 google_sheets:
@@ -163,3 +164,63 @@ local_services:
     insurance:
       queries: ["insurance agency", "insurance broker", "independent insurance agent", "insurance office"]
       exclude: []
+
+# B2B Startups Pipeline (separate from AEC — signal-based sourcing)
+# ICP: B2B startups 5-50 employees, hiring SDRs or recently funded
+startups:
+  sheet_name: "B2B Startups"
+  daily_target: 25
+  apollo_credit_budget: 100
+  serpapi_budget_per_run: 30
+
+  instantly:
+    campaign_name: "B2B Startups Outbound"
+
+  personalization:
+    value_proposition: |
+      I build automated outbound systems for B2B companies. The system
+      finds your ideal prospects, researches them, writes personalized
+      emails, sends sequences, and follows up — no SDRs, no VAs, no
+      manual work. This very email is proof it works.
+    sender_bio: |
+      Max at Zelu Sottomayor builds automated outbound systems for B2B
+      startups and growth-stage companies. He helps teams generate a steady
+      pipeline of qualified conversations without hiring SDRs or doing
+      manual prospecting.
+
+  # SerpAPI signal queries
+  hiring_queries:
+    - "SDR"
+    - "BDR"
+    - "Sales Development Representative"
+    - "Business Development Representative"
+    - "outbound sales representative"
+
+  funding_queries:
+    - "raised seed round B2B startup"
+    - "series A funding B2B"
+    - "seed funding startup 2026"
+
+  # Locations for job searches
+  target_locations:
+    - "United States"
+    - "United Kingdom"
+    - "New York"
+    - "San Francisco"
+    - "London"
+
+  # Employee count filter (applied after Apollo lookup)
+  min_employees: 5
+  max_employees: 50
+
+  # Exclude large/enterprise companies from job results
+  exclude_companies:
+    - "Google"
+    - "Amazon"
+    - "Microsoft"
+    - "Meta"
+    - "Salesforce"
+    - "Cisco"
+    - "Oracle"
+    - "IBM"
+    - "SAP"

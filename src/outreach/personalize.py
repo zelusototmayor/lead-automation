@@ -241,3 +241,50 @@ def calculate_lead_score(lead: dict) -> int:
         score += 1
 
     return min(score, 10)
+
+
+def calculate_startup_lead_score(lead: dict) -> int:
+    """
+    Calculate a lead quality score for B2B startup leads (1-10).
+
+    Scoring:
+    - Signal type: hiring_signal +3, funding_signal +2
+    - Employee count 5-50 (sweet spot): +2
+    - Has verified email: +1
+    - Has website: +1
+    - Has LinkedIn: +1
+    - Max score: 10
+    """
+    score = 0
+
+    # Signal type (highest weight — intent indicator)
+    signal = lead.get("signal_type", "")
+    if signal == "hiring_signal":
+        score += 3
+    elif signal == "funding_signal":
+        score += 2
+
+    # Employee count in sweet spot (5-50)
+    emp_count = lead.get("employee_count", 0)
+    if isinstance(emp_count, str):
+        try:
+            emp_count = int(emp_count.replace(",", "").split("-")[0])
+        except (ValueError, TypeError):
+            emp_count = 0
+
+    if 5 <= emp_count <= 50:
+        score += 2
+
+    # Has verified email (+1)
+    if lead.get("email"):
+        score += 1
+
+    # Has website (+1)
+    if lead.get("website"):
+        score += 1
+
+    # Has LinkedIn (+1)
+    if lead.get("linkedin"):
+        score += 1
+
+    return min(score, 10)
