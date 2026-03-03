@@ -260,11 +260,14 @@ class StartupSourcer:
                 "country": signal.get("country", ""),
                 "linkedin_url": signal.get("linkedin_url", ""),
             }
-            # If Apollo didn't give a domain, do a quick org lookup
-            if not org["domain"]:
+            # If Apollo didn't give domain/industry (common for people search), do a free org lookup
+            if not org["domain"] or not org["industry"]:
                 looked_up = self.apollo_client.search_organizations(company_name=company_name)
                 if looked_up:
                     org.update({k: v for k, v in looked_up.items() if v})
+                elif not org["domain"]:
+                    logger.debug("No Apollo org data for people-sourced signal", company=company_name)
+                    return None
         else:
             org = self.apollo_client.search_organizations(company_name=company_name)
             if not org:
