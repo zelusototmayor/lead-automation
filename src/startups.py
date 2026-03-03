@@ -21,7 +21,7 @@ import structlog
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.lead_sourcing.serpapi import SerpAPIClient, search_hiring_signals, search_funding_signals
+from src.lead_sourcing.serpapi import SerpAPIClient, search_hiring_signals
 from src.lead_sourcing.apollo import ApolloClient
 from src.crm import GoogleSheetsCRM
 from src.outreach import EmailPersonalizer, InstantlyClient, InstantlySyncer
@@ -123,65 +123,172 @@ class StartupSourcer:
                      apollo_budget=apollo_budget)
 
     def _collect_signals(self) -> list[dict]:
-        """Collect hiring and funding signals from SerpAPI."""
-        signals = []
+        """Collect signals from 3 sources: Apollo hiring orgs, Apollo SDR people, SerpAPI jobs.
 
-        # Hiring signals (job postings)
+        Returns deduplicated list of signal dicts, with multi_signal=True for
+        companies appearing in 2+ sources.
+        """
+        exclude_lower = set(c.lower() for c in self.exclude_companies)
+        company_signals: dict[str, dict] = {}  # key: lowercase company name
+        company_sources: dict[str, set] = {}   # key: lowercase company name → set of signal_types
+
+        def _add_signals(signals: list[dict]):
+            for s in signals:
+                name = s["company_name"].strip()
+                key = name.lower()
+                if any(exc in key for exc in exclude_lower):
+                    continue
+                if key not in company_signals:
+                    company_signals[key] = s
+                    company_sources[key] = {s["signal_type"]}
+                else:
+                    company_sources[key].add(s["signal_type"])
+
+        # Source 1: Apollo orgs hiring sales roles (FREE)
+        apollo_pages = self.sc.get("apollo_search_pages", 5)
+        job_titles = self.sc.get("sales_job_titles", ["SDR", "BDR", "Sales Development", "Account Executive", "Inside Sales"])
+        apollo_locations = self.sc.get("apollo_locations", ["United States"])
+        emp_range = f"{self.min_employees},{self.max_employees}"
+        b2b_keywords = self.sc.get("b2b_keywords", ["saas", "b2b", "software"])
+
+        apollo_hiring = self.apollo_client.search_hiring_organizations(
+            job_titles=job_titles,
+            employee_range=emp_range,
+            locations=apollo_locations,
+            keyword_tags=[kw.title() for kw in b2b_keywords[:3]],  # SaaS, B2B, Software
+            max_pages=apollo_pages,
+        )
+        _add_signals(apollo_hiring)
+
+        # Source 2: Apollo companies that HAVE SDRs (FREE)
+        apollo_sdrs = self.apollo_client.search_companies_with_sdrs(
+            person_titles=job_titles,
+            employee_range=emp_range,
+            locations=apollo_locations,
+            keyword_tags=[kw.title() for kw in b2b_keywords[:2]],  # SaaS, B2B
+            max_pages=apollo_pages,
+        )
+        _add_signals(apollo_sdrs)
+
+        # Source 3: SerpAPI Google Jobs (costs searches, broader net)
         hiring_queries = self.sc.get("hiring_queries", ["SDR", "BDR"])
         locations = self.sc.get("target_locations", ["United States"])
 
-        hiring = search_hiring_signals(
-            api_key="",  # unused when client is passed
+        serpapi_hiring = search_hiring_signals(
+            api_key="",
             queries=hiring_queries,
             locations=locations,
             exclude_companies=self.exclude_companies,
             client=self.serpapi_client,
         )
-        signals.extend(hiring)
+        _add_signals(serpapi_hiring)
 
-        # Funding signals (news)
-        funding_queries = self.sc.get("funding_queries", [
-            "raised seed round B2B startup",
-            "series A funding B2B",
-        ])
+        # Tag multi-signal leads
+        signals = []
+        for key, signal in company_signals.items():
+            signal["multi_signal"] = len(company_sources[key]) >= 2
+            signal["source_count"] = len(company_sources[key])
+            signal["sources"] = list(company_sources[key])
+            signals.append(signal)
 
-        funding = search_funding_signals(
-            api_key="",
-            queries=funding_queries,
-            exclude_companies=self.exclude_companies,
-            client=self.serpapi_client,
-        )
-        signals.extend(funding)
+        # Sort: multi-signal first, then apollo_hiring, then apollo_has_sdrs, then serpapi
+        signal_priority = {"apollo_hiring": 0, "apollo_has_sdrs": 1, "hiring_signal": 2}
+        signals.sort(key=lambda s: (
+            not s["multi_signal"],
+            signal_priority.get(s["signal_type"], 3),
+        ))
 
         logger.info("Signals collected",
-                     hiring=len(hiring), funding=len(funding),
-                     total=len(signals),
+                     apollo_hiring=len(apollo_hiring),
+                     apollo_sdrs=len(apollo_sdrs),
+                     serpapi_hiring=len(serpapi_hiring),
+                     total_deduped=len(signals),
+                     multi_signal=sum(1 for s in signals if s["multi_signal"]),
                      serpapi_searches_used=self.serpapi_client.searches_used)
         return signals
 
+    def _is_b2b_saas(self, industry: str, keywords: list[str] = None, description: str = "") -> bool:
+        """Check if a company is B2B SaaS based on industry, keywords, and description.
+
+        Returns True if:
+        - Industry matches whitelist, OR
+        - Any B2B keyword found in company keywords/description (even if industry is ambiguous)
+        Returns False if:
+        - Industry matches blacklist AND no B2B keywords found
+        """
+        industry_lower = (industry or "").lower()
+        keywords_lower = [k.lower() for k in (keywords or [])]
+        desc_lower = (description or "").lower()
+        all_text = " ".join(keywords_lower) + " " + desc_lower
+
+        b2b_kw = self.sc.get("b2b_keywords", ["saas", "b2b", "software", "platform", "api", "cloud", "enterprise", "automation"])
+        whitelist = self.sc.get("b2b_industries", [])
+        blacklist = self.sc.get("exclude_industries", [])
+
+        # Check keyword boost first — strongest signal
+        has_b2b_keyword = any(kw in all_text for kw in b2b_kw)
+
+        # Industry whitelist check
+        on_whitelist = any(ind.lower() in industry_lower for ind in whitelist) if industry_lower else False
+
+        # Industry blacklist check
+        on_blacklist = any(ind.lower() in industry_lower for ind in blacklist) if industry_lower else False
+
+        if on_blacklist and not has_b2b_keyword:
+            return False
+        if on_whitelist or has_b2b_keyword:
+            return True
+        # Ambiguous industry and no keywords — reject to keep quality high
+        return False
+
     def _enrich_and_filter(self, signal: dict) -> dict | None:
-        """Enrich a signal company with Apollo and apply filters.
+        """Enrich a signal company with Apollo and apply B2B SaaS filter.
 
         Returns enriched lead dict or None if filtered out.
         """
         company_name = signal["company_name"]
 
-        # 1. Apollo org search (free — no credits)
-        org = self.apollo_client.search_organizations(company_name=company_name)
+        # Apollo-sourced signals already carry org data; SerpAPI signals need a lookup
+        if signal["signal_type"] in ("apollo_hiring", "apollo_has_sdrs"):
+            org = {
+                "domain": signal.get("domain", ""),
+                "industry": signal.get("industry", ""),
+                "employee_count": signal.get("employee_count"),
+                "description": signal.get("description", ""),
+                "keywords": signal.get("keywords", []),
+                "city": signal.get("city", ""),
+                "country": signal.get("country", ""),
+                "linkedin_url": signal.get("linkedin_url", ""),
+            }
+            # If Apollo didn't give a domain, do a quick org lookup
+            if not org["domain"]:
+                looked_up = self.apollo_client.search_organizations(company_name=company_name)
+                if looked_up:
+                    org.update({k: v for k, v in looked_up.items() if v})
+        else:
+            org = self.apollo_client.search_organizations(company_name=company_name)
+            if not org:
+                logger.debug("No Apollo org data", company=company_name)
+                return None
 
-        if not org:
-            logger.debug("No Apollo org data", company=company_name)
+        # 1. B2B SaaS filter
+        if not self._is_b2b_saas(
+            industry=org.get("industry", ""),
+            keywords=org.get("keywords", []),
+            description=org.get("description", ""),
+        ):
+            logger.debug("Filtered: not B2B SaaS", company=company_name, industry=org.get("industry"))
             return None
 
         # 2. Employee count filter
         emp_count = org.get("employee_count") or 0
         if isinstance(emp_count, str):
             try:
-                emp_count = int(emp_count.replace(",", "").split("-")[0])
+                emp_count = int(str(emp_count).replace(",", "").split("-")[0])
             except (ValueError, TypeError):
                 emp_count = 0
 
-        if emp_count < self.min_employees or emp_count > self.max_employees:
+        if emp_count and (emp_count < self.min_employees or emp_count > self.max_employees):
             logger.debug("Filtered by employee count", company=company_name, employees=emp_count)
             return None
 
@@ -211,12 +318,14 @@ class StartupSourcer:
             "country": org.get("country", ""),
             "linkedin": contact.get("linkedin_url", ""),
             "title": contact.get("title", ""),
-            "source": f"serpapi_{signal['signal_type']}",
+            "source": signal["signal_type"],
             "description": org.get("description", ""),
             "technologies": org.get("technologies", []),
             "keywords": org.get("keywords", []),
             "signal_type": signal["signal_type"],
             "signal_detail": signal["signal_detail"],
+            "multi_signal": signal.get("multi_signal", False),
+            "sources": signal.get("sources", [signal["signal_type"]]),
         }
 
     def run(self, target: int = None, source_only: bool = False) -> dict:
@@ -336,15 +445,21 @@ class StartupSourcer:
             try:
                 # Build signal-aware prompt context
                 lead_for_personalization = dict(lead)
-                if lead.get("signal_type") == "hiring_signal":
+                signal_type = lead.get("signal_type", "")
+                if signal_type in ("apollo_hiring", "hiring_signal"):
                     lead_for_personalization["signal_context"] = (
                         f"They are currently hiring: {lead.get('signal_detail', 'SDR/BDR roles')}. "
                         "This means they're investing in outbound sales."
                     )
-                elif lead.get("signal_type") == "funding_signal":
+                elif signal_type == "apollo_has_sdrs":
                     lead_for_personalization["signal_context"] = (
-                        f"{lead.get('signal_detail', 'Recently funded')}. "
-                        "They likely have budget to invest in growth."
+                        "They already have an outbound sales team in place. "
+                        "This means they value outbound as a channel."
+                    )
+                if lead.get("multi_signal"):
+                    lead_for_personalization["signal_context"] = (
+                        lead_for_personalization.get("signal_context", "") +
+                        " Multiple signals confirm they are actively investing in sales growth."
                     )
 
                 personalized = self.personalizer.personalize_email(

@@ -248,27 +248,32 @@ def calculate_startup_lead_score(lead: dict) -> int:
     Calculate a lead quality score for B2B startup leads (1-10).
 
     Scoring:
-    - Signal type: hiring_signal +3, funding_signal +2
+    - Multi-signal (2+ sources): +3
+    - Signal type: apollo_hiring/hiring_signal +2, apollo_has_sdrs +1
     - Employee count 5-50 (sweet spot): +2
     - Has verified email: +1
     - Has website: +1
-    - Has LinkedIn: +1
+    - B2B SaaS keywords in company data: +1
     - Max score: 10
     """
     score = 0
 
-    # Signal type (highest weight — intent indicator)
-    signal = lead.get("signal_type", "")
-    if signal == "hiring_signal":
+    # Multi-signal — strongest ICP indicator
+    if lead.get("multi_signal"):
         score += 3
-    elif signal == "funding_signal":
+
+    # Signal type (intent indicator)
+    signal = lead.get("signal_type", "")
+    if signal in ("apollo_hiring", "hiring_signal"):
         score += 2
+    elif signal == "apollo_has_sdrs":
+        score += 1
 
     # Employee count in sweet spot (5-50)
     emp_count = lead.get("employee_count", 0)
     if isinstance(emp_count, str):
         try:
-            emp_count = int(emp_count.replace(",", "").split("-")[0])
+            emp_count = int(str(emp_count).replace(",", "").split("-")[0])
         except (ValueError, TypeError):
             emp_count = 0
 
@@ -283,8 +288,10 @@ def calculate_startup_lead_score(lead: dict) -> int:
     if lead.get("website"):
         score += 1
 
-    # Has LinkedIn (+1)
-    if lead.get("linkedin"):
+    # B2B SaaS keywords in company data (+1)
+    b2b_keywords = {"saas", "b2b", "software", "platform", "api", "cloud", "enterprise", "automation"}
+    company_text = " ".join(str(k).lower() for k in (lead.get("keywords") or [])) + " " + (lead.get("description") or "").lower()
+    if any(kw in company_text for kw in b2b_keywords):
         score += 1
 
     return min(score, 10)

@@ -131,6 +131,166 @@ class ApolloClient:
             logger.error("Apollo organization search failed", error=str(e), response_detail=detail)
             return None
 
+    def search_hiring_organizations(
+        self,
+        job_titles: list[str] = None,
+        employee_range: str = "5,50",
+        locations: list[str] = None,
+        keyword_tags: list[str] = None,
+        max_pages: int = 5,
+    ) -> list[dict]:
+        """
+        Search for organizations currently hiring specific roles.
+        FREE endpoint — no credits consumed.
+
+        Returns list of signal dicts with signal_type="apollo_hiring".
+        """
+        if not job_titles:
+            job_titles = ["SDR", "BDR", "Sales Development", "Account Executive", "Inside Sales"]
+        if not keyword_tags:
+            keyword_tags = ["SaaS", "B2B", "software"]
+
+        url = f"{self.BASE_URL}/organizations/search"
+        signals = []
+        seen = set()
+
+        for page in range(1, max_pages + 1):
+            payload = {
+                "q_organization_job_titles": job_titles,
+                "organization_num_employees_ranges": [employee_range],
+                "q_organization_keyword_tags": keyword_tags,
+                "page": page,
+                "per_page": 25,
+            }
+            if locations:
+                payload["organization_locations"] = locations
+
+            try:
+                response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+
+                orgs = data.get("organizations", [])
+                if not orgs:
+                    break
+
+                for org in orgs:
+                    name = (org.get("name") or "").strip()
+                    if not name or name.lower() in seen:
+                        continue
+                    seen.add(name.lower())
+
+                    signals.append({
+                        "company_name": name,
+                        "signal_type": "apollo_hiring",
+                        "signal_detail": f"Hiring sales roles (Apollo org search)",
+                        "domain": org.get("primary_domain", ""),
+                        "industry": org.get("industry", ""),
+                        "employee_count": org.get("estimated_num_employees"),
+                        "description": org.get("short_description", ""),
+                        "keywords": org.get("keywords", []),
+                        "city": org.get("city", ""),
+                        "country": org.get("country", ""),
+                        "linkedin_url": org.get("linkedin_url", ""),
+                    })
+
+                pagination = data.get("pagination", {})
+                if page >= pagination.get("total_pages", 1):
+                    break
+
+            except requests.RequestException as e:
+                detail = self._extract_error_detail(e)
+                logger.error("Apollo hiring org search failed", error=str(e),
+                             page=page, response_detail=detail)
+                break
+
+        logger.info("Apollo hiring org search complete",
+                     signals=len(signals), pages_fetched=min(page, max_pages))
+        return signals
+
+    def search_companies_with_sdrs(
+        self,
+        person_titles: list[str] = None,
+        employee_range: str = "5,50",
+        locations: list[str] = None,
+        keyword_tags: list[str] = None,
+        max_pages: int = 5,
+    ) -> list[dict]:
+        """
+        Search for companies that already HAVE sales reps on staff.
+        Uses the free mixed_people search and extracts unique companies.
+        FREE endpoint — no credits consumed.
+
+        Returns list of signal dicts with signal_type="apollo_has_sdrs".
+        """
+        if not person_titles:
+            person_titles = [
+                "SDR", "Sales Development Representative",
+                "BDR", "Business Development Representative",
+                "Inside Sales Representative",
+            ]
+        if not keyword_tags:
+            keyword_tags = ["SaaS", "B2B"]
+
+        search_url = "https://api.apollo.io/api/v1/mixed_people/api_search"
+        signals = []
+        seen = set()
+
+        for page in range(1, max_pages + 1):
+            payload = {
+                "person_titles": person_titles,
+                "organization_num_employees_ranges": [employee_range],
+                "q_organization_keyword_tags": keyword_tags,
+                "page": page,
+                "per_page": 25,
+            }
+            if locations:
+                payload["organization_locations"] = locations
+
+            try:
+                response = requests.post(search_url, json=payload, headers=self.headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+
+                people = data.get("people", [])
+                if not people:
+                    break
+
+                for person in people:
+                    org = person.get("organization") or {}
+                    name = (org.get("name") or "").strip()
+                    if not name or name.lower() in seen:
+                        continue
+                    seen.add(name.lower())
+
+                    signals.append({
+                        "company_name": name,
+                        "signal_type": "apollo_has_sdrs",
+                        "signal_detail": f"Has sales reps on staff (Apollo people search)",
+                        "domain": org.get("primary_domain", ""),
+                        "industry": org.get("industry", ""),
+                        "employee_count": org.get("estimated_num_employees"),
+                        "description": org.get("short_description", ""),
+                        "keywords": org.get("keywords", []),
+                        "city": org.get("city", ""),
+                        "country": org.get("country", ""),
+                        "linkedin_url": org.get("linkedin_url", ""),
+                    })
+
+                pagination = data.get("pagination", {})
+                if page >= pagination.get("total_pages", 1):
+                    break
+
+            except requests.RequestException as e:
+                detail = self._extract_error_detail(e)
+                logger.error("Apollo SDR people search failed", error=str(e),
+                             page=page, response_detail=detail)
+                break
+
+        logger.info("Apollo SDR people search complete",
+                     signals=len(signals), pages_fetched=min(page, max_pages))
+        return signals
+
     def _search_people_free(
         self,
         company_domain: str = None,

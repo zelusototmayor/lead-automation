@@ -165,13 +165,14 @@ local_services:
       queries: ["insurance agency", "insurance broker", "independent insurance agent", "insurance office"]
       exclude: []
 
-# B2B Startups Pipeline (separate from AEC — signal-based sourcing)
-# ICP: B2B startups 5-50 employees, hiring SDRs or recently funded
+# B2B Startups Pipeline (signal-based sourcing → SaaS companies)
+# ICP: B2B SaaS companies 5-50 employees, hiring or have sales roles
 startups:
   sheet_name: "B2B Startups"
   daily_target: 25
-  apollo_credit_budget: 100
+  apollo_credit_budget: 50
   serpapi_budget_per_run: 30
+  apollo_search_pages: 5  # pages per Apollo search (5 results/page)
 
   instantly:
     campaign_name: "B2B Startups Outbound"
@@ -188,7 +189,17 @@ startups:
       pipeline of qualified conversations without hiring SDRs or doing
       manual prospecting.
 
-  # SerpAPI signal queries
+  # Job titles to search for (Apollo org hiring + people search)
+  sales_job_titles:
+    - "SDR"
+    - "BDR"
+    - "Sales Development Representative"
+    - "Business Development Representative"
+    - "Account Executive"
+    - "Inside Sales Representative"
+    - "Inside Sales"
+
+  # SerpAPI hiring signal queries (Google Jobs)
   hiring_queries:
     - "SDR"
     - "BDR"
@@ -196,24 +207,68 @@ startups:
     - "Business Development Representative"
     - "outbound sales representative"
 
-  funding_queries:
-    - "raised seed round B2B startup"
-    - "series A funding B2B"
-    - "seed funding startup 2026"
-
-  # Locations for job searches
+  # Locations for searches
   target_locations:
     - "United States"
-    - "United Kingdom"
     - "New York"
     - "San Francisco"
-    - "London"
+    - "Austin"
+    - "Boston"
 
-  # Employee count filter (applied after Apollo lookup)
+  # Apollo organization search locations
+  apollo_locations:
+    - "United States"
+
+  # Employee count filter
   min_employees: 5
   max_employees: 50
 
-  # Exclude large/enterprise companies from job results
+  # B2B SaaS industry whitelist (must match at least one)
+  b2b_industries:
+    - "information technology & services"
+    - "computer software"
+    - "internet"
+    - "financial services"
+    - "logistics & supply chain"
+    - "telecommunications"
+    - "computer & network security"
+    - "computer networking"
+
+  # Industry blacklist (auto-reject)
+  exclude_industries:
+    - "hospital & health care"
+    - "medical devices"
+    - "medical practice"
+    - "health, wellness & fitness"
+    - "staffing & recruiting"
+    - "marketing & advertising"
+    - "retail"
+    - "food & beverages"
+    - "restaurants"
+    - "education management"
+    - "higher education"
+    - "government administration"
+    - "real estate"
+    - "construction"
+    - "professional training & coaching"
+    - "wholesale"
+    - "facilities services"
+    - "consumer services"
+    - "consumer goods"
+    - "hospitality"
+
+  # Keyword-based pass (if ANY keyword found in company data, pass even if industry is ambiguous)
+  b2b_keywords:
+    - "saas"
+    - "b2b"
+    - "software"
+    - "platform"
+    - "api"
+    - "cloud"
+    - "enterprise"
+    - "automation"
+
+  # Exclude large/enterprise companies
   exclude_companies:
     - "Google"
     - "Amazon"
