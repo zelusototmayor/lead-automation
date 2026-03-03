@@ -477,6 +477,21 @@ class StartupSourcer:
                     "industry_specific_insight": personalized.get("industry_specific_insight", ""),
                 })
 
+                # Signal hook — a one-liner referencing WHY we're reaching out
+                first_name = (lead.get("contact_name") or "").split()[0] if lead.get("contact_name") else ""
+                if signal_type in ("apollo_hiring", "hiring_signal"):
+                    lead["signal_hook"] = (
+                        f"I noticed {lead.get('company', 'your team')} is hiring sales reps — "
+                        "what if you could get the same pipeline output without the headcount?"
+                    )
+                elif signal_type == "apollo_has_sdrs":
+                    lead["signal_hook"] = (
+                        f"I see {lead.get('company', 'your team')} already runs outbound — "
+                        "curious if your SDRs are spending more time on research or actually selling?"
+                    )
+                else:
+                    lead["signal_hook"] = ""
+
                 personalized_leads.append(lead)
 
             except Exception as e:

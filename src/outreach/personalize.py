@@ -72,6 +72,7 @@ Guidelines:
 - Keep it concise — these snippets are inserted into a short email, so every word must earn its place
 - Avoid clichés like "I hope this finds you well" or "I noticed your company"
 - No filler phrases like "It's clear that" or "As a company that" — get straight to the point
+- If a Signal is provided (e.g., hiring SDRs, has sales team), weave it into the opener and subject — it's WHY we're reaching out
 
 Return ONLY valid JSON, no other text."""
 
@@ -189,6 +190,9 @@ Return ONLY valid JSON, no other text."""
 
         if lead.get("keywords"):
             parts.append(f"Keywords: {', '.join(lead['keywords'][:5])}")
+
+        if lead.get("signal_context"):
+            parts.append(f"Signal: {lead['signal_context']}")
 
         return "\n".join(parts) if parts else "Limited information available about this company."
 

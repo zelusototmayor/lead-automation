@@ -113,6 +113,8 @@ class InstantlyClient:
                 custom_vars["industry"] = lead["industry"]
             if lead.get("city"):
                 custom_vars["city"] = lead["city"]
+            if lead.get("signal_hook"):
+                custom_vars["signal_hook"] = lead["signal_hook"]
 
             if custom_vars:
                 data["custom_variables"] = custom_vars
