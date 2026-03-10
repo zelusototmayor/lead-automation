@@ -123,6 +123,7 @@ class LeadAutomation:
 
         new_leads = []
         leads_needed = target_leads
+        seen_domains = set()  # Prevent enriching the same domain twice
 
         # Shuffle cities to get variety
         random.shuffle(cities)
@@ -154,13 +155,21 @@ class LeadAutomation:
                 if not agency.get("website"):
                     continue
 
-                # Enrich with Apollo
+                # Domain dedup — don't enrich the same domain twice
+                domain = agency["website"].replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0].lower()
+                if domain in seen_domains:
+                    continue
+                seen_domains.add(domain)
+
+                # Enrich with Apollo (require_org_data=True skips credit
+                # spend when Apollo has no data on this company)
                 enriched = enrich_lead(
                     api_key=self.apollo_key,
                     company_name=agency["name"],
                     website=agency.get("website"),
                     city=city,
                     client=self.apollo_client,
+                    require_org_data=True,
                 )
 
                 # Get primary contact
@@ -208,10 +217,11 @@ class LeadAutomation:
                         apollo_credits_used=self.apollo_client._credits_used
                     )
 
+        # Log credit efficiency
+        credit_summary = self.apollo_client.get_credit_summary()
         logger.warning("Daily sourcing complete",
                        new_leads=len(new_leads),
-                       apollo_credits_used=self.apollo_client._credits_used,
-                       apollo_budget=self.apollo_client._credit_budget)
+                       **credit_summary)
         return new_leads
 
     def personalize_and_queue_leads(self, leads: list[dict] = None) -> int:
@@ -239,7 +249,8 @@ class LeadAutomation:
 
         sender_info = {
             "bio": self.config["personalization"]["sender_bio"],
-            "value_proposition": self.config["personalization"]["value_proposition"]
+            "value_proposition": self.config["personalization"]["value_proposition"],
+            "aec_verticals": self.templates.get("aec_verticals"),
         }
 
         # Personalize each lead
@@ -258,6 +269,7 @@ class LeadAutomation:
                     "personalized_opener": personalized.get("personalized_opener", ""),
                     "specific_pain_point": personalized.get("specific_pain_point", ""),
                     "industry_specific_insight": personalized.get("industry_specific_insight", ""),
+                    "suggested_subject": personalized.get("suggested_subject", ""),
                     "first_name": lead.get("contact_name", "").split()[0] if lead.get("contact_name") else ""
                 })
 
@@ -362,6 +374,12 @@ def main():
     # Run automation
     automation = LeadAutomation(config, templates)
     result = automation.run_full_workflow()
+
+    # Log credits to monitor state
+    from src.monitor import update_apollo_credits, update_leads_added
+    credit_summary = automation.apollo_client.get_credit_summary()
+    update_apollo_credits(credit_summary.get("credits_used", 0))
+    update_leads_added("aec", result.get("new_leads", 0))
 
     print(f"\n✅ Daily workflow complete!")
     print(f"   Synced from Instantly: {result.get('synced', 0)} leads")

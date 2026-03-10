@@ -33,24 +33,37 @@ class InstantlyClient:
         """Make an API request using V2 Bearer authentication."""
         url = f"{self.BASE_URL}/{endpoint}"
 
-        try:
-            if method == "GET":
-                response = requests.get(url, headers=self.headers, params=params, timeout=30)
-            elif method == "POST":
-                response = requests.post(url, headers=self.headers, json=data, params=params, timeout=30)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
+        for attempt in range(3):
+            try:
+                if method == "GET":
+                    response = requests.get(url, headers=self.headers, params=params, timeout=30)
+                elif method == "POST":
+                    response = requests.post(url, headers=self.headers, json=data, params=params, timeout=30)
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
 
-            response.raise_for_status()
-            return response.json() if response.content else {}
+                if response.status_code == 429 and attempt < 2:
+                    wait = (attempt + 1) * 5
+                    logger.warning("Rate limited, retrying", endpoint=endpoint, wait=wait)
+                    import time
+                    time.sleep(wait)
+                    continue
 
-        except requests.RequestException as e:
-            logger.error(
-                "Instantly API request failed",
-                endpoint=endpoint,
-                error=str(e)
-            )
-            return None
+                response.raise_for_status()
+                return response.json() if response.content else {}
+
+            except requests.RequestException as e:
+                if attempt < 2 and "429" in str(e):
+                    import time
+                    time.sleep((attempt + 1) * 5)
+                    continue
+                logger.error(
+                    "Instantly API request failed",
+                    endpoint=endpoint,
+                    error=str(e)
+                )
+                return None
+        return None
 
     def list_campaigns(self) -> list[dict]:
         """List all campaigns."""
@@ -115,6 +128,8 @@ class InstantlyClient:
                 custom_vars["city"] = lead["city"]
             if lead.get("signal_hook"):
                 custom_vars["signal_hook"] = lead["signal_hook"]
+            if lead.get("suggested_subject"):
+                custom_vars["suggested_subject"] = lead["suggested_subject"]
 
             if custom_vars:
                 data["custom_variables"] = custom_vars
@@ -139,9 +154,53 @@ class InstantlyClient:
 
         return results if results else None
 
-    def get_campaign_analytics(self, campaign_id: str) -> Optional[dict]:
-        """Get campaign analytics."""
-        return self._make_request("GET", f"campaigns/{campaign_id}/analytics")
+    def get_campaign_analytics(self, campaign_id: str = None) -> Optional[dict]:
+        """Get campaign analytics.
+
+        If campaign_id is provided, returns analytics for that campaign.
+        If omitted, returns analytics for all campaigns.
+        """
+        if campaign_id:
+            return self._make_request("GET", f"campaigns/{campaign_id}/analytics")
+        # All campaigns — V2 supports omitting the ID
+        return self._make_request("GET", "campaigns/analytics")
+
+    def get_lead_emails(self, lead_email: str, campaign_id: str, limit: int = 50) -> list[dict]:
+        """Get all emails sent to/from a lead via GET /emails.
+
+        Returns flat list of email objects with step, timestamp, type, body, etc.
+        Uses cursor-based pagination.
+        """
+        all_emails = []
+        starting_after = None
+
+        while True:
+            params = {
+                "lead": lead_email,
+                "campaign": campaign_id,
+                "limit": limit,
+            }
+            if starting_after:
+                params["starting_after"] = starting_after
+
+            result = self._make_request("GET", "emails", params=params)
+
+            if not result:
+                break
+
+            items = result.get("items", [])
+            if not items:
+                items = result.get("data", [])
+
+            all_emails.extend(items)
+
+            next_cursor = result.get("next_starting_after")
+            if not next_cursor or len(items) < limit:
+                break
+
+            starting_after = next_cursor
+
+        return all_emails
 
     def list_leads(self, campaign_id: str = None, limit: int = 100) -> list[dict]:
         """List leads in a campaign with cursor-based pagination."""
@@ -151,7 +210,7 @@ class InstantlyClient:
         while True:
             data = {"limit": limit}
             if campaign_id:
-                data["campaign_id"] = campaign_id
+                data["campaign"] = campaign_id
             if starting_after:
                 data["starting_after"] = starting_after
 

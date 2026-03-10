@@ -12,6 +12,66 @@ import yaml
 logger = structlog.get_logger()
 
 
+def detect_aec_vertical(lead: dict, verticals: dict = None) -> tuple[str, dict]:
+    """Detect AEC vertical from lead data and return (vertical_name, vertical_config).
+
+    Args:
+        lead: Lead data dictionary
+        verticals: Optional dict of vertical configs from email_templates.yaml.
+                   If None, uses built-in defaults.
+
+    Returns:
+        Tuple of (vertical_name, vertical_config_dict)
+    """
+    defaults = {
+        "civil_site": {
+            "match_keywords": ["civil", "site", "land development", "grading", "stormwater", "transportation"],
+            "buyer": "developers, general contractors, municipalities",
+            "pain": "missing developer projects before they hit public RFP",
+            "language": "projects, site plans, entitlements, land development",
+        },
+        "environmental": {
+            "match_keywords": ["environmental", "remediation", "phase i", "phase ii", "compliance", "ehs", "hazardous"],
+            "buyer": "real estate developers, lenders, attorneys, property owners",
+            "pain": "waiting for Phase I calls instead of proactively reaching every developer and lender in your market",
+            "language": "due diligence, Phase I/II, site assessments, compliance",
+        },
+        "geotechnical": {
+            "match_keywords": ["geotech", "geotechnical", "subsurface", "soil", "foundation", "drilling"],
+            "buyer": "developers, general contractors, civil engineers, architects",
+            "pain": "relying on the same 3-4 firms sending you work instead of being the first call on new developments",
+            "language": "geotech reports, subsurface investigation, foundation design",
+        },
+        "architecture": {
+            "match_keywords": ["architect", "architecture", "design", "planning", "multifamily"],
+            "buyer": "developers, property owners, tenant improvement clients",
+            "pain": "waiting on referrals instead of getting in front of developers early",
+            "language": "design, entitlements, project delivery, schematic design",
+        },
+        "general_engineering": {
+            "match_keywords": [],
+            "buyer": "developers, property owners, general contractors",
+            "pain": "principals splitting time between project delivery and chasing new work",
+            "language": "projects, clients, winning work, pipeline",
+        },
+    }
+
+    verts = verticals or defaults
+    text = " ".join([
+        (lead.get("industry") or ""),
+        (lead.get("description") or ""),
+        " ".join(lead.get("keywords") or []),
+        (lead.get("company") or ""),
+    ]).lower()
+
+    for name, cfg in verts.items():
+        keywords = cfg.get("match_keywords", [])
+        if keywords and any(kw in text for kw in keywords):
+            return name, cfg
+
+    return "general_engineering", verts.get("general_engineering", defaults["general_engineering"])
+
+
 class EmailPersonalizer:
     """Generates personalized email content using Claude AI."""
 
@@ -46,40 +106,55 @@ class EmailPersonalizer:
         # Build context about the lead
         lead_context = self._build_lead_context(lead)
 
-        prompt = f"""You are helping write a personalized cold email for a boutique automation agency.
+        # Detect AEC vertical for targeted messaging
+        vertical_name, vertical_cfg = detect_aec_vertical(
+            lead, sender_info.get("aec_verticals")
+        )
+        vertical_block = (
+            f"Vertical: {vertical_name}\n"
+            f"Typical buyers: {vertical_cfg.get('buyer', 'developers, property owners, GCs')}\n"
+            f"Key pain point: {vertical_cfg.get('pain', 'principals stretched between delivery and BD')}\n"
+            f"Industry language: {vertical_cfg.get('language', 'projects, clients, winning work')}"
+        )
 
-SENDER INFORMATION:
-{sender_info.get('bio', 'Builds managed business development systems for professional services firms.')}
+        logger.info("AEC vertical detected", company=lead.get("company"), vertical=vertical_name)
 
-VALUE PROPOSITION:
-{sender_info.get('value_proposition', 'A managed outbound system that fills your pipeline so you can focus on delivery.')}
+        prompt = f"""You are writing personalized cold email snippets. These get inserted into a short email template — every word must earn its place.
 
-LEAD INFORMATION:
+SENDER: {sender_info.get('bio', 'Builds managed business development systems for professional services firms.')}
+
+OFFER: {sender_info.get('value_proposition', 'A managed outbound system that fills your pipeline so you can focus on delivery.')}
+
+LEAD:
 {lead_context}
 
-YOUR TASK:
-Generate personalized email components for this lead. Be specific, reference real details about their company, and identify relevant pain points.
+VERTICAL:
+{vertical_block}
 
-Return a JSON object with these fields:
-1. "personalized_opener": 1-2 short sentences referencing something specific about their company or work. Max 25 words.
-2. "specific_pain_point": 1-2 short sentences about why the sender's offer would help THIS specific company. Max 25 words.
-3. "industry_specific_insight": 1-2 short sentences with a valuable observation about their industry. Max 25 words.
-4. "suggested_subject": A compelling, non-spammy subject line. Max 8 words.
+Generate a JSON object with these fields:
 
-Guidelines:
-- Be conversational, not salesy
-- Reference specific details (their services, size, industry)
-- Keep it concise — these snippets are inserted into a short email, so every word must earn its place
-- Avoid clichés like "I hope this finds you well" or "I noticed your company"
-- No filler phrases like "It's clear that" or "As a company that" — get straight to the point
-- If a Signal is provided (e.g., hiring SDRs, has sales team), weave it into the opener and subject — it's WHY we're reaching out
+1. "personalized_opener": 1-3 sentences referencing something CONCRETE about this company — their specific services, project types, markets, team size, tech stack, or hiring activity. Max 40 words. This is the first thing the reader sees — it must feel researched, not templated.
+
+2. "specific_pain_point": 1-2 sentences about why a managed outbound system helps THIS specific firm. Anchor in the vertical pain point above and mention their specific buyer type. Max 40 words.
+
+3. "industry_specific_insight": A non-obvious observation about business development in their sub-sector. Something a peer would say, not a salesperson. Max 30 words.
+
+4. "suggested_subject": A subject line specific to THIS company. Must not work for any other company. Max 8 words. Reference their vertical, project type, or signal — not generic patterns.
+
+STRICT RULES — violating these makes the email feel like spam:
+- NEVER use: "I came across", "I was impressed by", "I noticed your company", "As a company that", "It's clear that", "In today's competitive landscape", "With the current market"
+- NEVER start with "Your" or "I" — vary sentence openings
+- Reference CONCRETE details from the lead data above — if data is thin, keep it brief and real rather than padding with generic filler
+- Use the vertical-specific language and buyer types — do not be generic
+- If a Signal is provided (hiring, scaling sales), weave it into the opener AND subject — it's WHY we're reaching out
+- Be conversational and direct, like one business owner talking to another
 
 Return ONLY valid JSON, no other text."""
 
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=250,
+                max_tokens=350,
                 messages=[{"role": "user", "content": prompt}]
             )
 
@@ -106,12 +181,17 @@ Return ONLY valid JSON, no other text."""
 
         except Exception as e:
             logger.error("Personalization failed", error=str(e))
-            # Return fallback content
+            # Return minimal fallback — better to be brief than generic
+            company = lead.get("company", "your firm")
+            industry = lead.get("industry", "")
+            city = lead.get("city", "")
+            location_bit = f" in {city}" if city else ""
+            industry_bit = f" {industry}" if industry else ""
             return {
-                "personalized_opener": f"I came across {lead.get('company', 'your firm')} and was impressed by your work in {lead.get('industry', 'the industry')}.",
-                "specific_pain_point": "Most firms this size have principals splitting time between project delivery and chasing new business — that's the gap we fill.",
-                "industry_specific_insight": "Firms that proactively reach potential clients instead of waiting on referrals consistently win more work.",
-                "suggested_subject": f"New project pipeline for {lead.get('company', 'your firm')}"
+                "personalized_opener": f"{company}'s{industry_bit} work{location_bit} caught my attention.",
+                "specific_pain_point": "Most firms this size have leaders splitting time between delivery and chasing new business — that's the gap we fill.",
+                "industry_specific_insight": "Proactive outreach consistently outperforms waiting on referrals and RFPs.",
+                "suggested_subject": f"Quick thought for {company}"
             }
 
     def generate_full_email(
@@ -235,7 +315,7 @@ def calculate_lead_score(lead: dict) -> int:
         score += 1
 
     # Industry match (+2)
-    good_industries = ["engineering", "architecture", "environmental", "consulting", "construction", "surveying", "geotechnical", "civil", "structural", "mechanical"]
+    good_industries = ["engineering", "architecture", "environmental", "consulting", "construction", "geotechnical", "civil"]
     industry = (lead.get("industry") or "").lower()
     if any(ind in industry for ind in good_industries):
         score += 2

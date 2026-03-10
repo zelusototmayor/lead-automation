@@ -298,6 +298,50 @@ class GoogleSheetsCRM:
             logger.error("Failed to update lead", lead_id=lead_id, error=str(e))
             return False
 
+    def batch_update_leads(self, updates: list[tuple[str, dict]]) -> int:
+        """Batch-update multiple leads in minimal API calls.
+
+        Args:
+            updates: list of (lead_id, {field: value}) tuples
+
+        Returns:
+            Number of leads successfully updated.
+        """
+        all_cells = []
+        updated_count = 0
+        CHUNK_SIZE = 200
+
+        for lead_id, field_updates in updates:
+            match = self._find_in_cache(COL["id"], lead_id)
+            if not match:
+                logger.warning("Batch: lead not found", lead_id=lead_id)
+                continue
+
+            row_num, _ = match
+            cache_idx = row_num - 2
+
+            for field, value in field_updates.items():
+                col_idx = COL.get(field.lower())
+                if col_idx is None:
+                    continue
+                str_value = str(value)
+                all_cells.append(Cell(row=row_num, col=col_idx + 1, value=str_value))
+                # Update local cache
+                while len(self._cache[cache_idx]) <= col_idx:
+                    self._cache[cache_idx].append("")
+                self._cache[cache_idx][col_idx] = str_value
+
+            updated_count += 1
+
+        # Write in chunks
+        for i in range(0, len(all_cells), CHUNK_SIZE * 10):
+            chunk = all_cells[i:i + CHUNK_SIZE * 10]
+            if chunk:
+                self._api_call(self.sheet.update_cells, chunk)
+
+        logger.info("Batch update complete", leads=updated_count, cells=len(all_cells))
+        return updated_count
+
     def mark_email_sent(self, lead_id: str, email_step: int) -> bool:
         """Mark that an email was sent to a lead."""
         return self.update_lead(lead_id, {
@@ -374,13 +418,28 @@ class GoogleSheetsCRM:
                 updates[f"email_{step}_sent"] = "TRUE"
             updates["last_contact"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+        # Store Instantly status for reference
+        instantly_status = instantly_data.get("instantly_status", "")
+
         # Handle replies (highest priority status)
         if "response" in instantly_data and instantly_data["response"]:
             updates["response"] = instantly_data["response"]
             updates["status"] = "Replied"
-        # Status upgrade: only promote New/Queued to Contacted, never downgrade
+        # Status upgrade: only promote New/Queued to Contacted when emails were actually sent
         elif emails_sent > 0 and lead.get("status") in ("New", "Queued"):
             updates["status"] = "Contacted"
+        # If Instantly says Active but no emails sent yet, mark as Queued (not Contacted)
+        elif emails_sent == 0 and instantly_status == "Active" and lead.get("status") in ("New", "Contacted"):
+            updates["status"] = "Queued"
+            # Correct falsely set email_sent flags from previous buggy syncs
+            if lead.get("email_1_sent") == "TRUE":
+                updates["email_1_sent"] = "FALSE"
+                logger.warning(
+                    "Correcting false contacted",
+                    email=email,
+                    instantly_status=instantly_status,
+                    was_status=lead.get("status"),
+                )
 
         if updates:
             return self.update_lead(lead["id"], updates)

@@ -7,6 +7,7 @@ api_keys:
   apollo: ${APOLLO_API_KEY}
   anthropic: ${ANTHROPIC_API_KEY}
   serpapi: ${SERPAPI_API_KEY}
+  apify: ${APIFY_API_KEY}
 
 # Google Sheets CRM
 google_sheets:
@@ -16,8 +17,8 @@ google_sheets:
 
 # Lead Sourcing Settings
 lead_sourcing:
-  daily_target: 50  # Number of leads to find per day
-  apollo_credit_budget: 200  # Max Apollo enrichment credits per run (0 = unlimited)
+  daily_target: 8  # AEC already stocked — low target until next month
+  apollo_credit_budget: 15  # Reduced — shift credits to Startups
 
   # Target cities (US metros with strong AEC / development activity)
   target_cities:
@@ -53,15 +54,16 @@ lead_sourcing:
       country: "US"
 
   # Search queries for finding AEC professional services firms
+  # Focused on verticals that sell directly to end clients (developers, owners, GCs)
+  # Removed: structural, MEP (subconsultants to architects), land surveying (too local/small)
   search_queries:
     - "civil engineering firm"
-    - "structural engineering firm"
-    - "MEP engineering firm"
+    - "site engineering firm"
     - "environmental consulting firm"
-    - "architecture firm"
-    - "geotechnical engineering firm"
-    - "land surveying company"
     - "environmental remediation company"
+    - "geotechnical engineering firm"
+    - "architecture firm"
+    - "multifamily architect"
     - "engineering consulting firm"
 
   # Exclude keywords (mega-firms too large for our ICP, institutions)
@@ -169,8 +171,8 @@ local_services:
 # ICP: B2B SaaS companies 5-50 employees, hiring or have sales roles
 startups:
   sheet_name: "B2B Startups"
-  daily_target: 25
-  apollo_credit_budget: 50
+  daily_target: 15  # Startups needs more leads — boosted
+  apollo_credit_budget: 35  # Gets extra credits from AEC reduction
   serpapi_budget_per_run: 30
   apollo_search_pages: 5  # pages per Apollo search (5 results/page)
 
@@ -279,3 +281,112 @@ startups:
     - "Oracle"
     - "IBM"
     - "SAP"
+
+# EU B2B Outreach Pipeline (PT/UK/ES)
+# ICP: B2B companies hiring SDR/BDR roles in Portugal, UK, Spain
+eu_outreach:
+  sheet_name: "EU B2B Leads"
+  daily_target: 12  # 2 email accounts → faster ramp, ~360/month
+  apollo_credit_budget: 25  # ~25 credits/day → 750/month
+  apify_max_runs: 20
+  max_results_per_search: 50  # Keep low to avoid actor timeout (deduped anyway)
+
+  instantly:
+    campaign_name: "EU B2B - hiring sales"
+
+  personalization:
+    value_proposition: |
+      I build automated outbound systems for B2B companies. The system
+      finds your ideal prospects, researches them, writes personalized
+      emails, sends sequences, and follows up — no SDRs, no VAs, no
+      manual work. This very email is proof it works.
+    sender_bio: |
+      Zelu Sottomayor builds automated outbound systems for B2B
+      companies across Europe. He helps teams generate a steady
+      pipeline of qualified conversations without hiring SDRs or doing
+      manual prospecting.
+
+  # LinkedIn job search queries — keep SHORT (queries × locations must finish in <10min)
+  # SDR/BDR covers 90% of postings; LinkedIn search matches partial terms too
+  hiring_queries:
+    - "SDR"
+    - "BDR"
+    - "Sales Development Representative"
+
+  # Locations (country-level — LinkedIn covers cities within)
+  target_locations:
+    - "Portugal"
+    - "United Kingdom"
+    - "Spain"
+
+  # B2B keyword filter
+  b2b_keywords:
+    - "saas"
+    - "b2b"
+    - "software"
+    - "platform"
+    - "api"
+    - "cloud"
+    - "enterprise"
+    - "automation"
+    - "analytics"
+    - "data"
+    - "fintech"
+    - "martech"
+    - "proptech"
+    - "healthtech"
+    - "edtech"
+    - "devtools"
+
+  # Industry blacklist
+  exclude_industries:
+    - "hospital & health care"
+    - "medical devices"
+    - "medical practice"
+    - "health, wellness & fitness"
+    - "staffing & recruiting"
+    - "marketing & advertising"
+    - "retail"
+    - "food & beverages"
+    - "restaurants"
+    - "education management"
+    - "higher education"
+    - "government administration"
+    - "real estate"
+    - "construction"
+    - "wholesale"
+    - "facilities services"
+    - "consumer services"
+    - "consumer goods"
+    - "hospitality"
+
+  # Exclude large/enterprise companies
+  exclude_companies:
+    - "Google"
+    - "Amazon"
+    - "Microsoft"
+    - "Meta"
+    - "Salesforce"
+    - "Cisco"
+    - "Oracle"
+    - "IBM"
+    - "SAP"
+    - "Accenture"
+    - "Deloitte"
+    - "McKinsey"
+
+# Monitoring & Alerts
+monitoring:
+  # ntfy.sh topic for push notifications (free, no signup)
+  # Install ntfy app on phone → subscribe to this topic
+  ntfy_topic: ${NTFY_TOPIC}
+
+  # Monthly limits (to track pacing)
+  monthly_limits:
+    apollo_credits: 3000
+    instantly_contacts: 1000
+    instantly_emails: 5000
+
+  # Alert thresholds (percentage used → warning)
+  warn_at_percent: 80
+  critical_at_percent: 95

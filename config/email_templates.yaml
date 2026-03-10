@@ -104,45 +104,47 @@ sequences:
           Cheers,
           Ze Lu Sottomayor
 
+# Vertical-specific context for AEC sub-segments
+# The personalizer auto-detects the vertical from lead data and injects
+# the matching context into the Claude prompt for targeted messaging.
+aec_verticals:
+  civil_site:
+    match_keywords: ["civil", "site", "land development", "grading", "stormwater", "transportation"]
+    buyer: "developers, general contractors, municipalities"
+    pain: "missing developer projects before they hit public RFP — by the time you see the listing, relationships are already set"
+    language: "projects, site plans, entitlements, land development, developer relationships"
+  environmental:
+    match_keywords: ["environmental", "remediation", "phase i", "phase ii", "compliance", "ehs", "hazardous"]
+    buyer: "real estate developers, lenders, attorneys, property owners"
+    pain: "waiting for Phase I calls instead of proactively reaching every developer and lender in your market"
+    language: "due diligence, Phase I/II, site assessments, compliance, remediation"
+  geotechnical:
+    match_keywords: ["geotech", "geotechnical", "subsurface", "soil", "foundation", "drilling"]
+    buyer: "developers, general contractors, civil engineers, architects"
+    pain: "relying on the same 3-4 firms sending you work instead of being the first call on new developments"
+    language: "geotech reports, subsurface investigation, foundation design, borings"
+  architecture:
+    match_keywords: ["architect", "architecture", "design", "planning", "multifamily"]
+    buyer: "developers, property owners, tenant improvement clients"
+    pain: "waiting on referrals for the next multifamily or commercial project instead of getting in front of developers early"
+    language: "design, entitlements, project delivery, programming, schematic design"
+  general_engineering:
+    match_keywords: []
+    buyer: "developers, property owners, general contractors"
+    pain: "principals splitting time between project delivery and chasing new work"
+    language: "projects, clients, winning work, pipeline"
+
 # Personalization instructions for Claude AI
+# NOTE: The actual prompt lives in src/outreach/personalize.py
+# This section is kept for reference but the code prompt takes precedence.
 personalization_instructions: |
-  You are writing personalized cold email components for Zelu Sottomayor,
-  who builds managed business development systems for AEC firms
-  (engineering, architecture, environmental consulting).
+  See src/outreach/personalize.py for the live Claude prompt.
+  See docs/EMAIL_PLAYBOOK.md for campaign creation guidelines.
 
-  The core offer: A system that continuously identifies potential clients
-  (developers, property owners, GCs, facilities managers), researches them,
-  writes personalized introductions, sends sequences, and delivers warm
-  conversations — so principals and seller-doers can focus on winning work
-  and delivering projects instead of prospecting.
-
-  Your task is to create highly personalized email components based on
-  research about the prospect's firm.
-
-  Guidelines:
-  - Be conversational and human, not salesy
-  - Reference specific things about their firm (services, project types,
-    markets served, specializations)
-  - Focus pain points on challenges common to AEC firms:
-    - Over-reliance on repeat clients and referrals
-    - Principals stretched between delivery and business development
-    - Inconsistent pipeline / feast-or-famine project flow
-    - Missing opportunities because nobody is proactively prospecting
-    - Spending time on proposals they don't win instead of building relationships early
-  - Keep it concise — these are busy technical professionals
-  - The tone should be professional and direct, not hype-y
-  - Avoid generic phrases like "I hope this email finds you well"
-  - Use AEC language: "projects" not "deals", "clients" not "customers",
-    "principals" not "executives", "winning work" not "closing sales"
-
-  For each lead, generate:
-  1. personalized_opener: 1-2 sentences referencing something specific about
-     their firm (project types, markets, certifications, specializations).
-     Max 25 words.
-  2. specific_pain_point: 1-2 sentences about why a managed outbound system would
-     help THIS specific firm (based on their size, services, or market).
-     Max 25 words.
-  3. industry_specific_insight: A valuable observation about business
-     development in their specific AEC sub-sector. Max 25 words.
-  4. suggested_subject: A compelling, non-spammy subject line relevant to
-     AEC business development. Max 8 words.
+  Key rules:
+  - personalized_opener: max 40 words, must reference concrete company details
+  - specific_pain_point: max 40 words, anchored in vertical pain + buyer type
+  - industry_specific_insight: max 30 words, non-obvious peer-level observation
+  - suggested_subject: max 8 words, unique to this company
+  - BANNED phrases: "I came across", "I was impressed by", "I noticed your company",
+    "As a company that", "It's clear that", "In today's competitive landscape"

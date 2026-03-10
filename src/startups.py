@@ -407,6 +407,7 @@ class StartupSourcer:
             queued = self._personalize_and_queue(new_leads)
 
         stats = self.crm.get_stats()
+        credit_summary = self.apollo_client.get_credit_summary()
         summary = {
             "signals_collected": len(signals),
             "added": added,
@@ -415,8 +416,8 @@ class StartupSourcer:
             "errors": errors,
             "queued_in_instantly": queued,
             "serpapi_searches_used": self.serpapi_client.searches_used,
-            "apollo_credits_used": self.apollo_client._credits_used,
             "total_in_sheet": stats["total_leads"],
+            **credit_summary,
         }
 
         logger.info("Startup sourcing complete", **summary)
@@ -475,6 +476,7 @@ class StartupSourcer:
                     "personalized_opener": personalized.get("personalized_opener", ""),
                     "specific_pain_point": personalized.get("specific_pain_point", ""),
                     "industry_specific_insight": personalized.get("industry_specific_insight", ""),
+                    "suggested_subject": personalized.get("suggested_subject", ""),
                 })
 
                 # Signal hook — a one-liner referencing WHY we're reaching out
@@ -547,6 +549,11 @@ def main():
 
     result = sourcer.run(target=args.target, source_only=args.source_only)
 
+    # Log credits to monitor state
+    from src.monitor import update_apollo_credits, update_leads_added
+    update_apollo_credits(result.get("credits_used", 0))
+    update_leads_added("startups", result.get("added", 0))
+
     print(f"\nB2B Startups Sourcing Complete!")
     print(f"  Signals collected: {result['signals_collected']}")
     print(f"  Leads added: {result['added']}")
@@ -555,7 +562,7 @@ def main():
     print(f"  Errors: {result['errors']}")
     print(f"  Queued in Instantly: {result['queued_in_instantly']}")
     print(f"  SerpAPI searches used: {result['serpapi_searches_used']}")
-    print(f"  Apollo credits used: {result['apollo_credits_used']}")
+    print(f"  Apollo credits used: {result.get('credits_used', 0)}")
     print(f"  Total in sheet: {result['total_in_sheet']}")
 
 

@@ -31,6 +31,12 @@ class ApolloClient:
         self._credits_exhausted = False
         self._credit_budget = credit_budget
         self._credits_used = 0
+        # Enrichment tracking — measure credit efficiency
+        self._enrichments_attempted = 0
+        self._enrichments_with_email = 0
+        self._enrichments_no_email = 0
+        self._enrichments_bad_email = 0
+        self._orgs_skipped_no_data = 0
 
     @staticmethod
     def _extract_error_detail(exc: requests.RequestException) -> str:
@@ -52,6 +58,23 @@ class ApolloClient:
                 self._credits_exhausted = True
             return True
         return False
+
+    def get_credit_summary(self) -> dict:
+        """Return credit efficiency metrics for this session."""
+        ratio = (
+            self._credits_used / self._enrichments_with_email
+            if self._enrichments_with_email > 0 else float("inf")
+        )
+        return {
+            "credits_used": self._credits_used,
+            "credits_budget": self._credit_budget,
+            "enrichments_attempted": self._enrichments_attempted,
+            "enrichments_with_email": self._enrichments_with_email,
+            "enrichments_no_email": self._enrichments_no_email,
+            "enrichments_bad_email": self._enrichments_bad_email,
+            "orgs_skipped_no_data": self._orgs_skipped_no_data,
+            "credits_per_lead": round(ratio, 2),
+        }
 
     def _check_budget(self) -> bool:
         """Return True if we've hit the credit budget and should stop."""
@@ -378,6 +401,42 @@ class ApolloClient:
         logger.info("Found contacts (free)", company=company_domain or company_name, count=len(contacts))
         return contacts
 
+    @staticmethod
+    def _score_candidate(person: dict) -> int:
+        """Score a free-search person by likelihood of successful enrichment.
+
+        Higher score = more likely to yield a verified email on enrichment.
+        Only called for people with has_email=True.
+        """
+        score = 0
+
+        # has_direct_phone="Yes" means Apollo has strong data on this person
+        phone_flag = str(person.get("has_direct_phone", "")).lower()
+        if phone_flag == "yes":
+            score += 3
+        elif "maybe" in phone_flag:
+            score += 1
+
+        # Has location data — indicates better profile completeness
+        if person.get("has_country"):
+            score += 1
+        if person.get("has_city"):
+            score += 1
+
+        # C-suite/founder titles are more likely to have verified emails
+        title = (person.get("title") or "").lower()
+        if any(t in title for t in ("ceo", "founder", "owner", "president")):
+            score += 2
+        elif any(t in title for t in ("vp", "vice president", "director", "head")):
+            score += 1
+
+        # Recently refreshed data is more reliable
+        refreshed = person.get("last_refreshed_at", "")
+        if refreshed and refreshed >= "2026-01":
+            score += 1
+
+        return score
+
     def find_contacts(
         self,
         company_domain: str = None,
@@ -390,35 +449,73 @@ class ApolloClient:
         Find contacts at a company using the free search, then enrich by ID
         to get emails (costs credits). Use find_contacts_free() if you don't
         need emails.
+
+        Optimized to minimize credit waste:
+        - Fetches a larger candidate pool from free search
+        - Scores candidates by enrichment likelihood
+        - Enriches best candidates first, stops early
+        - Only enriches 1 person for limit=1 (no retries on failure)
         """
+        # Fetch larger pool from free search (costs nothing)
         people = self._search_people_free(
             company_domain=company_domain,
             company_name=company_name,
             seniority=seniority,
-            limit=limit * 2,
+            limit=max(limit * 4, 8),
         )
 
-        # Enrich people who have email (costs credits)
-        contacts = []
+        # Filter to candidates with has_email=True and score them
+        candidates = []
         for person in people:
-            if len(contacts) >= limit:
-                break
-
             if not person.get("has_email"):
                 continue
-
-            person_id = person.get("id")
-            if not person_id:
+            if not person.get("id"):
                 continue
+            candidates.append(person)
 
-            enriched = self._enrich_person_by_id(person_id)
+        if not candidates:
+            logger.debug("No email candidates in free search",
+                         company=company_domain or company_name,
+                         total_people=len(people))
+            return []
+
+        # Sort by enrichment likelihood (best first)
+        candidates.sort(key=lambda p: self._score_candidate(p), reverse=True)
+
+        # Enrich only the top candidates — strict limit on attempts
+        # For limit=1, try at most 2 candidates (was unlimited before)
+        max_attempts = min(len(candidates), limit + 1)
+        contacts = []
+        attempts = 0
+
+        for person in candidates:
+            if len(contacts) >= limit or attempts >= max_attempts:
+                break
+
+            enriched = self._enrich_person_by_id(person["id"])
+            attempts += 1
+            self._enrichments_attempted += 1
+
             if enriched and enriched.get("email"):
+                # Reject bounced/unavailable emails
+                email_status = enriched.get("email_status", "")
+                if email_status in ("bounced", "unavailable"):
+                    self._enrichments_bad_email += 1
+                    logger.debug("Skipping bounced/unavailable email",
+                                 email=enriched["email"], status=email_status)
+                    continue
+
                 contacts.append(enriched)
+                self._enrichments_with_email += 1
+            else:
+                self._enrichments_no_email += 1
 
         logger.info(
-            "Found contacts with emails",
+            "find_contacts complete",
             company=company_domain or company_name,
-            count=len(contacts)
+            contacts_found=len(contacts),
+            credits_spent=attempts,
+            candidates_available=len(candidates),
         )
         return contacts
 
@@ -513,6 +610,7 @@ def enrich_lead(
     website: str = None,
     city: str = None,
     client: ApolloClient = None,
+    require_org_data: bool = True,
 ) -> dict:
     """
     Enrich a lead with Apollo data.
@@ -522,7 +620,9 @@ def enrich_lead(
         company_name: Company name
         website: Company website
         city: Company city
-        client: Optional reusable ApolloClient (preserves credit-exhaustion state across calls)
+        client: Optional reusable ApolloClient (preserves credit-exhaustion state)
+        require_org_data: If True, skip contact enrichment (credit spend) when
+                          Apollo has no org data. Saves credits on unknown companies.
 
     Returns:
         Enriched lead data
@@ -537,7 +637,7 @@ def enrich_lead(
         "contacts": []
     }
 
-    # Search for organization
+    # Search for organization (FREE — no credits)
     org_data = client.search_organizations(
         company_name=company_name,
         domain=website,
@@ -555,8 +655,14 @@ def enrich_lead(
             "technologies": org_data.get("technologies", []),
             "keywords": org_data.get("keywords", [])
         })
+    elif require_org_data:
+        # Apollo has no data on this company — don't waste a credit
+        client._orgs_skipped_no_data += 1
+        logger.debug("Skipping contact enrichment — no org data",
+                     company=company_name)
+        return result
 
-    # Find decision-maker contacts (limit=1: we only use the primary contact)
+    # Find decision-maker contacts (limit=1: costs 1-2 credits max)
     contacts = client.find_contacts(
         company_domain=website,
         company_name=company_name,
@@ -565,7 +671,6 @@ def enrich_lead(
 
     if contacts:
         result["contacts"] = contacts
-        # Set primary contact (first one with verified email)
         for contact in contacts:
             if contact.get("email"):
                 result["primary_contact"] = contact
