@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -10,10 +13,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/__init__.py ./src/
 COPY src/crm/ ./src/crm/
 
-# Only copy instantly_client.py (avoid personalize.py which needs anthropic)
+# Only copy needed outreach files (avoid personalize.py which needs anthropic)
 RUN mkdir -p ./src/outreach
 COPY src/outreach/instantly_client.py ./src/outreach/
-RUN echo "from .instantly_client import InstantlyClient" > ./src/outreach/__init__.py
+COPY src/outreach/sync_instantly.py ./src/outreach/
+RUN echo 'from .instantly_client import InstantlyClient\nfrom .sync_instantly import InstantlySyncer' > ./src/outreach/__init__.py
 
 # Copy application code
 COPY dashboard/app/ ./dashboard/app/
@@ -28,9 +32,9 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/up')"
+# Health check (start-period allows time for CRM initialization)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/up || exit 1
 
 # Run the application
 CMD ["uvicorn", "dashboard.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
