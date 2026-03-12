@@ -13,143 +13,253 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
 
     :root {
-      --bg:        #0c0e14;
-      --bg2:       #12141c;
-      --surface:   #171a25;
-      --surface2:  #1c2030;
-      --surface3:  #222638;
-      --border:    #252a3a;
-      --border-l:  #2f3548;
-      --green:     #34d399;
-      --green-dim: rgba(52,211,153,.10);
-      --green-mid: rgba(52,211,153,.18);
-      --blue:      #60a5fa;
-      --blue-dim:  rgba(96,165,250,.10);
-      --blue-mid:  rgba(96,165,250,.18);
-      --amber:     #fbbf24;
-      --amber-dim: rgba(251,191,36,.10);
-      --amber-mid: rgba(251,191,36,.18);
-      --teal:      #2dd4bf;
-      --teal-dim:  rgba(45,212,191,.10);
-      --purple:    #a78bfa;
-      --purple-dim:rgba(167,139,250,.10);
-      --rose:      #fb7185;
-      --rose-dim:  rgba(251,113,133,.10);
-      --tx1:       #f1f3f9;
-      --tx2:       #8b92ab;
-      --tx3:       #505672;
+      --page-bg:     #F5F0E8;
+      --card-dark:   #1A1D2E;
+      --card-light:  #FAF8F6;
+      --card-tinted: #F0E8D8;
+      --card-green:  #E6F5EC;
+      --accent:      #D4870E;
+      --accent-dim:  rgba(212,135,14,.10);
+      --accent-mid:  rgba(212,135,14,.18);
+      --green:       #34D399;
+      --green-dim:   rgba(52,211,153,.10);
+      --green-mid:   rgba(52,211,153,.18);
+      --blue:        #60A5FA;
+      --blue-dim:    rgba(96,165,250,.10);
+      --blue-mid:    rgba(96,165,250,.18);
+      --amber:       #F59E0B;
+      --amber-dim:   rgba(245,158,11,.10);
+      --rose:        #FB7185;
+      --rose-dim:    rgba(251,113,133,.10);
+      --teal:        #2DD4BF;
+      --tx-dark:     #1A1D2E;
+      --tx1:         #1E2132;
+      --tx2:         #5C607A;
+      --tx3:         #8E92AB;
+      --border:      #E0D8CA;
+      --border-l:    #CCBFAA;
+      --sidebar-w:   64px;
+      --shadow-sm:   0 1px 3px rgba(26,29,46,.06), 0 1px 2px rgba(26,29,46,.04);
+      --shadow-md:   0 4px 16px rgba(26,29,46,.08), 0 2px 4px rgba(26,29,46,.04);
+      --shadow-lg:   0 10px 40px rgba(26,29,46,.10), 0 4px 12px rgba(26,29,46,.06);
     }
 
-    body { background: var(--bg); color: var(--tx1); min-height: 100vh; font-size: 14px; line-height: 1.5; }
+    body { background: var(--page-bg); color: var(--tx1); min-height: 100vh; font-size: 14px; line-height: 1.5; }
 
     ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-track { background: var(--page-bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* Top bar */
-    #topbar {
-      position: sticky; top: 0; z-index: 40;
-      background: rgba(12,14,20,.85);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      padding: 0 32px;
-      height: 56px;
-      display: flex; align-items: center; justify-content: space-between;
+    /* ── SIDEBAR ─────────────────────────────── */
+    #sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0; z-index: 40;
+      width: var(--sidebar-w);
+      background: var(--card-dark);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 16px 0;
+      border-radius: 0 20px 20px 0;
     }
-    .bar-left { display: flex; align-items: center; gap: 12px; }
-    .bar-brand { font-size: 14px; font-weight: 700; color: var(--tx1); letter-spacing: -0.02em; }
-    .bar-sep { width: 1px; height: 20px; background: var(--border); }
-    .bar-nav { font-size: 12px; font-weight: 600; color: var(--tx3); text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 140ms; }
-    .bar-nav:hover { color: var(--tx2); background: var(--surface2); }
-    .bar-nav.active { color: var(--tx1); background: var(--surface2); }
+    .sb-logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 28px;
+      font-weight: 900; font-size: 16px; color: #fff;
+    }
+    .sb-nav { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .sb-link {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,.4); text-decoration: none;
+      transition: all 160ms;
+      position: relative;
+    }
+    .sb-link:hover { background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); }
+    .sb-link.active { background: rgba(212,135,14,.25); color: #fff; }
+    .sb-link.active::before {
+      content: ''; position: absolute; left: -12px;
+      width: 3px; height: 20px; border-radius: 0 3px 3px 0;
+      background: var(--accent);
+    }
+    .sb-link svg { width: 20px; height: 20px; }
+    .sb-bottom { display: flex; flex-direction: column; gap: 6px; align-items: center; }
 
-    .bar-right { display: flex; align-items: center; gap: 16px; }
-    .bar-stat { font-size: 12px; color: var(--tx3); }
-    .bar-stat strong { color: var(--tx2); font-weight: 600; }
+    /* ── TYPOGRAPHY ───────────────────────────── */
+    .text-hero { font-size: 56px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+    .text-kpi { font-size: 40px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+    .text-metric { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+    .text-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--tx3); }
+    .text-body { font-size: 14px; font-weight: 400; }
+
+    /* ── CARD VARIANTS ───────────────────────── */
+    .card-dark {
+      background: var(--card-dark);
+      border-radius: 24px;
+      color: #fff;
+      box-shadow: var(--shadow-lg);
+    }
+    .card-dark .text-label { color: rgba(255,255,255,.45); }
+    .card-dark .text-sub { color: rgba(255,255,255,.5); }
+
+    .card-light {
+      background: var(--card-light);
+      border-radius: 20px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid rgba(224,216,202,.5);
+    }
+
+    .card-tinted {
+      background: var(--card-tinted);
+      border-radius: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-green {
+      background: var(--card-green);
+      border-radius: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* ── PILL / BADGE ────────────────────────── */
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 14px; border-radius: 99px;
+      font-size: 11px; font-weight: 600;
+      background: var(--accent-dim); color: var(--accent);
+      border: 1px solid rgba(212,135,14,.2);
+    }
+    .pill-green { background: var(--green-dim); color: var(--green); border-color: rgba(52,211,153,.2); }
+    .pill-blue { background: var(--blue-dim); color: var(--blue); border-color: rgba(96,165,250,.2); }
+    .pill-dark {
+      background: rgba(255,255,255,.12); color: rgba(255,255,255,.8);
+      border-color: rgba(255,255,255,.15);
+    }
 
     @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
     .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2.4s infinite; flex-shrink: 0; }
 
-    /* Buttons */
+    /* ── BUTTONS ──────────────────────────────── */
     .btn {
-      padding: 7px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      padding: 7px 16px; border-radius: 10px; font-size: 12px; font-weight: 600;
       cursor: pointer; border: none; transition: all 140ms;
     }
-    .btn-primary { background: var(--green); color: #0a1a14; }
+    .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover { filter: brightness(1.1); }
     .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
-    .btn-ghost { background: var(--surface2); color: var(--tx2); border: 1px solid var(--border); }
+    .btn-ghost { background: var(--card-light); color: var(--tx2); border: 1px solid var(--border); }
     .btn-ghost:hover { border-color: var(--border-l); color: var(--tx1); }
+    .btn-ghost-dark { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); border: 1px solid rgba(255,255,255,.1); }
+    .btn-ghost-dark:hover { background: rgba(255,255,255,.12); color: rgba(255,255,255,.8); }
 
-    /* Card base */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      transition: border-color 180ms;
+    /* ── STATUS BADGES ────────────────────────── */
+    .status-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 8px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .card:hover { border-color: var(--border-l); }
 
-    /* Modal */
+    /* ── FILTER PILLS ─────────────────────────── */
+    .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-pill {
+      padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--tx3);
+      cursor: pointer; transition: all .15s;
+    }
+    .filter-pill:hover { border-color: var(--border-l); color: var(--tx2); }
+    .filter-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* ── LOGIN MODAL ──────────────────────────── */
     #login-modal .mbox {
-      background: var(--surface); border: 1px solid var(--border-l);
-      border-radius: 20px; padding: 32px; width: 360px;
+      background: var(--card-light); border: 1px solid var(--border);
+      border-radius: 24px; padding: 32px; width: 360px;
+      box-shadow: var(--shadow-lg);
     }
     #login-modal input {
-      width: 100%; background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 14px; color: var(--tx1); font-size: 13px;
+      width: 100%; background: var(--page-bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 10px 14px; color: var(--tx1); font-size: 13px;
       outline: none; transition: border-color 140ms;
     }
-    #login-modal input:focus { border-color: var(--green); }
+    #login-modal input:focus { border-color: var(--accent); }
     #login-modal label { font-size: 11px; font-weight: 600; color: var(--tx2); display: block; margin-bottom: 6px; }
 
-    /* ApexCharts overrides */
-    .apexcharts-tooltip { background: var(--surface2) !important; border: 1px solid var(--border-l) !important; border-radius: 12px !important; }
-    .apexcharts-tooltip-title { background: var(--surface3) !important; border-bottom: 1px solid var(--border) !important; color: var(--tx2) !important; font-size: 11px !important; }
+    /* ── APEX CHART OVERRIDES ─────────────────── */
+    .apexcharts-tooltip { background: var(--card-light) !important; border: 1px solid var(--border) !important; border-radius: 12px !important; box-shadow: var(--shadow-md) !important; }
+    .apexcharts-tooltip-title { background: var(--card-tinted) !important; border-bottom: 1px solid var(--border) !important; color: var(--tx2) !important; font-size: 11px !important; }
+    .apexcharts-tooltip-text { color: var(--tx1) !important; }
     .apexcharts-xaxis-label, .apexcharts-yaxis-label { fill: var(--tx3) !important; font-size: 10px !important; }
-    .apexcharts-gridline { stroke: rgba(37,42,58,.8) !important; }
+    .apexcharts-gridline { stroke: rgba(224,216,202,.6) !important; }
     .apexcharts-legend-text { color: var(--tx2) !important; font-size: 11px !important; }
 
-    /* Notification */
+    /* ── NOTIFICATION ──────────────────────────── */
     #notif { font-size: 12px; font-weight: 500; }
 
-    /* Hidden utility */
     .hidden { display: none !important; }
+
+    /* ── LAYOUT ────────────────────────────────── */
+    .main-content {
+      margin-left: var(--sidebar-w);
+      max-width: 1400px;
+      padding: 28px 36px 80px;
+    }
+
+    /* ── RESPONSIVE ────────────────────────────── */
+    @media (max-width: 768px) {
+      #sidebar { width: 0; overflow: hidden; }
+      .main-content { margin-left: 0; padding: 16px; }
+    }
 
     {% block extra_styles %}{% endblock %}
   </style>
 </head>
 <body>
 
-  <!-- TOP BAR -->
-  <div id="topbar">
-    <div class="bar-left">
-      <div class="live-dot"></div>
-      <span class="bar-brand">Outbound Pipeline</span>
-      <div class="bar-sep"></div>
-      <a href="/" class="bar-nav {% block nav_dashboard %}{% endblock %}">Dashboard</a>
-      <a href="/cold-calling" class="bar-nav {% block nav_cold_calling %}{% endblock %}">Cold Calling</a>
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="sb-logo">O</div>
+    <div class="sb-nav">
+      <!-- Overview -->
+      <a href="/" class="sb-link {% block nav_overview %}{% endblock %}" title="Overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      </a>
+      <!-- Campaigns (Email) -->
+      <a href="/campaign/aec" class="sb-link {% block nav_campaign %}{% endblock %}" title="Email Campaigns">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </a>
+      <!-- Cold Calling (Phone) -->
+      <a href="/campaign/local-services" class="sb-link {% block nav_cold_calling %}{% endblock %}" title="Phone Campaigns">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+        </svg>
+      </a>
     </div>
-
-    <div class="bar-right">
-      {% if metrics %}
-      <span class="bar-stat">Updated {{ metrics.last_updated }}</span>
-      {% endif %}
-      <button id="sync-btn" onclick="requireAuth(syncReplies)" class="btn btn-ghost">Sync Data</button>
+    <div class="sb-bottom">
+      <!-- Sync -->
+      <button id="sync-btn" onclick="requireAuth(syncReplies)" class="sb-link" title="Sync Data" style="border:none;cursor:pointer;background:transparent;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+      </button>
+      <!-- Auth -->
       <div id="auth-status">
-        <button onclick="showLoginModal()" class="btn btn-ghost" style="padding:6px 12px;">Login</button>
+        <button onclick="showLoginModal()" class="sb-link" title="Login" style="border:none;cursor:pointer;background:transparent;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </button>
       </div>
     </div>
-  </div>
+  </nav>
 
   <!-- Login Modal -->
   <div id="login-modal" class="hidden" style="position:fixed;inset:0;z-index:50;">
     <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;">
-      <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);" onclick="hideLoginModal()"></div>
+      <div style="position:fixed;inset:0;background:rgba(26,29,46,.4);backdrop-filter:blur(8px);" onclick="hideLoginModal()"></div>
       <div class="mbox" style="position:relative;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
-          <span style="font-size:16px;font-weight:700;">Sign in</span>
+          <span style="font-size:16px;font-weight:700;color:var(--tx1);">Sign in</span>
           <button onclick="hideLoginModal()" style="background:none;border:none;cursor:pointer;color:var(--tx3);font-size:18px;">&#10005;</button>
         </div>
         <form id="login-form" onsubmit="handleLogin(event)">
@@ -162,9 +272,9 @@
     </div>
   </div>
 
-  <div id="notif" class="hidden" style="position:fixed;top:68px;right:24px;padding:10px 18px;border-radius:14px;z-index:50;background:var(--surface2);border:1px solid var(--border-l);max-width:300px;"></div>
+  <div id="notif" class="hidden" style="position:fixed;top:24px;right:24px;padding:10px 18px;border-radius:14px;z-index:50;background:var(--card-light);border:1px solid var(--border);max-width:300px;box-shadow:var(--shadow-md);"></div>
 
-  <main style="max-width:1400px;margin:0 auto;padding:24px 32px 80px;">
+  <main class="main-content">
     {% block content %}{% endblock %}
   </main>
 
@@ -173,8 +283,8 @@
   (function(){ const s=sessionStorage.getItem('dAuth'); if(s){authCredentials=JSON.parse(s);updateAuth();} })();
   function updateAuth(){
     const el=document.getElementById('auth-status');
-    if(authCredentials) el.innerHTML=`<span style="font-size:12px;color:var(--tx3)">${authCredentials.username}</span> <button onclick="logout()" style="background:none;border:none;cursor:pointer;color:var(--tx3);font-size:10px;margin-left:4px;">logout</button>`;
-    else el.innerHTML=`<button onclick="showLoginModal()" class="btn btn-ghost" style="padding:6px 12px;">Login</button>`;
+    if(authCredentials) el.innerHTML=`<div class="sb-link active" style="cursor:default;" title="${authCredentials.username}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
+    else el.innerHTML=`<button onclick="showLoginModal()" class="sb-link" title="Login" style="border:none;cursor:pointer;background:transparent;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>`;
   }
   function showLoginModal(){ document.getElementById('login-modal').classList.remove('hidden'); document.getElementById('login-username').focus(); }
   function hideLoginModal(){ document.getElementById('login-modal').classList.add('hidden'); document.getElementById('login-error').classList.add('hidden'); document.getElementById('login-form').reset(); }
@@ -187,7 +297,7 @@
     try{
       const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
       const d=await r.json();
-      if(d.success){ authCredentials={username:u,password:p}; sessionStorage.setItem('dAuth',JSON.stringify(authCredentials)); updateAuth(); hideLoginModal(); if(pendingAction){pendingAction();pendingAction=null;} }
+      if(d.success){ authCredentials={username:u,password:p}; sessionStorage.setItem('dAuth',JSON.stringify(authCredentials)); updateAuth(); hideLoginModal(); window.dispatchEvent(new Event('authChanged')); if(pendingAction){pendingAction();pendingAction=null;} }
       else{ errEl.textContent=d.error||'Invalid credentials'; errEl.classList.remove('hidden'); }
     }catch(err){ errEl.textContent='Error: '+err.message; errEl.classList.remove('hidden'); }
     finally{ btn.disabled=false; btn.textContent='Sign in'; }
@@ -205,14 +315,30 @@
   }
   async function syncReplies(){
     const btn=document.getElementById('sync-btn');
-    btn.disabled=true; btn.textContent='Syncing...';
+    btn.style.opacity='0.4'; btn.style.pointerEvents='none';
     try{
       const r=await fetch('/api/sync-replies',{method:'POST',headers:getAuthHeader()});
       const d=await r.json();
-      if(r.ok){ notify(`Synced: ${d.replies_found} replies, ${d.crm_updated} updated`,'ok'); if(d.crm_updated>0) setTimeout(()=>location.reload(),1800); }
-      else notify(d.error||'Sync failed','err');
+      if(r.ok){
+        if(d.status==='already_running'){ notify('Sync already in progress...','ok'); }
+        else{ notify('Sync started in background...','ok'); pollSync(); }
+      } else notify(d.error||'Sync failed','err');
     }catch(e){ notify('Sync failed: '+e.message,'err'); }
-    finally{ btn.disabled=false; btn.textContent='Sync Data'; }
+    finally{ btn.style.opacity='1'; btn.style.pointerEvents='auto'; }
+  }
+  async function pollSync(){
+    const poll=setInterval(async()=>{
+      try{
+        const r=await fetch('/api/sync-status',{headers:getAuthHeader()});
+        const d=await r.json();
+        if(!d.running && d.last_result){
+          clearInterval(poll);
+          const res=d.last_result;
+          notify(`Sync done: ${res.leads_checked} checked, ${res.crm_updated} updated, ${res.replies_found} replies`,'ok');
+          if(res.crm_updated>0) setTimeout(()=>location.reload(),2000);
+        }
+      }catch(e){ clearInterval(poll); }
+    },5000);
   }
   let cd=300; setInterval(()=>{ cd--; if(cd<=0) location.reload(); },1000);
   </script>

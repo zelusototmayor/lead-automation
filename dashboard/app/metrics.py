@@ -5,6 +5,35 @@ from datetime import date, datetime
 from typing import Any
 
 
+def _is_sent(value: str) -> bool:
+    """Check if an email_X_sent column indicates the email was sent.
+
+    Accepts "TRUE" (legacy) or a timestamp like "2026-03-01 09:15".
+    Returns False for "", "FALSE", "0", or any other falsy value.
+    """
+    v = (value or "").strip()
+    return v not in ("", "FALSE", "0")
+
+
+def merge_trends(trends: list[dict]) -> dict:
+    """Combine multiple campaign trend dicts into one for the overview chart."""
+    if not trends:
+        return {"labels": [], "sent": [], "replies": []}
+
+    labels = trends[0]["labels"]
+    n = len(labels)
+    sent = [0] * n
+    replies = [0] * n
+
+    for t in trends:
+        for i in range(min(n, len(t.get("sent", [])))):
+            sent[i] += t["sent"][i]
+        for i in range(min(n, len(t.get("replies", [])))):
+            replies[i] += t["replies"][i]
+
+    return {"labels": labels, "sent": sent, "replies": replies}
+
+
 def calculate_metrics(rows: list[list[str]], header: list[str] | None = None) -> dict[str, Any]:
     leads = [_row_to_dict(row, header) for row in rows]
     today = date.today()
@@ -29,99 +58,91 @@ def normalize_rows(rows: list[list[str]], header: list[str] | None = None) -> li
 
 
 def _row_to_dict(row: list, header: list[str] | None = None) -> dict:
-    """Drift-tolerant row parser for live sheet quirks."""
+    """Map a sheet row to a dict using the header for column positions."""
 
     def txt(i: int) -> str:
         return row[i].strip() if i < len(row) else ""
 
-    def is_dt(v: str) -> bool:
-        if not v:
-            return False
-        try:
-            datetime.strptime(v.split()[0], "%Y-%m-%d")
-            return True
-        except Exception:
-            return False
+    # Header-based mapping: normalize header names to our internal keys
+    if header:
+        _HEADER_KEY_MAP = {
+            "id": "id",
+            "company": "company",
+            "contact name": "contact_name",
+            "email": "email",
+            "phone": "phone",
+            "status call": "status_call",
+            "status": "status",
+            "notes": "notes",
+            "website": "website",
+            "industry": "industry",
+            "employee count": "employee_count",
+            "city": "city",
+            "country": "country",
+            "lead score": "lead_score",
+            "date added": "date_added",
+            "last contact": "last_contact",
+            "email 1 sent": "email_1_sent",
+            "email 2 sent": "email_2_sent",
+            "email 3 sent": "email_3_sent",
+            "email 4 sent": "email_4_sent",
+            "opens": "opens",
+            "clicks": "clicks",
+            "response": "response",
+            "title": "title",
+            "instantly status": "instantly_status",
+            "source": "source",
+            "linkedin": "linkedin",
+        }
 
-    def is_url(v: str) -> bool:
-        v = (v or "").lower()
-        return v.startswith("http://") or v.startswith("https://")
+        out = {
+            "id": "", "company": "", "contact_name": "", "email": "",
+            "phone": "", "status": "", "notes": "", "website": "",
+            "industry": "", "employee_count": "", "city": "", "country": "",
+            "lead_score": "", "date_added": "", "last_contact": "",
+            "email_1_sent": "", "email_2_sent": "", "email_3_sent": "",
+            "email_4_sent": "", "opens": "", "clicks": "", "response": "",
+            "source": "", "linkedin": "", "title": "",
+        }
 
-    def is_email(v: str) -> bool:
-        return "@" in (v or "") and "." in (v or "")
+        for i, h in enumerate(header):
+            key = _HEADER_KEY_MAP.get(h.strip().lower())
+            if key and key in out:
+                out[key] = txt(i)
 
-    def is_bool(v: str) -> bool:
-        return (v or "").strip().upper() in ("TRUE", "FALSE")
+        if not out["last_contact"]:
+            out["last_contact"] = out["date_added"]
 
+        return out
+
+    # Fallback: positional mapping matching CRM_HEADERS order from sheets.py
     out = {
         "id": txt(0),
         "company": txt(1),
         "contact_name": txt(2),
         "email": txt(3),
         "phone": txt(4),
-        "status": txt(5),
+        "status": txt(13) if len(row) > 13 else txt(5),
         "notes": txt(6),
-        "website": txt(7) if is_url(txt(7)) else "",
+        "website": txt(7),
         "industry": txt(8),
         "employee_count": txt(9),
         "city": txt(10),
         "country": txt(11),
-        "lead_score": "",
-        "date_added": "",
-        "last_contact": "",
-        "email_1_sent": "",
-        "email_2_sent": "",
-        "email_3_sent": "",
-        "email_4_sent": "",
-        "opens": "",
-        "clicks": "",
-        "response": "",
-        "source": "",
-        "linkedin": "",
-        "title": "",
+        "lead_score": txt(12),
+        "date_added": txt(14),
+        "last_contact": txt(15),
+        "email_1_sent": txt(16),
+        "email_2_sent": txt(17),
+        "email_3_sent": txt(18),
+        "email_4_sent": txt(19),
+        "opens": txt(20),
+        "clicks": txt(21),
+        "response": txt(22),
+        "source": txt(26),
+        "linkedin": txt(27),
+        "title": txt(24),
     }
-
-    # First pass: extract known positional fields
-    for i in range(12, min(len(row), 23)):
-        v = txt(i)
-        if not out["date_added"] and is_dt(v):
-            out["date_added"] = v
-        elif is_bool(v):
-            if not out["email_1_sent"]:
-                out["email_1_sent"] = v
-            elif not out["email_2_sent"]:
-                out["email_2_sent"] = v
-            elif not out["email_3_sent"]:
-                out["email_3_sent"] = v
-            elif not out["email_4_sent"]:
-                out["email_4_sent"] = v
-        elif v.isdigit() and out["opens"] == "":
-            out["opens"] = v
-        elif v.isdigit() and out["clicks"] == "":
-            out["clicks"] = v
-        elif v and not out["response"] and len(v) > 10 and not is_dt(v) and not is_bool(v) and not v.isdigit() and not any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import", "linkedin.com"]):
-            # Heuristic: response is a non-empty, non-date, non-boolean, non-numeric string
-            # that's more than 10 chars and not a known source/linkedIn field
-            out["response"] = v
-
-    # Second pass: extract fields from remaining columns using pattern matching
-    for i in range(22, len(row)):
-        v = txt(i)
-        if not v:
-            continue
-        if "linkedin.com" in v.lower() and not out["linkedin"]:
-            out["linkedin"] = v
-        elif is_email(v) and not out["email"]:
-            out["email"] = v
-        elif any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import"]) and not out["source"]:
-            out["source"] = v
-        elif any(k in v.lower() for k in ["ceo", "founder", "director", "manager", "owner", "president", "head", "vp", "chief"]) and not out["title"]:
-            out["title"] = v
-        elif v.lower() in ("active", "completed", "unknown (-1)", "true", "false"):
-            pass
-        elif v and not out["response"] and len(v) > 10 and not is_url(v) and not any(k in v.lower() for k in ["google_maps", "apollo", "manually", "import"]):
-            # Response text is typically longer prose (not URLs, not short codes, not source markers)
-            out["response"] = v
 
     if not out["last_contact"]:
         out["last_contact"] = out["date_added"]
@@ -149,7 +170,7 @@ def _calculate_summary(leads: list[dict], today: date) -> dict:
         return t not in ("", "0", "FALSE", "NO", "N/A", "NONE", "-")
 
     responses = sum(1 for lead in leads if is_real_reply(lead.get("response", "")))
-    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    contacted = sum(1 for lead in leads if _is_sent(lead.get("email_1_sent", "")))
     opens = sum(1 for lead in leads if str(lead.get("opens", "")).strip() not in ("", "0"))
 
     response_rate = (responses / contacted * 100) if contacted > 0 else 0
@@ -173,11 +194,11 @@ def _calculate_pipeline(leads: list[dict]) -> dict:
         v = str(lead.get("response", "")).strip().lower()
         return bool(v) and v not in ("0", "false", "none", "n/a", "-")
 
-    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    contacted = sum(1 for lead in leads if _is_sent(lead.get("email_1_sent", "")))
     replied = sum(1 for lead in leads if has_real_reply(lead))
     won = status_counts.get("won", 0)
     lost = status_counts.get("lost", 0)
-    queued = sum(1 for lead in leads if lead.get("email") and str(lead.get("email_1_sent", "")).upper() != "TRUE")
+    queued = sum(1 for lead in leads if lead.get("email") and not _is_sent(lead.get("email_1_sent", "")))
     new = max(0, len(leads) - contacted)
 
     return {
@@ -195,13 +216,13 @@ def _calculate_email_sequence(leads: list[dict]) -> list[dict]:
 
     for step in range(1, 5):
         sent_key = f"email_{step}_sent"
-        sent = sum(1 for lead in leads if lead.get(sent_key) == "TRUE")
+        sent = sum(1 for lead in leads if _is_sent(lead.get(sent_key, "")))
 
         responses = 0
         for lead in leads:
-            if lead["response"] and lead.get(sent_key) == "TRUE":
+            if lead["response"] and _is_sent(lead.get(sent_key, "")):
                 next_key = f"email_{step + 1}_sent" if step < 4 else None
-                if next_key is None or lead.get(next_key) != "TRUE":
+                if next_key is None or not _is_sent(lead.get(next_key, "")):
                     responses += 1
 
         response_rate = (responses / sent * 100) if sent > 0 else 0
@@ -294,7 +315,7 @@ def _calculate_engagement(leads: list[dict]) -> dict:
         if clicks > 0:
             leads_with_clicks += 1
 
-    contacted = sum(1 for lead in leads if str(lead.get("email_1_sent", "")).upper() == "TRUE")
+    contacted = sum(1 for lead in leads if _is_sent(lead.get("email_1_sent", "")))
     return {
         "total_opens": total_opens,
         "total_clicks": total_clicks,

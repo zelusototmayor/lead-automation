@@ -1,126 +1,98 @@
 # Lead Automation System
 
-Automated lead sourcing, enrichment, and cold email outreach for agencies.
+Multi-campaign outbound system: signal-based lead sourcing → Apollo enrichment → Claude personalization → Instantly email sequences. Managed via Google Sheets CRM + FastAPI dashboard.
 
-## Features
+## Campaigns
 
-- **Lead Sourcing**: Finds agencies via Google Maps Places API
-- **Enrichment**: Enriches leads with Apollo.io (contacts, company info)
-- **CRM**: Stores everything in Google Sheets
-- **Personalization**: Uses Claude AI to write personalized emails
-- **Outreach**: Sends via Instantly.ai with automatic sequences
+| Campaign | ICP | Sourcing | Outreach | Daily Target |
+|---|---|---|---|---|
+| **AEC** | Architecture/Engineering firms, 5-200 employees | Google Maps | Email (4-step Instantly) | 50 leads |
+| **Local Services** | Staffing, logistics, real estate, insurance | Google Maps | Phone (dashboard CRM) | 50 leads |
+| **B2B Startups** | B2B SaaS, 5-50 employees, hiring sales roles | Apollo + SerpAPI | Email (4-step Instantly) | 25 leads |
 
-## Quick Start
-
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Configure API Keys
-
-Copy `.env.example` to `.env` and fill in your API keys:
-
-```bash
-cp .env.example .env
-```
-
-Required keys:
-- `GOOGLE_MAPS_API_KEY` - Google Cloud Places API
-- `APOLLO_API_KEY` - Apollo.io API
-- `ANTHROPIC_API_KEY` - Claude API
-- `INSTANTLY_API_KEY` - Instantly.ai API
-
-### 3. Set Up Google Sheets
-
-1. Place your Google service account JSON in `config/google_credentials.json`
-2. Share your Google Sheet with the service account email
-3. Update `config/settings.yaml` with your spreadsheet ID
-
-### 4. Run
-
-```bash
-python src/main.py
-```
-
-## Docker Deployment
-
-### Build and Run
-
-```bash
-docker-compose up --build
-```
-
-### Run on Schedule
-
-The docker-compose includes a scheduler that runs daily at 8 AM.
-
-### Manual Run
-
-```bash
-docker-compose run --rm lead-automation python src/main.py
-```
-
-## Configuration
-
-### `config/settings.yaml`
-
-- Target cities and countries
-- Search queries for agencies
-- Email settings
-- Daily lead targets
-
-### `config/email_templates.yaml`
-
-- Email sequence templates
-- Personalization instructions
+See [`docs/CAMPAIGNS.md`](docs/CAMPAIGNS.md) for full ICP definitions, signal logic, and email strategies per campaign.
 
 ## Project Structure
 
 ```
 lead-automation/
-├── config/
-│   ├── settings.yaml          # Main configuration
-│   ├── email_templates.yaml   # Email templates
-│   └── google_credentials.json # Google service account (not in git)
 ├── src/
-│   ├── main.py               # Main orchestrator
-│   ├── lead_sourcing/        # Google Maps + Apollo
-│   ├── crm/                  # Google Sheets
-│   └── email/                # Personalization + Instantly
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
+│   ├── main.py                    # AEC pipeline runner
+│   ├── local_services.py          # Local Services pipeline runner
+│   ├── startups.py                # B2B Startups pipeline runner
+│   ├── lead_sourcing/
+│   │   ├── apollo.py              # Apollo.io: org/people search + email enrichment
+│   │   ├── google_maps.py         # Google Maps: location-based business discovery
+│   │   └── serpapi.py             # SerpAPI: Google Jobs/hiring signals
+│   ├── crm/
+│   │   ├── sheets.py              # CRM for email-first pipelines (AEC, Startups)
+│   │   └── local_services_sheet.py # CRM for phone-first pipeline
+│   └── outreach/
+│       ├── personalize.py         # Claude AI email personalization + lead scoring
+│       ├── instantly_client.py    # Instantly.ai V2 API client
+│       └── sync_instantly.py      # Sync Instantly engagement → Google Sheets
+├── dashboard/app/
+│   ├── main.py                    # FastAPI dashboard (metrics + cold calling CRM)
+│   ├── auth.py                    # Simple auth
+│   └── metrics.py                 # CRM metric calculations
+├── config/
+│   ├── settings.yaml              # All pipeline configs (env-templated API keys)
+│   └── email_templates.yaml       # AEC 4-email sequence
+├── scripts/
+│   ├── deploy-automation.sh       # Build amd64 image → push to Docker Hub → pull on server
+│   └── run-startups.sh            # Server cron wrapper for B2B Startups pipeline
+└── docs/
+    ├── CAMPAIGNS.md               # Per-campaign ICP, sourcing logic, outreach strategy
+    ├── ARCHITECTURE.md            # Data flows, module map, API cost reference
+    └── DEPLOY.md                  # Server setup, deploy workflow, cron schedule
 ```
 
-## DigitalOcean Deployment
+## Quick Start (Local)
 
-1. Create a droplet (Basic $6/month is sufficient)
-2. SSH into the droplet
-3. Install Docker:
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   ```
-4. Clone this repo
-5. Copy your `.env` and `config/google_credentials.json`
-6. Run:
-   ```bash
-   docker-compose up -d
-   ```
-
-## Monitoring
-
-Check logs:
 ```bash
-docker-compose logs -f lead-automation
+# Install
+pip install -r requirements.txt
+
+# Configure
+cp .env.example .env  # fill in API keys
+# Place google_credentials.json in config/
+
+# Run AEC pipeline
+python src/main.py
+
+# Run B2B Startups pipeline
+python src/startups.py --target 25
+
+# Run Local Services pipeline
+python src/local_services.py --target 50
 ```
 
-Check CRM stats:
+## Configuration
+
+All settings live in `config/settings.yaml`. API keys are env-templated (`${VARIABLE_NAME}`) and loaded from `.env`.
+
+Key settings per campaign:
+- `lead_sourcing.daily_target` — AEC daily target
+- `lead_sourcing.apollo_credit_budget` — Apollo credits per AEC run
+- `startups.daily_target` / `startups.apollo_credit_budget` — Startups budget
+- `local_services.daily_target` — Local Services target
+
+## Deploy
+
 ```bash
-docker-compose run --rm lead-automation python -c "
-from src.crm import GoogleSheetsCRM
-crm = GoogleSheetsCRM('config/google_credentials.json', 'YOUR_SPREADSHEET_ID')
-print(crm.get_stats())
-"
+./scripts/deploy-automation.sh          # build + push + pull on server
+./scripts/deploy-automation.sh --sync-config  # also sync config files to server
 ```
+
+Server runs on DigitalOcean at `143.110.169.251`. Cron at `0 8 * * *` runs the AEC pipeline; `0 9 * * *` runs Startups. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+## API Keys Required
+
+| Key | Used For |
+|---|---|
+| `GOOGLE_MAPS_API_KEY` | Business discovery (AEC, Local Services) |
+| `APOLLO_API_KEY` | Contact enrichment (all pipelines) |
+| `ANTHROPIC_API_KEY` | Email personalization (AEC, Startups) |
+| `INSTANTLY_API_KEY` | Email campaign execution (AEC, Startups) |
+| `SERPAPI_API_KEY` | Hiring signal sourcing (Startups) |
+| Google Sheets service account | CRM (all pipelines) |
