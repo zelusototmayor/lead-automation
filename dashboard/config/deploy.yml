@@ -18,8 +18,9 @@ proxy:
   app_port: 8000
   healthcheck:
     path: /up
-    interval: 30
+    interval: 10
     timeout: 5
+  response_timeout: 60
 
 registry:
   username: zelusottomayor
@@ -29,7 +30,7 @@ registry:
 env:
   clear:
     SPREADSHEET_ID: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
-    SHEET_NAME: "Leads"
+    SHEET_NAME: "AEC Leads"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
   secret:
     - DASHBOARD_USER
@@ -41,5 +42,3 @@ volumes:
 
 builder:
   arch: amd64
-  context: "../.."
-  dockerfile: "dashboard/Dockerfile"
