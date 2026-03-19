@@ -16,6 +16,7 @@ proxy:
   ssl: true
   host: leads.zelusottomayor.com
   app_port: 8000
+  deploy_timeout: 60
   healthcheck:
     path: /up
     interval: 10
