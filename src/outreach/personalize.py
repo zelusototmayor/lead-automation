@@ -181,18 +181,8 @@ Return ONLY valid JSON, no other text."""
 
         except Exception as e:
             logger.error("Personalization failed", error=str(e))
-            # Return minimal fallback — better to be brief than generic
-            company = lead.get("company", "your firm")
-            industry = lead.get("industry", "")
-            city = lead.get("city", "")
-            location_bit = f" in {city}" if city else ""
-            industry_bit = f" {industry}" if industry else ""
-            return {
-                "personalized_opener": f"{company}'s{industry_bit} work{location_bit} caught my attention.",
-                "specific_pain_point": "Most firms this size have leaders splitting time between delivery and chasing new business — that's the gap we fill.",
-                "industry_specific_insight": "Proactive outreach consistently outperforms waiting on referrals and RFPs.",
-                "suggested_subject": f"Quick thought for {company}"
-            }
+            # Return None to signal personalization failed — caller should skip or retry
+            return None
 
     def generate_full_email(
         self,

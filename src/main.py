@@ -264,6 +264,11 @@ class LeadAutomation:
                     sender_info=sender_info
                 )
 
+                if not personalized:
+                    logger.error("Personalization returned None — skipping",
+                                 company=lead.get("company"))
+                    continue
+
                 # Add personalization to lead data
                 lead.update({
                     "personalized_opener": personalized.get("personalized_opener", ""),

@@ -39,6 +39,8 @@ class InstantlyClient:
                     response = requests.get(url, headers=self.headers, params=params, timeout=30)
                 elif method == "POST":
                     response = requests.post(url, headers=self.headers, json=data, params=params, timeout=30)
+                elif method == "PATCH":
+                    response = requests.patch(url, headers=self.headers, json=data, params=params, timeout=30)
                 else:
                     raise ValueError(f"Unsupported method: {method}")
 
@@ -153,6 +155,10 @@ class InstantlyClient:
                 )
 
         return results if results else None
+
+    def update_lead(self, lead_id: str, data: dict) -> Optional[dict]:
+        """Update a lead's data (e.g. custom_variables) via PATCH."""
+        return self._make_request("PATCH", f"leads/{lead_id}", data=data)
 
     def get_campaign_analytics(self, campaign_id: str = None) -> Optional[dict]:
         """Get campaign analytics.
