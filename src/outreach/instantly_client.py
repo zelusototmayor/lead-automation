@@ -68,12 +68,22 @@ class InstantlyClient:
         return None
 
     def list_campaigns(self) -> list[dict]:
-        """List all campaigns."""
-        result = self._make_request("GET", "campaigns")
-        # V2 returns {items: [...], next_starting_after: ...}
-        if result and "items" in result:
-            return result["items"]
-        return result if result else []
+        """List all campaigns (handles cursor-based pagination)."""
+        all_campaigns = []
+        cursor = None
+        while True:
+            params = {"limit": 100}
+            if cursor:
+                params["starting_after"] = cursor
+            result = self._make_request("GET", "campaigns", params=params)
+            if not result:
+                break
+            items = result.get("items", [])
+            all_campaigns.extend(items)
+            cursor = result.get("next_starting_after")
+            if not cursor or not items:
+                break
+        return all_campaigns
 
     def get_campaign(self, campaign_id: str) -> Optional[dict]:
         """Get campaign details."""
@@ -297,13 +307,9 @@ class InstantlyClient:
         campaign_id: str,
         sequences: list[dict]
     ) -> Optional[dict]:
-        """Set email sequences for a campaign."""
-        data = {
-            "campaign_id": campaign_id,
-            "sequences": sequences
-        }
-
-        return self._make_request("POST", "campaign/update/sequences", data=data)
+        """Set email sequences for a campaign via PATCH /campaigns/{id}."""
+        return self._make_request("PATCH", f"campaigns/{campaign_id}",
+                                  data={"sequences": sequences})
 
 
 def setup_campaign(
