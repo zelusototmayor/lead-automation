@@ -13,12 +13,15 @@ api_keys:
 google_sheets:
   spreadsheet_id: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
   credentials_file: "config/google_credentials.json"
-  sheet_name: "AEC Leads"
+  # v2 tab — fresh restart after polluted inbox window (Apr 2026)
+  sheet_name: "AEC Leads v2"
 
 # Lead Sourcing Settings
 lead_sourcing:
-  daily_target: 8  # AEC already stocked — low target until next month
-  apollo_credit_budget: 15  # Reduced — shift credits to Startups
+  daily_target: 15  # Ramp back up on v2 restart
+  # Apollo dropped — kept key for backward compat only (runtime uses SuperSearch)
+  apollo_credit_budget: 0
+  supersearch_credit_budget: 60  # ~60 credits/day → fits within 1000/month
 
   # Target cities (US metros with strong AEC / development activity)
   target_cities:
@@ -96,25 +99,30 @@ email:
   # Days to send (0=Monday, 6=Sunday)
   send_days: [0, 1, 2, 3, 4]  # Monday to Friday
 
-# Instantly.ai Settings
+# Instantly.ai Settings (AEC — assigned to ana@zeluautomations.com inbox)
 instantly:
   api_key: ${INSTANTLY_API_KEY}
-  campaign_name: "AEC Business Development"
+  campaign_name: "AEC — Outbound System"
+  # Hard-coded subject variants (split-testing without Claude)
+  subject_variants:
+    - "Quick question about {{company}}'s pipeline"
+    - "How {{company}} could win more private-sector work"
+    - "Pipeline for {{company}}"
 
 # Email Personalization
 personalization:
   model: "claude-sonnet-4-20250514"
   max_tokens: 500
 
-  # Your value proposition for the AI to use
+  # AEC value prop (differentiated from Startups/EU — focus on BD-for-billable-pros)
   value_proposition: |
     I build managed business development systems for engineering and architecture
-    firms. The system identifies potential clients (developers, property owners,
-    GCs, facilities managers), researches them, writes personalized introductions,
-    and delivers warm conversations — so your principals can focus on winning work
-    and delivering projects, not prospecting. This very email is proof it works.
+    firms. The system identifies developers, owners, and GCs in your market,
+    researches them, writes personalized introductions, and delivers warm
+    conversations — so your principals can focus on billable work instead of
+    prospecting. This very email is proof it works.
 
-  # Sender bio for context
+  # Sender bio for context (AEC)
   sender_bio: |
     Zelu Sottomayor builds managed business development systems for AEC firms.
     He helps engineering and architecture practices generate a steady pipeline
@@ -170,26 +178,35 @@ local_services:
 # B2B Startups Pipeline (signal-based sourcing → SaaS companies)
 # ICP: B2B SaaS companies 5-50 employees, hiring or have sales roles
 startups:
-  sheet_name: "B2B Startups"
-  daily_target: 15  # Startups needs more leads — boosted
-  apollo_credit_budget: 35  # Gets extra credits from AEC reduction
+  sheet_name: "B2B Startups v2"  # v2 tab — fresh restart
+  daily_target: 15
+  # Apollo dropped — dormant budget kept for backward compat
+  apollo_credit_budget: 0
+  supersearch_credit_budget: 40  # ~40 credits/day for SuperSearch enrichment
   serpapi_budget_per_run: 30
-  apollo_search_pages: 5  # pages per Apollo search (5 results/page)
+  apollo_search_pages: 0  # unused — Apollo signal sources removed
 
+  # Instantly (Startups — assigned to jose@zeluautomations.com inbox)
   instantly:
-    campaign_name: "B2B Startups Outbound"
+    campaign_name: "Startups — Outbound System"
+    subject_variants:
+      - "{{first_name}}, swap your SDR team for this?"
+      - "{{company}} is hiring reps — have you tried this?"
+      - "Outbound without the SDRs"
 
   personalization:
+    # Startups value prop — emphasise SDR replacement, ROI, speed
     value_proposition: |
-      I build automated outbound systems for B2B companies. The system
-      finds your ideal prospects, researches them, writes personalized
-      emails, sends sequences, and follows up — no SDRs, no VAs, no
-      manual work. This very email is proof it works.
+      I build automated outbound systems that replace (or augment) SDR
+      teams at B2B startups. The system finds your ICP, researches them,
+      writes personalized emails, sends sequences, and books meetings —
+      for a fraction of a single SDR's fully-loaded cost. This very email
+      is proof it works.
     sender_bio: |
-      Max at Zelu Sottomayor builds automated outbound systems for B2B
-      startups and growth-stage companies. He helps teams generate a steady
-      pipeline of qualified conversations without hiring SDRs or doing
-      manual prospecting.
+      Zelu Sottomayor builds automated outbound systems for B2B startups
+      and growth-stage teams. He helps founders fill pipeline without
+      hiring SDRs — or lets existing SDRs spend their time closing, not
+      prospecting.
 
   # Job titles to search for (Apollo org hiring + people search)
   sales_job_titles:
@@ -282,29 +299,64 @@ startups:
     - "IBM"
     - "SAP"
 
+# PT Logistics Pipeline (cold calling)
+# ICP: Logistics, freight, transport companies in Portugal
+pt_logistics:
+  sheet_name: "PT Logistics"
+  type: "phone"
+  daily_target: 10
+  description: "Logistics companies in Portugal — cold calling campaign"
+
+  target_regions:
+    - "Porto"
+    - "Lisboa"
+    - "Braga"
+    - "Aveiro"
+    - "Coimbra"
+    - "Faro"
+    - "Viseu"
+    - "Castelo Branco"
+
+  verticals:
+    - "national logistics operators"
+    - "freight forwarders / transitários"
+    - "shipping agencies"
+    - "international operators (PT offices)"
+    - "express / parcel logistics"
+    - "cold chain / pharma logistics"
+
 # EU B2B Outreach Pipeline (PT/UK/ES)
 # ICP: B2B companies hiring SDR/BDR roles in Portugal, UK, Spain
 eu_outreach:
-  sheet_name: "EU B2B Leads"
-  daily_target: 12  # 2 email accounts → faster ramp, ~360/month
-  apollo_credit_budget: 25  # ~25 credits/day → 750/month
+  sheet_name: "EU B2B Leads v2"  # v2 tab — fresh restart
+  daily_target: 12
+  # Apollo dropped — dormant budget kept for backward compat
+  apollo_credit_budget: 0
+  supersearch_credit_budget: 30  # ~30 credits/day for SuperSearch enrichment
   apify_max_runs: 20
-  max_results_per_search: 50  # Keep low to avoid actor timeout (deduped anyway)
+  max_results_per_search: 50
 
+  # Instantly (EU — assigned to ana@zelusotto.com inbox)
   instantly:
-    campaign_name: "EU B2B - hiring sales"
+    campaign_name: "EU B2B — Outbound System"
+    subject_variants:
+      - "{{first_name}}, outbound without hiring SDRs"
+      - "I saw {{company}} is hiring reps"
+      - "Sales pipeline for {{company}}"
 
   personalization:
+    # EU value prop — emphasise cross-border, localized, cost
     value_proposition: |
-      I build automated outbound systems for B2B companies. The system
-      finds your ideal prospects, researches them, writes personalized
-      emails, sends sequences, and follows up — no SDRs, no VAs, no
-      manual work. This very email is proof it works.
+      I build automated outbound systems for B2B companies across Europe.
+      The system finds your ideal prospects, researches them, writes
+      personalized emails in the buyer's language, sends sequences, and
+      follows up — so you can grow pipeline without scaling SDR headcount.
+      This very email is proof it works.
     sender_bio: |
       Zelu Sottomayor builds automated outbound systems for B2B
-      companies across Europe. He helps teams generate a steady
-      pipeline of qualified conversations without hiring SDRs or doing
-      manual prospecting.
+      companies across Europe — UK, Spain, Portugal, Germany. He helps
+      teams generate a steady pipeline of qualified conversations without
+      hiring SDRs or doing manual prospecting.
 
   # LinkedIn job search queries — keep SHORT (queries × locations must finish in <10min)
   # SDR/BDR covers 90% of postings; LinkedIn search matches partial terms too
@@ -374,6 +426,90 @@ eu_outreach:
     - "Accenture"
     - "Deloitte"
     - "McKinsey"
+
+# Logistics Quote Agent Pipeline (UK + Spain SMB)
+# ICP: Freight brokers, freight forwarders, 3PLs — small/mid-market only
+# Assigned Instantly inbox: jose@zelusotto.com
+# NOTE: 4-email sequence for this campaign lives IN Instantly (not in repo
+#       YAML). No product URLs — use max@zelusottomayor.com as try-it address.
+logistics:
+  sheet_name: "Logistics Quote v2"
+  daily_target: 15
+  max_per_query: 5
+  supersearch_credit_budget: 40
+
+  instantly:
+    campaign_name: "Logistics — Quote Agent"
+    subject_variants:
+      - "Quote requests at {{company}}"
+      - "{{first_name}}, faster quote turnaround?"
+      - "Auto-quote for {{company}}"
+
+  # Regions — UK and Spain major commercial hubs (NOT the US, per Decision #1)
+  # Country codes are ISO 3166-1 alpha-2 ("GB" for United Kingdom) —
+  # Instantly SuperSearch silently returns 0 results for non-ISO codes.
+  target_regions:
+    - name: "London"
+      country: "GB"
+    - name: "Manchester"
+      country: "GB"
+    - name: "Birmingham"
+      country: "GB"
+    - name: "Felixstowe"     # Biggest UK container port
+      country: "GB"
+    - name: "Southampton"
+      country: "GB"
+    - name: "Liverpool"
+      country: "GB"
+    - name: "Glasgow"
+      country: "GB"
+    - name: "Madrid"
+      country: "ES"
+    - name: "Barcelona"
+      country: "ES"
+    - name: "Valencia"       # Biggest ES container port
+      country: "ES"
+    - name: "Bilbao"
+      country: "ES"
+    - name: "Algeciras"      # Major gateway port
+      country: "ES"
+    - name: "Seville"
+      country: "ES"
+    - name: "Zaragoza"       # Major inland logistics hub
+      country: "ES"
+
+  # Search queries — cover EN + ES terminology
+  # Narrowed 2026-04-21 to forwarders + customs brokers only (primary ICP
+  # for Quote Agent). 3PL / haulage / generic "logistics company" / shipping
+  # agent dropped — too broad, poor fit for manual-quote pain point.
+  search_queries:
+    - "freight forwarder"
+    - "customs broker"
+    - "transitario"          # ES: freight forwarder
+    - "agencia de aduanas"   # ES: customs broker / agency
+    - "agente de aduanas"    # ES: customs agent
+
+  # Exclude large multinationals — SMB/mid-market only per user request
+  exclude_keywords:
+    - "DHL"
+    - "FedEx"
+    - "UPS"
+    - "Maersk"
+    - "Kuehne"               # Kuehne+Nagel
+    - "DB Schenker"
+    - "DSV"
+    - "Expeditors"
+    - "C.H. Robinson"
+    - "XPO"
+    - "GEODIS"
+    - "CEVA"
+    - "Nippon Express"
+    - "Yusen"
+    - "Hellmann"
+    - "GXO"
+    - "Seur"                 # Owned by DPDgroup
+    - "Correos"              # Spanish state postal
+    - "Royal Mail"
 
 # Monitoring & Alerts
 monitoring:

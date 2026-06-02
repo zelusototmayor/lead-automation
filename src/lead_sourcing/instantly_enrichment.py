@@ -75,27 +75,32 @@ class InstantlyEnrichmentClient:
         self,
         search_filters: dict,
         limit: int = 1,
+        poll_timeout: int = 15,
+        poll_interval: int = 3,
     ) -> list[dict]:
         """
         Call Instantly SuperSearch to find and enrich leads.
 
-        Returns list of enriched contact dicts.
+        SuperSearch is async: the kickoff POST returns a `resource_id`
+        (a lead-list ID). Leads are populated into that list by Instantly's
+        enrichment backend. We then pull leads via POST /leads/list with
+        filter `list_id: <resource_id>`.
         """
         if self._credits_exhausted or self._check_budget():
             return []
 
-        url = f"{self.BASE_URL}/supersearch-enrichment/enrich-leads-from-supersearch"
-
+        kickoff_url = f"{self.BASE_URL}/supersearch-enrichment/enrich-leads-from-supersearch"
         payload = {
             "search_filters": search_filters,
             "limit": limit,
             "work_email_enrichment": True,
         }
 
+        list_id = None
         for attempt in range(3):
             try:
                 resp = requests.post(
-                    url, headers=self.headers, json=payload, timeout=60
+                    kickoff_url, headers=self.headers, json=payload, timeout=60
                 )
 
                 if resp.status_code == 429 and attempt < 2:
@@ -106,15 +111,11 @@ class InstantlyEnrichmentClient:
 
                 resp.raise_for_status()
                 data = resp.json()
-
-                # Track credits (estimate — Instantly doesn't return exact credit cost)
-                leads = self._extract_leads(data)
-                if leads:
-                    # Estimate 1-2 credits per enriched lead
-                    estimated_credits = len(leads) * 2
-                    self._credits_used += estimated_credits
-
-                return leads
+                list_id = data.get("resource_id")
+                if not list_id:
+                    logger.error("SuperSearch kickoff missing resource_id", body=str(data)[:500])
+                    return []
+                break
 
             except requests.RequestException as e:
                 if attempt < 2 and "429" in str(e):
@@ -129,15 +130,50 @@ class InstantlyEnrichmentClient:
                     except Exception:
                         pass
 
-                # Check for credit/plan errors
                 if status in (402, 403) or "credit" in body.lower() or "plan" in body.lower():
                     self._credits_exhausted = True
                     logger.error("Instantly credits/plan issue", status=status, body=body)
 
-                logger.error("Instantly SuperSearch failed",
+                logger.error("Instantly SuperSearch kickoff failed",
                              error=str(e), status=status, body=body)
                 return []
 
+        if not list_id:
+            return []
+
+        leads = self._poll_list(list_id, limit, poll_timeout, poll_interval)
+
+        if leads:
+            self._credits_used += len(leads) * 2
+
+        return leads
+
+    def _poll_list(self, list_id: str, limit: int, timeout: int, interval: int) -> list[dict]:
+        """Poll POST /leads/list until leads appear in the SuperSearch list."""
+        list_url = f"{self.BASE_URL}/leads/list"
+        deadline = time.time() + timeout
+        first = True
+
+        while time.time() < deadline or first:
+            if not first:
+                time.sleep(interval)
+            first = False
+            try:
+                resp = requests.post(
+                    list_url,
+                    headers=self.headers,
+                    json={"list_id": list_id, "limit": limit},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    items = resp.json().get("items", [])
+                    if items:
+                        return self._extract_leads({"leads": items})
+            except requests.RequestException as e:
+                logger.warning("Polling /leads/list failed", error=str(e))
+
+        logger.debug("SuperSearch produced no leads within timeout",
+                     list_id=list_id, timeout=timeout)
         return []
 
     def _extract_leads(self, data: dict) -> list[dict]:
@@ -159,39 +195,37 @@ class InstantlyEnrichmentClient:
             if not isinstance(lead, dict):
                 continue
 
+            payload = lead.get("payload") or {}
+
             email = (
                 lead.get("email")
+                or payload.get("email")
                 or lead.get("work_email")
                 or lead.get("business_email")
                 or ""
             )
 
-            name = (
-                lead.get("name")
-                or lead.get("full_name")
-                or ""
-            )
-            if not name:
-                first = lead.get("first_name", "")
-                last = lead.get("last_name", "")
-                name = f"{first} {last}".strip()
+            first = lead.get("first_name") or payload.get("firstName", "")
+            last = lead.get("last_name") or payload.get("lastName", "")
+            name = lead.get("full_name") or lead.get("name") or f"{first} {last}".strip()
 
             results.append({
                 "email": email,
                 "full_name": name,
-                "first_name": lead.get("first_name", ""),
-                "last_name": lead.get("last_name", ""),
-                "title": lead.get("title", lead.get("job_title", "")),
-                "linkedin_url": lead.get("linkedin_url", lead.get("linkedin", "")),
-                "phone": lead.get("phone", lead.get("phone_number", "")),
-                "city": lead.get("city", ""),
-                "state": lead.get("state", ""),
-                "country": lead.get("country", ""),
-                "company_name": lead.get("company_name", lead.get("company", "")),
-                "company_domain": lead.get("company_domain", lead.get("domain", "")),
-                "industry": lead.get("industry", ""),
-                "employee_count": lead.get("employee_count", lead.get("company_size", "")),
-                "seniority": lead.get("seniority", ""),
+                "first_name": first,
+                "last_name": last,
+                "title": lead.get("title") or payload.get("title") or payload.get("job_title", ""),
+                "linkedin_url": lead.get("linkedin_url") or payload.get("linkedin_url", ""),
+                "phone": lead.get("phone") or payload.get("phone", ""),
+                "city": lead.get("city") or payload.get("city", ""),
+                "state": lead.get("state") or payload.get("state", ""),
+                "country": lead.get("country") or payload.get("country", ""),
+                "company_name": lead.get("company_name") or payload.get("companyName", ""),
+                "company_domain": lead.get("company_domain") or payload.get("domain", ""),
+                "industry": lead.get("industry") or payload.get("industry", ""),
+                "employee_count": lead.get("employee_count") or payload.get("company_size", ""),
+                "seniority": lead.get("seniority") or payload.get("seniority", ""),
+                "website": lead.get("website") or payload.get("website", ""),
             })
 
         return results
@@ -218,14 +252,11 @@ class InstantlyEnrichmentClient:
 
         filters = {}
 
-        # Company filter — SuperSearch V2 requires object format
+        # SuperSearch ignores company_domain filter (verified 2026-04-21 probe)
+        # but respects company_name. So we filter by name and use domain only
+        # for post-hoc validation of the returned match.
         if company_name:
             filters["company_name"] = {"include": [company_name]}
-
-        if website:
-            domain = (website.replace("https://", "").replace("http://", "")
-                      .replace("www.", "").split("/")[0])
-            filters["company_domain"] = {"include": [domain]}
 
         # Location — SuperSearch V2 requires array of objects
         if city and country:

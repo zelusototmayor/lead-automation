@@ -15,10 +15,12 @@ import structlog
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.lead_sourcing import search_agencies, enrich_lead
-from src.lead_sourcing.apollo import ApolloClient
+from src.lead_sourcing import search_agencies
+from src.lead_sourcing.instantly_enrichment import InstantlyEnrichmentClient, AEC_SENIORITIES, AEC_TITLES
 from src.crm import GoogleSheetsCRM
 from src.outreach import EmailPersonalizer, calculate_lead_score, InstantlyClient, InstantlySyncer
+# Apollo is dormant — kept only for backward-compat imports:
+# from src.lead_sourcing.apollo import ApolloClient
 
 # Configure logging
 structlog.configure(
@@ -94,11 +96,20 @@ class LeadAutomation:
 
         # API keys
         self.google_maps_key = config["api_keys"]["google_maps"]
-        self.apollo_key = config["api_keys"]["apollo"]
-        apollo_budget = config.get("lead_sourcing", {}).get("apollo_credit_budget", 0)
-        self.apollo_client = ApolloClient(self.apollo_key, credit_budget=apollo_budget)
+        self.instantly_key = config.get("instantly", {}).get("api_key", "")
+        # SuperSearch credit budget for AEC enrichment (replaces Apollo)
+        supersearch_budget = config.get("lead_sourcing", {}).get(
+            "supersearch_credit_budget",
+            config.get("lead_sourcing", {}).get("apollo_credit_budget", 0),
+        )
+        self.enrichment_client = InstantlyEnrichmentClient(
+            api_key=self.instantly_key,
+            credit_budget=supersearch_budget,
+        )
 
-        logger.info("Lead automation initialized")
+        logger.info("Lead automation initialized",
+                     enrichment="instantly_supersearch",
+                     supersearch_budget=supersearch_budget)
 
     def run_daily_sourcing(self, target_leads: int = None) -> list[dict]:
         """
@@ -161,20 +172,25 @@ class LeadAutomation:
                     continue
                 seen_domains.add(domain)
 
-                # Enrich with Apollo (require_org_data=True skips credit
-                # spend when Apollo has no data on this company)
-                enriched = enrich_lead(
-                    api_key=self.apollo_key,
+                # Stop if SuperSearch credits are exhausted
+                if self.enrichment_client._credits_exhausted:
+                    logger.warning("SuperSearch credits exhausted — stopping enrichment")
+                    break
+
+                # Enrich via Instantly SuperSearch (Apollo replacement)
+                contact = self.enrichment_client.find_contact_at_company(
                     company_name=agency["name"],
                     website=agency.get("website"),
                     city=city,
-                    client=self.apollo_client,
-                    require_org_data=True,
+                    country=country,
+                    seniority=AEC_SENIORITIES,
+                    job_titles=AEC_TITLES,
                 )
 
-                # Get primary contact
-                primary_contact = enriched.get("primary_contact", {})
-                email = primary_contact.get("email", "")
+                if not contact:
+                    continue
+
+                email = contact.get("email", "")
 
                 # Skip if no email or duplicate
                 if not email or email.lower() in existing_emails:
@@ -183,20 +199,20 @@ class LeadAutomation:
                 # Calculate lead score
                 lead_data = {
                     "company": agency["name"],
-                    "contact_name": primary_contact.get("full_name", ""),
+                    "contact_name": contact.get("full_name", ""),
                     "email": email,
-                    "phone": agency.get("phone", ""),
+                    "phone": contact.get("phone", "") or agency.get("phone", ""),
                     "website": agency.get("website", ""),
-                    "industry": enriched.get("industry", ""),
-                    "employee_count": enriched.get("employee_count", ""),
+                    "industry": contact.get("industry", ""),
+                    "employee_count": str(contact.get("employee_count", "")),
                     "city": city,
                     "country": country,
-                    "linkedin": primary_contact.get("linkedin_url", ""),
-                    "title": primary_contact.get("title", ""),
-                    "source": "google_maps + apollo",
-                    "description": enriched.get("description", ""),
-                    "technologies": enriched.get("technologies", []),
-                    "keywords": enriched.get("keywords", [])
+                    "linkedin": contact.get("linkedin_url", ""),
+                    "title": contact.get("title", ""),
+                    "source": "google_maps + instantly_supersearch",
+                    "description": "",
+                    "technologies": [],
+                    "keywords": []
                 }
 
                 lead_data["lead_score"] = calculate_lead_score(lead_data)
@@ -214,11 +230,11 @@ class LeadAutomation:
                         company=agency["name"],
                         email=email,
                         score=lead_data["lead_score"],
-                        apollo_credits_used=self.apollo_client._credits_used
+                        supersearch_credits_used=self.enrichment_client._credits_used
                     )
 
         # Log credit efficiency
-        credit_summary = self.apollo_client.get_credit_summary()
+        credit_summary = self.enrichment_client.get_credit_summary()
         logger.warning("Daily sourcing complete",
                        new_leads=len(new_leads),
                        **credit_summary)
@@ -380,9 +396,9 @@ def main():
     automation = LeadAutomation(config, templates)
     result = automation.run_full_workflow()
 
-    # Log credits to monitor state
+    # Log credits to monitor state (now tracks SuperSearch, not Apollo)
     from src.monitor import update_apollo_credits, update_leads_added
-    credit_summary = automation.apollo_client.get_credit_summary()
+    credit_summary = automation.enrichment_client.get_credit_summary()
     update_apollo_credits(credit_summary.get("credits_used", 0))
     update_leads_added("aec", result.get("new_leads", 0))
 

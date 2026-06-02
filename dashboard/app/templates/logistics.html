@@ -1,0 +1,1112 @@
+{% extends "base.html" %}
+{% block title %}PT Logistics Dashboard{% endblock %}
+
+{% block extra_styles %}
+  .metrics { display: grid; grid-template-columns: repeat(7, minmax(118px, 1fr)); gap: 0; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .metric { min-height: 58px; padding: 9px 12px; background: transparent; border: 0; border-right: 1px solid rgba(221,211,196,.72); text-align: left; cursor: pointer; }
+  .metric:last-child { border-right: 0; }
+  .metric:hover, .metric.active { background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
+  .metric.dark { background: transparent; color: var(--ink); }
+  .metric-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+  .metric.dark .metric-label { color: var(--muted); }
+  .metric-value { margin-top: 5px; font-size: 22px; font-weight: 900; line-height: 1; letter-spacing: 0; color: var(--ink); }
+  .metric.red .metric-value { color: var(--red); }
+  .metric.green .metric-value { color: var(--green); }
+  .metric.amber .metric-value { color: var(--amber); }
+  .metric.blue .metric-value { color: var(--blue); }
+
+  .activity-panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; margin-bottom: 12px; }
+  .activity-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+  .activity-title { font-size: 14px; font-weight: 900; color: var(--ink); }
+  .activity-controls { display: flex; align-items: center; gap: 8px; }
+  .activity-summary { display: flex; align-items: center; gap: 22px; min-width: 0; }
+  .activity-stat { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .activity-stat-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+  .activity-stat-value { color: var(--ink); font-size: 20px; line-height: 1; font-weight: 900; }
+  .chart-wrap { overflow-x: auto; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(221,211,196,.65); }
+  .line-chart-shell { min-width: 760px; }
+  .line-chart-shell svg { width: 100%; height: 220px; display: block; }
+  .line-chart-shell .axis-line { stroke: rgba(102,112,133,.22); stroke-width: 1; }
+  .line-chart-shell .series-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .line-chart-shell .series-dot { stroke: var(--panel); stroke-width: 2; }
+  .line-chart-shell .chart-label { fill: var(--muted); font-size: 10px; font-weight: 800; text-anchor: middle; }
+  .legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin-top: 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
+
+  .toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .segments { display: flex; flex-wrap: wrap; gap: 6px; }
+  .segment {
+    border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 800;
+  }
+  .segment.active { background: var(--dark); color: white; border-color: var(--dark); }
+  .search, .select {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    color: var(--ink); padding: 9px 12px; font-size: 13px; outline: none;
+  }
+  .search:focus, .select:focus { border-color: var(--accent); }
+
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; min-height: 620px; }
+  .table-wrap { min-height: 620px; max-height: calc(100vh - 230px); overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .detail { min-height: 620px; max-height: calc(100vh - 230px); overflow: auto; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel); padding: 15px; }
+  .mobile-list { display: none; }
+  .mobile-primary-actions { display: none; }
+  .mobile-call-submit { display: none; }
+  table { width: 100%; border-collapse: collapse; }
+  th { position: sticky; top: 0; z-index: 2; background: var(--panel-2); color: var(--muted); text-align: left; padding: 10px 12px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
+  td { padding: 11px 12px; border-bottom: 1px solid rgba(221,211,196,.65); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+  tr { cursor: pointer; }
+  tbody tr:hover { background: #f8f4ed; }
+  tbody tr.selected { background: var(--accent-soft); }
+  tbody tr.selected td { color: var(--ink); }
+
+  .badge { display: inline-flex; align-items: center; max-width: 160px; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge-new { background: var(--blue-soft); color: var(--blue); }
+  .badge-email { background: var(--green-soft); color: var(--green); }
+  .badge-call { background: var(--amber-soft); color: var(--amber); }
+  .badge-lost { background: var(--red-soft); color: var(--red); }
+  .badge-default { background: #eceff3; color: var(--muted); }
+  .badge-task { background: var(--accent-soft); color: var(--accent); }
+
+  .empty { display: flex; align-items: center; justify-content: center; min-height: 240px; color: var(--muted); font-weight: 700; }
+  .detail-title { font-size: 20px; font-weight: 900; line-height: 1.1; margin-bottom: 4px; }
+  .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .detail-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+  .detail-head .btn { flex: 0 0 auto; padding: 6px 10px; font-size: 11px; }
+  .section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+  .section:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .section-title { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+  .field { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12px; }
+  .field span:first-child { color: var(--faint); flex: 0 0 auto; }
+  .field span:last-child { text-align: right; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+  .detail-edit { display: grid; gap: 9px; }
+  .detail-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .detail-edit input[type="text"],
+  .detail-edit input[type="email"],
+  .detail-edit input[type="tel"],
+  .detail-edit input[type="url"] {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--page-bg);
+    color: var(--ink); padding: 9px 10px; font-size: 12px; outline: none;
+  }
+  .detail-edit input:focus { border-color: var(--accent); }
+  .btn-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .choice { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px 10px; font-size: 11px; font-weight: 800; color: var(--muted); }
+  .choice.active { background: var(--accent-soft); color: var(--accent); border-color: rgba(199,119,24,.45); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  label { display: block; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
+  textarea { width: 100%; min-height: 72px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--page-bg); color: var(--ink); font-size: 12px; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  input[type="date"] { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--page-bg); color: var(--ink); font-size: 12px; outline: none; }
+  .check-row { display: inline-flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: 0; }
+  .check-row input { width: 14px; height: 14px; accent-color: var(--accent); }
+  .history { max-height: 150px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--page-bg); border-radius: 8px; padding: 10px; color: var(--muted); font-size: 11px; }
+  .action-row { display: flex; gap: 8px; margin-top: 10px; }
+  .action-row .btn { flex: 1; }
+  .task-summary { border-radius: 8px; background: var(--accent-soft); padding: 10px; color: var(--accent); font-size: 12px; font-weight: 800; margin-bottom: 10px; }
+  .inline-edit { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+
+  @media (max-width: 1040px) {
+    .metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+    .activity-head { grid-template-columns: 1fr; }
+    .activity-summary { flex-wrap: wrap; gap: 10px 16px; }
+    .toolbar { grid-template-columns: 1fr; }
+    .workspace { grid-template-columns: 1fr; }
+    .table-wrap, .detail { min-height: auto; max-height: none; }
+  }
+
+  @media (max-width: 720px) {
+    .shell { padding: 12px 14px 30px; }
+    .topbar { align-items: start; gap: 10px; margin-bottom: 9px; }
+    .topbar h1 { font-size: 21px; line-height: 1.05; margin-top: 3px; }
+    .topbar .subtle { font-size: 12px; }
+    .topbar .btn { padding: 8px 10px; white-space: nowrap; }
+    .metrics {
+      display: flex; overflow-x: auto; gap: 0; margin: 0 -12px 10px; padding: 0 12px 2px;
+      border: 0; border-radius: 0; background: transparent; scroll-snap-type: x mandatory;
+    }
+    .metric {
+      flex: 0 0 128px; min-height: 56px; border: 1px solid var(--line); border-radius: 8px;
+      margin-right: 8px; background: var(--panel); scroll-snap-align: start;
+    }
+    .metric:last-child { border-right: 1px solid var(--line); }
+    .metric-label { font-size: 9px; }
+    .metric-value { font-size: 21px; }
+    .activity-panel { display: none; }
+    .activity-head { gap: 10px; }
+    .activity-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
+    .activity-stat { justify-content: space-between; border-top: 1px solid rgba(221,211,196,.55); padding-top: 6px; }
+    .activity-stat-label { font-size: 9px; }
+    .activity-stat-value { font-size: 17px; }
+    .activity-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    .chart-wrap { max-width: calc(100vw - 46px); }
+    .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .toolbar .search { grid-column: 1 / -1; }
+    .search, .select, input[type="date"], textarea { font-size: 16px; }
+    .toolbar .select { min-height: 42px; }
+    .workspace { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+    .detail { order: 1; border-left: 1px solid var(--line); padding: 13px; }
+    .table-wrap { order: 2; min-height: 260px; overflow: visible; }
+    table { display: none; }
+    .mobile-list { display: grid; gap: 0; }
+    .mobile-lead {
+      width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
+      padding: 11px 12px; border: 0; border-bottom: 1px solid rgba(221,211,196,.72);
+      background: var(--panel); text-align: left; color: var(--ink);
+    }
+    .mobile-lead.selected { background: var(--accent-soft); }
+    .mobile-lead-title { font-size: 14px; font-weight: 900; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mobile-lead-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .mobile-lead-phone { color: var(--accent); font-size: 12px; font-weight: 900; text-decoration: none; }
+    .mobile-primary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+    .mobile-primary-actions .btn { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 43px; }
+    .detail-content { display: flex; flex-direction: column; }
+    .lead-summary { order: 1; }
+    .call-section, .email-section { order: 2; }
+    .quick-section { order: 3; }
+    .last-section { order: 4; }
+    .notes-section { order: 5; }
+    .detail-title { font-size: 18px; }
+    .detail-meta { margin-bottom: 10px; }
+    .detail-head .btn { min-height: 38px; }
+    .field { font-size: 12px; padding: 3px 0; }
+    .section { padding-top: 11px; margin-top: 11px; }
+    .form-grid, .inline-edit, .detail-edit-grid { grid-template-columns: 1fr; }
+    .detail-edit input[type="text"],
+    .detail-edit input[type="email"],
+    .detail-edit input[type="tel"],
+    .detail-edit input[type="url"] { font-size: 16px; min-height: 42px; }
+    .btn-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .choice { min-height: 42px; padding: 9px 8px; font-size: 12px; }
+    textarea { min-height: 88px; }
+    .action-row { position: sticky; bottom: 0; z-index: 5; background: linear-gradient(to top, var(--panel) 82%, rgba(255,255,255,0)); padding-top: 8px; }
+    .action-row .btn { min-height: 46px; }
+    .mobile-call-submit { display: flex; position: static; padding-top: 0; background: transparent; margin: 0 0 8px; }
+    .call-section > .action-row:not(.mobile-call-submit) { display: none; }
+    .history { max-height: 110px; }
+  }
+{% endblock %}
+
+{% block content %}
+<div x-data="logisticsDashboard()" x-init="init()">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">{{ sheet_name }}</div>
+      <h1>PT Logistics Dashboard</h1>
+      <div class="subtle">
+        Today: {{ today }}
+        <span x-show="lastRefreshedAt"> · Refreshed <span x-text="lastRefreshedAt"></span></span>
+      </div>
+    </div>
+    <button class="btn btn-dark" @click="refresh()" :disabled="loading">Refresh Sheet</button>
+  </div>
+
+  <div class="metrics">
+    <button class="metric dark" :class="{ active: mode === 'all' && !stageFilter }" @click="showMetric('all')">
+      <div class="metric-label">Total Leads</div>
+      <div class="metric-value" x-text="stats.total || 0"></div>
+    </button>
+    <button class="metric green" :class="{ active: mode === 'today' }" @click="showMetric('today')">
+      <div class="metric-label">Calls Today</div>
+      <div class="metric-value" x-text="stats.calls_today || 0"></div>
+    </button>
+    <button class="metric red" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">
+      <div class="metric-label">Overdue Calls</div>
+      <div class="metric-value" x-text="stats.calls_overdue || 0"></div>
+    </button>
+    <button class="metric amber" :class="{ active: mode === 'email_today' }" @click="showMetric('email_today')">
+      <div class="metric-label">Emails Today</div>
+      <div class="metric-value" x-text="stats.email_followups_today || 0"></div>
+    </button>
+    <button class="metric red" :class="{ active: mode === 'email_overdue' }" @click="showMetric('email_overdue')">
+      <div class="metric-label">Overdue Emails</div>
+      <div class="metric-value" x-text="stats.email_followups_overdue || 0"></div>
+    </button>
+    <button class="metric green" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">
+      <div class="metric-label">Impacted Today</div>
+      <div class="metric-value" x-text="stats.impacted_today || 0"></div>
+    </button>
+    <button class="metric blue" :class="{ active: mode === 'all' && stageFilter === 'Meeting Booked' }" @click="showMetric('meetings')">
+      <div class="metric-label">Meetings Booked</div>
+      <div class="metric-value" x-text="(stats.by_stage || {})['Meeting Booked'] || 0"></div>
+    </button>
+  </div>
+
+  <div class="activity-panel">
+    <div class="activity-head">
+      <div class="activity-title">Activity History</div>
+      <div class="activity-summary">
+        <div class="activity-stat">
+          <div class="activity-stat-label">Full Impacted</div>
+          <div class="activity-stat-value" x-text="history.totals?.leads_impacted || 0"></div>
+        </div>
+        <div class="activity-stat">
+          <div class="activity-stat-label">New Impacted</div>
+          <div class="activity-stat-value" x-text="history.totals?.new_leads_impacted || 0"></div>
+        </div>
+        <div class="activity-stat">
+          <div class="activity-stat-label">Calls</div>
+          <div class="activity-stat-value" x-text="history.totals?.calls || 0"></div>
+        </div>
+        <div class="activity-stat">
+          <div class="activity-stat-label">Emails Sent</div>
+          <div class="activity-stat-value" x-text="history.totals?.emails_sent || 0"></div>
+        </div>
+      </div>
+      <div class="activity-controls">
+        <select class="select" x-model.number="historyDays" @change="loadHistory()">
+          <option value="14">14 days</option>
+          <option value="30">30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <button class="btn" @click="chartOpen = !chartOpen" x-text="chartOpen ? 'Hide graph' : 'Show graph'"></button>
+      </div>
+    </div>
+    <div class="chart-wrap" x-show="chartOpen" x-transition>
+      <div class="line-chart-shell" x-html="lineChartSvg()"></div>
+      <div class="legend">
+        <template x-for="series in historySeries" :key="series.key">
+          <span><i :style="`background:${series.color}`"></i><span x-text="series.label"></span></span>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search" type="search" placeholder="Search company, contact, phone, email, city..." x-model.debounce.200ms="search">
+    <select class="select" x-model="priorityFilter">
+      <option value="">All priorities</option>
+      <template x-for="p in priorities" :key="p"><option :value="p" x-text="p"></option></template>
+    </select>
+    <select class="select" x-model="stageFilter">
+      <option value="">All stages</option>
+      <template x-for="s in stages" :key="s"><option :value="s" x-text="s"></option></template>
+    </select>
+  </div>
+
+  <div class="workspace">
+    <div class="table-wrap">
+      <template x-if="loading">
+        <div class="empty">Loading...</div>
+      </template>
+
+      <template x-if="!loading && filteredItems.length === 0">
+        <div class="empty">No records found</div>
+      </template>
+
+      <template x-if="!loading && filteredItems.length > 0">
+        <div>
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Contact</th>
+                <th x-show="!isEmailMode()">Due</th>
+                <th x-show="isEmailMode()">Task</th>
+                <th x-show="mode === 'impacted'">Touched</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Stage</th>
+                <th>Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="item in filteredItems" :key="item.key + '-' + (item.task_type || mode)">
+                <tr :class="{ selected: selected === item }" @click="selectItem(item)">
+                  <td x-text="item.company || '-'"></td>
+                  <td x-text="item.contact || '-'"></td>
+                  <td x-show="!isEmailMode()" x-text="item.due || '-'"></td>
+                  <td x-show="isEmailMode()">
+                    <span class="badge badge-task" x-text="item.task_type"></span>
+                    <span style="margin-left:6px;" x-text="item.task_due"></span>
+                  </td>
+                  <td x-show="mode === 'impacted'" x-text="item.dashboard_touched || '-'"></td>
+                  <td x-text="item.phone || '-'"></td>
+                  <td x-text="item.email || '-'"></td>
+                  <td><span class="badge" :class="stageBadge(item.stage)" x-text="item.stage || 'Blank'"></span></td>
+                  <td x-text="item.priority || '-'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <div class="mobile-list">
+            <template x-for="item in filteredItems" :key="'mobile-' + item.key + '-' + (item.task_type || mode)">
+              <button class="mobile-lead" :class="{ selected: selected === item }" @click="selectItem(item)">
+                <span class="mobile-lead-title" x-text="item.company || '-'"></span>
+                <a class="mobile-lead-phone" :href="'tel:' + item.phone" @click.stop x-text="item.phone ? 'Call' : ''"></a>
+                <span class="mobile-lead-meta">
+                  <span x-text="item.contact || 'No contact'"></span>
+                  <span x-show="isEmailMode()" x-text="(item.task_type || 'Email') + ' ' + (item.task_due || '')"></span>
+                  <span x-show="!isEmailMode()" x-text="item.due ? 'Due ' + item.due : 'No due'"></span>
+                  <span class="badge" :class="stageBadge(item.stage)" x-text="item.stage || 'Blank'"></span>
+                </span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <aside class="detail">
+      <template x-if="!selected">
+        <div class="empty" style="min-height:560px;">Select a record</div>
+      </template>
+
+      <template x-if="selected">
+        <div class="detail-content">
+          <div class="section lead-summary">
+            <div class="detail-head">
+              <div>
+                <div class="detail-title" x-text="selected.company"></div>
+                <div class="detail-meta">
+                  <span x-text="selected.city || 'Unknown city'"></span>
+                  <span x-show="selected.region">, <span x-text="selected.region"></span></span>
+                  <span> · </span>
+                  <span x-text="selected.priority || 'No priority'"></span>
+                </div>
+              </div>
+              <button class="btn" x-show="!detailEditing" @click="startDetailEdit()">Edit details</button>
+            </div>
+
+            <template x-if="!detailEditing">
+              <div>
+                <div class="field"><span>Contact</span><span x-text="selected.contact || '-'"></span></div>
+                <div class="field"><span>Phone</span><span><a :href="'tel:' + selected.phone" x-text="selected.phone || '-'"></a></span></div>
+                <div class="field"><span>Email</span><span><a :href="'mailto:' + selected.email" x-text="selected.email || '-'"></a></span></div>
+                <div class="field" x-show="selected.website"><span>Website</span><span><a :href="selected.website" target="_blank" x-text="selected.website"></a></span></div>
+                <div class="field"><span>Stage</span><span><span class="badge" :class="stageBadge(selected.stage)" x-text="selected.stage || 'Blank'"></span></span></div>
+                <div class="field"><span>Due</span><span x-text="selected.due || '-'"></span></div>
+                <div class="field"><span>Dashboard Touched</span><span x-text="selected.dashboard_touched || '-'"></span></div>
+              </div>
+            </template>
+
+            <template x-if="detailEditing">
+              <div class="detail-edit">
+                <div class="action-row">
+                  <button class="btn btn-primary" @click="saveDetailUpdate()" :disabled="submitting">
+                    <span x-text="submitting ? 'Saving...' : 'Save details'"></span>
+                  </button>
+                  <button class="btn" @click="cancelDetailEdit()" :disabled="submitting">Cancel</button>
+                </div>
+                <div class="detail-edit-grid">
+                  <div>
+                    <label>Contact</label>
+                    <input type="text" x-model="detailForm.contact" placeholder="Contact name">
+                  </div>
+                  <div>
+                    <label>Phone</label>
+                    <input type="tel" x-model="detailForm.phone" placeholder="+351...">
+                  </div>
+                  <div>
+                    <label>Email</label>
+                    <input type="email" x-model="detailForm.email" placeholder="name@company.com">
+                  </div>
+                  <div>
+                    <label>Website</label>
+                    <input type="url" x-model="detailForm.website" placeholder="https://...">
+                  </div>
+                  <div>
+                    <label>City</label>
+                    <input type="text" x-model="detailForm.city" placeholder="City">
+                  </div>
+                  <div>
+                    <label>Region</label>
+                    <input type="text" x-model="detailForm.region" placeholder="Region">
+                  </div>
+                  <div>
+                    <label>Priority</label>
+                    <select class="select" x-model="detailForm.priority">
+                      <option value="">Blank</option>
+                      <option>High</option>
+                      <option>Medium</option>
+                      <option>Low</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Stage</label>
+                    <select class="select" x-model="detailForm.stage" @change="handleDetailStageChange()">
+                      <option value="">Blank</option>
+                      <template x-for="stage in stageOptions" :key="stage"><option :value="stage" x-text="stage"></option></template>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Due date</label>
+                    <input type="date" x-model="detailForm.due" :disabled="detailForm.clear_due">
+                    <label class="check-row">
+                      <input type="checkbox" x-model="detailForm.clear_due" @change="if (detailForm.clear_due) detailForm.due = ''">
+                      No next call
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label>Notes</label>
+                  <textarea x-model="detailForm.notes" placeholder="Update notes..."></textarea>
+                </div>
+              </div>
+            </template>
+            <div class="mobile-primary-actions" x-show="!detailEditing">
+              <a class="btn btn-primary" :href="'tel:' + selected.phone">Call</a>
+              <button class="btn" @click="skip()">Next lead</button>
+            </div>
+          </div>
+
+          <div class="section quick-section">
+            <div class="section-title">Quick Update</div>
+            <div class="form-grid">
+              <div>
+                <label>Due date</label>
+                <input type="date" x-model="editForm.due" :disabled="editForm.clear_due">
+                <label class="check-row">
+                  <input type="checkbox" x-model="editForm.clear_due" @change="if (editForm.clear_due) editForm.due = ''">
+                  No next call
+                </label>
+              </div>
+              <div>
+                <label>Stage</label>
+                <select class="select" x-model="editForm.stage" @change="handleQuickStageChange()">
+                  <option value="">Keep current</option>
+                  <template x-for="stage in stageOptions" :key="stage"><option :value="stage" x-text="stage"></option></template>
+                </select>
+              </div>
+            </div>
+            <div class="inline-edit">
+              <div>
+                <label>Priority</label>
+                <select class="select" x-model="editForm.priority">
+                  <option value="">Keep current</option>
+                  <option>High</option>
+                  <option>Medium</option>
+                  <option>Low</option>
+                </select>
+              </div>
+              <button class="btn" @click="saveQuickUpdate()" :disabled="submitting">
+                <span x-text="submitting ? 'Saving...' : 'Save'"></span>
+              </button>
+            </div>
+          </div>
+
+          <template x-if="isEmailMode()">
+            <div class="section email-section">
+              <div class="section-title">Email Follow-up</div>
+              <div class="task-summary">
+                <span x-text="selected.task_label"></span>
+                <span> due </span>
+                <span x-text="selected.task_due"></span>
+                <span x-show="selected.task_overdue_days > 0"> · overdue by <span x-text="selected.task_overdue_days"></span> days</span>
+              </div>
+              <div class="field"><span>Email to</span><span x-text="selected.email || '-'"></span></div>
+              <div class="field"><span>Contact</span><span x-text="selected.contact || '-'"></span></div>
+              <div class="field"><span>Current task</span><span x-text="selected.task_type || '-'"></span></div>
+              <div class="field"><span>Proposal</span><span x-text="selected.proposal_sent || '-'"></span></div>
+              <div class="field"><span>FU1</span><span x-text="selected.fu1_sent || '-'"></span></div>
+              <div class="field"><span>FU2</span><span x-text="selected.fu2_sent || '-'"></span></div>
+              <div class="field"><span>FU3</span><span x-text="selected.fu3_sent || '-'"></span></div>
+              <div class="field"><span>Reactivation</span><span x-text="selected.reactivation_sent || '-'"></span></div>
+              <div style="margin-top:10px;">
+                <label>Optional note</label>
+                <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Mark ' + selected.task_type + ' Sent Today'"></span>
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="!isEmailMode() && stageValue(selected.stage) === 'Send Email'">
+            <div class="section email-section">
+              <div class="section-title">Email Action</div>
+              <div style="margin-top:10px;">
+                <label>Optional note</label>
+                <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Log Email Sent'"></span>
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="!isEmailMode()">
+            <div class="section call-section">
+              <div class="section-title">Log Call</div>
+              <div class="btn-grid">
+                <template x-for="status in callStatuses" :key="status">
+                  <button class="choice" :class="{ active: callForm.call_status === status }" @click="setCallStatus(status)" x-text="status"></button>
+                </template>
+              </div>
+              <div class="action-row mobile-call-submit">
+                <button class="btn btn-primary" @click="logCall()" :disabled="!callForm.call_status || submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Log & Next'"></span>
+                </button>
+                <button class="btn" @click="skip()">Skip</button>
+              </div>
+              <div class="form-grid">
+                <div>
+                  <label>Next due date</label>
+                  <input type="date" x-model="callForm.due" :disabled="callForm.clear_due">
+                  <label class="check-row">
+                    <input type="checkbox" x-model="callForm.clear_due" @change="if (callForm.clear_due) callForm.due = ''">
+                    No next call
+                  </label>
+                </div>
+                <div>
+                  <label>Stage</label>
+                  <select class="select" x-model="callForm.stage" @change="handleCallStageChange()">
+                    <option value="">Auto</option>
+                    <template x-for="stage in stageOptions" :key="stage"><option :value="stage" x-text="stage"></option></template>
+                  </select>
+                </div>
+              </div>
+              <div style="margin-bottom:8px;">
+                <label>What happened</label>
+                <input class="search" type="text" x-model="callForm.what_happened" placeholder="Short outcome, gatekeeper name, callback instruction...">
+              </div>
+              <div>
+                <label>Notes</label>
+                <textarea x-model="callForm.notes" placeholder="Add call notes..."></textarea>
+              </div>
+              <div class="action-row">
+                <button class="btn btn-primary" @click="logCall()" :disabled="!callForm.call_status || submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Log Call & Next'"></span>
+                </button>
+                <button class="btn" @click="skip()">Skip</button>
+              </div>
+            </div>
+          </template>
+
+          <div class="section last-section">
+            <div class="section-title">Last Touch</div>
+            <div class="field"><span>Type</span><span x-text="selected.last_touch_type || '-'"></span></div>
+            <div class="field"><span>What Happened</span><span x-text="selected.what_happened || '-'"></span></div>
+            <div class="field"><span>Meeting</span><span x-text="selected.meeting_date || '-'"></span></div>
+            <div class="field"><span>Outcome</span><span x-text="selected.outcome || '-'"></span></div>
+          </div>
+
+          <div class="section notes-section" x-show="selected.notes">
+            <div class="section-title">Notes</div>
+            <div class="history" x-text="selected.notes"></div>
+          </div>
+        </div>
+      </template>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function logisticsDashboard() {
+  return {
+    mode: 'today',
+    stats: {},
+    items: [],
+    selected: null,
+    loading: true,
+    submitting: false,
+    refreshTimer: null,
+    lastRefreshedAt: '',
+    historyDays: 30,
+    chartOpen: false,
+    history: { days: [], totals: {} },
+    historySeries: [
+      { key: 'leads_impacted', label: 'Full impacted', color: '#d97706' },
+      { key: 'new_leads_impacted', label: 'New impacted', color: '#16a34a' },
+      { key: 'calls', label: 'Calls', color: '#2563eb' },
+      { key: 'emails_sent', label: 'Emails sent', color: '#c026d3' },
+    ],
+    search: '',
+    priorityFilter: '',
+    stageFilter: '',
+    priorities: [],
+    stages: [],
+    callStatuses: ['Reached', 'Send Proposal', 'Proposal Sent', 'Send Email', 'Email Sent', 'No Answer', 'Gatekeeper'],
+    stageOptions: ['New', 'Contacted', 'No Answer', 'Call Back', 'Send Proposal', 'Send Email', 'Proposal Sent', 'Email Sent', 'Meeting Booked', 'Not a Fit', 'Lost'],
+    callForm: { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false },
+    emailForm: { notes: '' },
+    editForm: { due: '', stage: '', priority: '', clear_due: false },
+    detailEditing: false,
+    detailForm: { contact: '', phone: '', email: '', website: '', city: '', region: '', priority: '', stage: '', due: '', clear_due: false, notes: '' },
+
+    async init() {
+      await this.loadStats();
+      await this.loadHistory();
+      await this.loadItems();
+      this.lastRefreshedAt = this.nowLabel();
+      this.refreshTimer = setInterval(() => this.refresh(true), 60 * 60 * 1000);
+      this.$watch('search', () => this.syncSelection());
+      this.$watch('priorityFilter', () => this.syncSelection());
+      this.$watch('stageFilter', () => this.syncSelection());
+    },
+
+    get filteredItems() {
+      let rows = this.items;
+      if (this.search.trim()) {
+        const q = this.search.toLowerCase();
+        rows = rows.filter(item =>
+          [item.company, item.contact, item.phone, item.email, item.city, item.region]
+            .join(' ').toLowerCase().includes(q)
+        );
+      }
+      if (this.priorityFilter) rows = rows.filter(item => (item.priority || '') === this.priorityFilter);
+      if (this.stageFilter) rows = rows.filter(item => this.stageValue(item.stage) === this.stageFilter);
+      return rows;
+    },
+
+    async setMode(mode) {
+      this.mode = mode;
+      this.selected = null;
+      this.resetForms();
+      await this.loadItems();
+    },
+
+    async showMetric(metric) {
+      this.search = '';
+      this.priorityFilter = '';
+      this.stageFilter = '';
+      if (metric === 'meetings') {
+        this.stageFilter = 'Meeting Booked';
+        await this.setMode('all');
+        return;
+      }
+      await this.setMode(metric);
+    },
+
+    async loadStats() {
+      const res = await fetch('/api/stats');
+      if (!res.ok) return;
+      this.stats = await res.json();
+      this.priorities = Object.keys(this.stats.by_priority || {}).filter(Boolean).sort();
+      this.stages = Array.from(new Set([
+        ...Object.keys(this.stats.by_stage || {}).filter(Boolean),
+        'No Answer',
+        'Send Email',
+      ])).sort();
+    },
+
+    async loadHistory() {
+      try {
+        const res = await fetch(`/api/history?days=${encodeURIComponent(this.historyDays)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load history');
+        this.history = data;
+      } catch (err) {
+        notify(err.message, 'err');
+        this.history = { days: [], totals: {} };
+      }
+    },
+
+    async loadItems() {
+      this.loading = true;
+      try {
+        const url = this.isEmailMode()
+          ? `/api/email-followups?view=${this.mode === 'email_overdue' ? 'overdue' : 'today'}`
+          : this.mode === 'impacted'
+            ? '/api/impacted-leads'
+            : `/api/leads?view=${encodeURIComponent(this.mode)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load dashboard data');
+        const previousKey = this.selected ? this.itemIdentity(this.selected) : '';
+        this.items = this.isEmailMode() ? (data.tasks || []) : (data.leads || []);
+        this.selected = this.items.find(item => this.itemIdentity(item) === previousKey) || this.items[0] || null;
+        this.resetForms();
+      } catch (err) {
+        notify('Failed to load dashboard data: ' + err.message, 'err');
+        this.items = [];
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    selectItem(item) {
+      this.selected = item;
+      this.resetForms();
+    },
+
+    syncSelection() {
+      const rows = this.filteredItems;
+      if (!rows.includes(this.selected)) {
+        this.selected = rows[0] || null;
+        this.resetForms();
+      }
+    },
+
+    resetForms() {
+      this.detailEditing = false;
+      this.callForm = { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false };
+      this.emailForm = { notes: '' };
+      this.editForm = {
+        due: this.toInputDate(this.selected?.due || ''),
+        stage: '',
+        priority: '',
+        clear_due: false,
+      };
+      this.detailForm = this.detailFormFromSelected();
+    },
+
+    detailFormFromSelected() {
+      const lead = this.selected || {};
+      return {
+        contact: lead.contact || '',
+        phone: lead.phone || '',
+        email: lead.email || '',
+        website: lead.website || '',
+        city: lead.city || '',
+        region: lead.region || '',
+        priority: lead.priority || '',
+        stage: lead.stage || '',
+        due: this.toInputDate(lead.due || ''),
+        clear_due: false,
+        notes: lead.notes || '',
+      };
+    },
+
+    startDetailEdit() {
+      this.detailForm = this.detailFormFromSelected();
+      this.detailEditing = true;
+    },
+
+    cancelDetailEdit() {
+      this.detailForm = this.detailFormFromSelected();
+      this.detailEditing = false;
+    },
+
+    setCallStatus(status) {
+      this.callForm.call_status = this.callForm.call_status === status ? '' : status;
+      this.callForm.what_happened = this.callForm.call_status;
+      this.callForm.clear_due = false;
+      if (!this.callForm.call_status) {
+        this.callForm.stage = '';
+        return;
+      }
+      if (['No Answer', 'Gatekeeper'].includes(this.callForm.call_status) && !this.callForm.due) {
+        const d = new Date();
+        d.setDate(d.getDate() + 2);
+        this.callForm.due = d.toISOString().slice(0, 10);
+      }
+      if (this.callForm.call_status === 'No Answer') {
+        this.callForm.stage = 'No Answer';
+      }
+      if (this.callForm.call_status === 'Send Proposal') {
+        this.callForm.stage = 'Send Proposal';
+      }
+      if (this.callForm.call_status === 'Proposal Sent') {
+        this.callForm.stage = 'Proposal Sent';
+        this.callForm.due = '';
+        this.callForm.clear_due = true;
+      }
+      if (this.callForm.call_status === 'Send Email') {
+        this.callForm.stage = 'Send Email';
+        this.callForm.due = '';
+        this.callForm.clear_due = true;
+      }
+      if (this.callForm.call_status === 'Email Sent') {
+        this.callForm.stage = 'Email Sent';
+        this.callForm.due = '';
+        this.callForm.clear_due = true;
+      }
+    },
+
+    handleQuickStageChange() {
+      if (['Email Sent', 'Send Email'].includes(this.editForm.stage)) {
+        this.editForm.due = '';
+        this.editForm.clear_due = true;
+      }
+    },
+
+    handleCallStageChange() {
+      if (['Email Sent', 'Send Email'].includes(this.callForm.stage)) {
+        this.callForm.due = '';
+        this.callForm.clear_due = true;
+      }
+    },
+
+    handleDetailStageChange() {
+      if (['Email Sent', 'Send Email'].includes(this.detailForm.stage)) {
+        this.detailForm.due = '';
+        this.detailForm.clear_due = true;
+      }
+    },
+
+    async saveDetailUpdate() {
+      if (!this.selected) return;
+
+      const updates = {};
+      ['contact', 'phone', 'email', 'website', 'city', 'region', 'priority', 'stage', 'notes'].forEach(field => {
+        const next = (this.detailForm[field] || '').trim();
+        const current = (this.selected[field] || '').trim();
+        if (next !== current) updates[field] = next;
+      });
+
+      const currentDue = this.toInputDate(this.selected.due || '');
+      if (this.detailForm.clear_due) {
+        if (currentDue) updates.due = '';
+      } else if ((this.detailForm.due || '') !== currentDue) {
+        updates.due = this.detailForm.due || '';
+      }
+
+      if (Object.keys(updates).length === 0) {
+        notify('No changes to save');
+        this.detailEditing = false;
+        return;
+      }
+
+      this.submitting = true;
+      try {
+        const res = await fetch('/api/update-lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: this.selected.id,
+            row_number: this.selected.row_number,
+            updates,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update details');
+        notify('Details updated for ' + this.selected.company);
+        this.detailEditing = false;
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async saveQuickUpdate() {
+      if (!this.selected) return;
+      const updates = {};
+      if (this.editForm.clear_due) updates.due = '';
+      else if (this.editForm.due) updates.due = this.editForm.due;
+      if (this.editForm.stage) updates.stage = this.editForm.stage;
+      if (this.editForm.priority) updates.priority = this.editForm.priority;
+      if (Object.keys(updates).length === 0) return;
+
+      this.submitting = true;
+      try {
+        const res = await fetch('/api/update-lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: this.selected.id,
+            row_number: this.selected.row_number,
+            updates,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update lead');
+        notify('Updated ' + this.selected.company);
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async logCall() {
+      if (!this.selected || !this.callForm.call_status) return;
+      this.submitting = true;
+      try {
+        const res = await fetch('/api/log-call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: this.selected.id,
+            row_number: this.selected.row_number,
+            call_status: this.callForm.call_status,
+            what_happened: this.callForm.what_happened,
+            notes: this.callForm.notes,
+            due: this.callForm.due,
+            clear_due: this.callForm.clear_due,
+            stage: this.callForm.stage,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to log call');
+        notify('Call logged for ' + this.selected.company);
+        this.advance();
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async markEmailSent() {
+      if (!this.selected) return;
+      this.submitting = true;
+      try {
+        const isFollowup = Boolean(this.selected.task_type);
+        const res = await fetch(isFollowup ? '/api/mark-email-followup' : '/api/mark-email-sent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: this.selected.id,
+            row_number: this.selected.row_number,
+            ...(isFollowup ? { task_type: this.selected.task_type } : {}),
+            notes: this.emailForm.notes,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to mark email sent');
+        notify((isFollowup ? this.selected.task_type : 'Email') + ' marked sent for ' + this.selected.company);
+        this.advance();
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async refresh(silent = false) {
+      if (this.submitting) return;
+      this.loading = !silent;
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Refresh failed');
+        if (!silent) notify('Sheet refreshed: ' + data.rows + ' rows');
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+        this.lastRefreshedAt = this.nowLabel();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    skip() {
+      this.advance();
+    },
+
+    advance() {
+      const rows = this.filteredItems;
+      const index = rows.indexOf(this.selected);
+      this.selected = rows[index + 1] || rows[0] || null;
+      this.resetForms();
+    },
+
+    stageBadge(stage) {
+      const s = (stage || '').toLowerCase();
+      if (s === 'new') return 'badge-new';
+      if (s === 'email sent' || s === 'send email' || s === 'proposal sent' || s === 'meeting booked') return 'badge-email';
+      if (s === 'contacted' || s === 'call back' || s === 'send proposal' || s === 'no answer') return 'badge-call';
+      if (s === 'lost' || s === 'not a fit') return 'badge-lost';
+      return 'badge-default';
+    },
+
+    stageValue(stage) {
+      return (stage || '').trim() || 'Blank';
+    },
+
+    isEmailMode() {
+      return this.mode === 'email_today' || this.mode === 'email_overdue';
+    },
+
+    historyMax() {
+      const values = (this.history.days || []).flatMap(day => [
+        day.leads_impacted || 0,
+        day.new_leads_impacted || 0,
+        day.calls || 0,
+        day.emails_sent || 0,
+      ]);
+      return Math.max(1, ...values);
+    },
+
+    pointFor(day, index, key) {
+      const days = this.history.days || [];
+      const max = this.historyMax();
+      const x = days.length > 1 ? 34 + (index / (days.length - 1)) * 856 : 462;
+      const y = 180 - ((day[key] || 0) / max) * 136;
+      return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, value: day[key] || 0, date: day.date };
+    },
+
+    lineDots(key) {
+      return (this.history.days || []).map((day, index) => this.pointFor(day, index, key));
+    },
+
+    linePoints(key) {
+      return this.lineDots(key).map(point => `${point.x},${point.y}`).join(' ');
+    },
+
+    linePath(key) {
+      const points = this.lineDots(key);
+      if (points.length === 0) return '';
+      return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    },
+
+    chartLabels() {
+      const days = this.history.days || [];
+      const step = Math.max(1, Math.ceil(days.length / 8));
+      return days
+        .map((day, index) => ({ ...this.pointFor(day, index, 'leads_impacted'), date: day.date, index }))
+        .filter(point => point.index % step === 0 || point.index === days.length - 1);
+    },
+
+    lineChartSvg() {
+      const axes = [44, 112, 180]
+        .map(y => `<line class="axis-line" x1="34" y1="${y}" x2="890" y2="${y}"></line>`)
+        .join('');
+      const lines = this.historySeries
+        .map(series => {
+          const path = this.linePath(series.key);
+          const dots = this.lineDots(series.key)
+            .map(point => `<circle class="series-dot" r="3" cx="${point.x}" cy="${point.y}" fill="${series.color}"><title>${point.date}: ${point.value}</title></circle>`)
+            .join('');
+          return `<path class="series-line" d="${path}" stroke="${series.color}"></path>${dots}`;
+        })
+        .join('');
+      const labels = this.chartLabels()
+        .map(label => `<text class="chart-label" x="${label.x}" y="206">${this.shortDate(label.date)}</text>`)
+        .join('');
+      return `<svg viewBox="0 0 920 220" preserveAspectRatio="none">${axes}${lines}${labels}</svg>`;
+    },
+
+    shortDate(value) {
+      if (!value) return '';
+      const parts = value.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}` : value;
+    },
+
+    historyTitle(day) {
+      return `${day.date}: ${day.leads_impacted || 0} impacted, ${day.new_leads_impacted || 0} new, ${day.calls || 0} calls, ${day.emails_sent || 0} emails`;
+    },
+
+    toInputDate(value) {
+      if (!value) return '';
+      const normalized = value.split(' ')[0].replaceAll('/', '-');
+      const parts = normalized.split('-');
+      if (parts.length !== 3) return '';
+      if (parts[0].length === 4) return normalized;
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    },
+
+    itemIdentity(item) {
+      return `${item.key || item.row_number || ''}-${item.task_type || this.mode}`;
+    },
+
+    nowLabel() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    },
+  };
+}
+</script>
+{% endblock %}

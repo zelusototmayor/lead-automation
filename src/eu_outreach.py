@@ -3,10 +3,10 @@ EU B2B Outreach Pipeline (PT/UK/ES)
 =====================================
 Signal-based sourcing: finds B2B companies hiring SDR/BDR roles
 in Portugal, United Kingdom, and Spain via LinkedIn (Apify),
-then enriches with Apollo for email-ready leads → Instantly.
+then enriches via Instantly SuperSearch for email-ready leads → Instantly.
 
-Flow: Apify LinkedIn signals → B2B filter (description) → Apollo org lookup (FREE)
-      → Apollo contact enrichment (1 credit) → Claude personalization → Instantly
+Flow: Apify LinkedIn signals → B2B filter (description)
+      → Instantly SuperSearch enrichment (1-2 credits) → Claude personalization → Instantly
 
 Usage:
     python src/eu_outreach.py                     # Run with defaults
@@ -25,9 +25,11 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.lead_sourcing.apify import ApifyClient, search_linkedin_hiring_signals
-from src.lead_sourcing.apollo import ApolloClient
+from src.lead_sourcing.instantly_enrichment import InstantlyEnrichmentClient
 from src.crm import GoogleSheetsCRM
 from src.outreach import EmailPersonalizer, InstantlyClient, InstantlySyncer
+# Apollo dormant — not used at runtime:
+# from src.lead_sourcing.apollo import ApolloClient
 
 structlog.configure(
     processors=[
@@ -74,11 +76,11 @@ def load_config(config_path: str = "config/settings.yaml") -> dict:
 
 
 class EUOutreachSourcer:
-    """Sources B2B companies hiring SDR/BDR in PT/UK/ES via LinkedIn + Apollo.
+    """Sources B2B companies hiring SDR/BDR in PT/UK/ES via LinkedIn + SuperSearch.
 
-    Apify collects hiring signals from LinkedIn, then Apollo enriches with
-    org data (FREE) and contact emails (1 credit each). Leads pushed to
-    Instantly for automated email outreach.
+    Apify collects hiring signals from LinkedIn; Instantly SuperSearch then
+    returns decision-maker contacts with verified emails in a single call.
+    Leads pushed to Instantly for automated email outreach. Apollo is dormant.
     """
 
     def __init__(self, config: dict):
@@ -92,11 +94,14 @@ class EUOutreachSourcer:
             max_runs_per_session=self.ec.get("apify_max_runs", 20),
         )
 
-        # Apollo (org lookup FREE, contact enrichment costs credits)
-        apollo_budget = self.ec.get("apollo_credit_budget", 100)
-        self.apollo_client = ApolloClient(
-            config["api_keys"]["apollo"],
-            credit_budget=apollo_budget,
+        # Instantly SuperSearch (replaces Apollo — single call for email + contact)
+        supersearch_budget = self.ec.get(
+            "supersearch_credit_budget",
+            self.ec.get("apollo_credit_budget", 100),
+        )
+        self.enrichment_client = InstantlyEnrichmentClient(
+            api_key=config.get("instantly", {}).get("api_key", ""),
+            credit_budget=supersearch_budget,
         )
 
         # CRM
@@ -133,7 +138,8 @@ class EUOutreachSourcer:
 
         logger.info("EUOutreachSourcer initialized",
                      target=self.daily_target,
-                     apollo_budget=apollo_budget,
+                     supersearch_budget=supersearch_budget,
+                     enrichment="instantly_supersearch",
                      locations=self.ec.get("target_locations", []))
 
     def _collect_signals(self) -> list[dict]:
@@ -179,7 +185,7 @@ class EUOutreachSourcer:
         return False
 
     def _is_b2b_from_org(self, industry: str, keywords: list[str] = None, description: str = "") -> bool:
-        """Check if company is B2B using Apollo org data (industry + keywords)."""
+        """Check if company is B2B using org data (industry + keywords)."""
         industry_lower = (industry or "").lower()
         all_text = " ".join(k.lower() for k in (keywords or [])) + " " + (description or "").lower()
 
@@ -213,54 +219,46 @@ class EUOutreachSourcer:
             return ["vp", "director", "c_suite"]
 
     def _enrich_and_filter(self, signal: dict) -> dict | None:
-        """Enrich a signal with Apollo and apply B2B filter.
+        """Enrich a signal with Instantly SuperSearch and apply B2B filter.
 
-        1. B2B filter from job description (already passed before calling this)
-        2. Apollo org lookup (FREE) — get industry, domain, employee count
-        3. B2B filter from Apollo data (double-check)
-        4. Apollo contact enrichment (1 credit) — get decision-maker email
+        Apollo has been dropped. The description-level B2B filter already ran
+        before this function was called. SuperSearch now makes a single call
+        that returns both decision-maker contact and (sometimes) org data.
         """
         company_name = signal["company_name"]
+        country = signal.get("country", "")
 
-        # Apollo org lookup (FREE)
-        org = self.apollo_client.search_organizations(company_name=company_name)
-        if not org:
-            self.apollo_client._orgs_skipped_no_data += 1
-            logger.debug("No Apollo org data — skipping", company=company_name)
+        # Default seniority when we don't know size yet — skew to founder/c-suite
+        # since EU hiring signals skew to SMB.
+        seniority = self._pick_seniority(0)
+
+        contact = self.enrichment_client.find_contact_at_company(
+            company_name=company_name,
+            website=signal.get("domain") or None,
+            city=None,
+            country=country or None,
+            seniority=seniority,
+        )
+
+        if not contact or not contact.get("email"):
+            logger.debug("No email found via SuperSearch", company=company_name)
             return None
 
-        # Double-check B2B from Apollo data
-        if not self._is_b2b_from_org(
-            industry=org.get("industry", ""),
-            keywords=org.get("keywords", []),
-            description=org.get("description", ""),
+        # Post-enrichment: if SuperSearch gave us industry, sanity-check B2B
+        industry = contact.get("industry", "")
+        if industry and not self._is_b2b_from_org(
+            industry=industry, keywords=[], description=""
         ):
-            logger.debug("Filtered: not B2B (Apollo data)", company=company_name,
-                         industry=org.get("industry"))
+            logger.debug("Filtered: not B2B (SuperSearch data)",
+                         company=company_name, industry=industry)
             return None
 
-        # Pick seniority based on company size
-        emp_count = org.get("employee_count") or 0
+        emp_count = contact.get("employee_count") or 0
         if isinstance(emp_count, str):
             try:
                 emp_count = int(str(emp_count).replace(",", "").split("-")[0])
             except (ValueError, TypeError):
                 emp_count = 0
-        seniority = self._pick_seniority(emp_count)
-
-        # Find contact with email (costs 1 credit)
-        contacts = self.apollo_client.find_contacts(
-            company_domain=org.get("domain"),
-            company_name=company_name,
-            seniority=seniority,
-            limit=1,
-        )
-
-        if not contacts or not contacts[0].get("email"):
-            logger.debug("No email found", company=company_name)
-            return None
-
-        contact = contacts[0]
 
         # Build notes with LinkedIn job posting info
         job_url = signal.get("job_url", "")
@@ -276,16 +274,16 @@ class EUOutreachSourcer:
             "contact_name": contact.get("full_name", ""),
             "email": contact["email"],
             "phone": contact.get("phone", ""),
-            "website": org.get("domain", ""),
-            "industry": org.get("industry", ""),
+            "website": contact.get("company_domain", "") or signal.get("domain", ""),
+            "industry": industry,
             "employee_count": emp_count,
-            "city": org.get("city", signal.get("city", "")),
-            "country": org.get("country", signal.get("country", "")),
+            "city": contact.get("city", "") or signal.get("city", ""),
+            "country": contact.get("country", "") or country,
             "linkedin": contact.get("linkedin_url", ""),
             "title": contact.get("title", ""),
-            "source": f"linkedin_apify | {signal.get('signal_detail', '')}",
-            "description": org.get("description", ""),
-            "keywords": org.get("keywords", []),
+            "source": f"linkedin_apify + instantly_supersearch | {signal.get('signal_detail', '')}",
+            "description": "",
+            "keywords": [],
             "notes": " | ".join(notes_parts),
             "signal_detail": signal.get("signal_detail", ""),
             "lead_score": 0,
@@ -307,7 +305,7 @@ class EUOutreachSourcer:
         # Step 1: Collect hiring signals from LinkedIn
         signals = self._collect_signals()
 
-        # Step 2: Filter B2B (description), enrich with Apollo, add to CRM
+        # Step 2: Filter B2B (description), enrich with SuperSearch, add to CRM
         added = 0
         skipped_dup = 0
         skipped_filtered = 0
@@ -319,9 +317,9 @@ class EUOutreachSourcer:
             if added >= target:
                 break
 
-            # Budget check — stop if Apollo credits exhausted
-            if self.apollo_client._credits_exhausted:
-                logger.warning("Apollo credits exhausted — stopping enrichment")
+            # Budget check — stop if SuperSearch credits exhausted
+            if self.enrichment_client._credits_exhausted:
+                logger.warning("SuperSearch credits exhausted — stopping enrichment")
                 break
 
             company_lower = signal["company_name"].strip().lower()
@@ -340,7 +338,7 @@ class EUOutreachSourcer:
                 continue
 
             try:
-                # Enrich with Apollo (org lookup FREE, contact 1 credit)
+                # Enrich with SuperSearch (single call, 1-2 credits)
                 lead = self._enrich_and_filter(signal)
                 if not lead:
                     skipped_no_data += 1
@@ -379,7 +377,7 @@ class EUOutreachSourcer:
             queued = self._personalize_and_queue(new_leads)
 
         stats = self.crm.get_stats()
-        credit_summary = self.apollo_client.get_credit_summary()
+        credit_summary = self.enrichment_client.get_credit_summary()
         summary = {
             "signals_collected": len(signals),
             "added": added,
@@ -532,11 +530,11 @@ def main():
     print(f"  Leads added: {result['added']}")
     print(f"  Skipped (duplicate): {result['skipped_duplicate']}")
     print(f"  Skipped (filtered): {result['skipped_filtered']}")
-    print(f"  Skipped (no Apollo data): {result['skipped_no_data']}")
+    print(f"  Skipped (no SuperSearch data): {result['skipped_no_data']}")
     print(f"  Errors: {result['errors']}")
     print(f"  Queued in Instantly: {result['queued_in_instantly']}")
     print(f"  Apify runs used: {result['apify_runs_used']}")
-    print(f"  Apollo credits used: {result['credits_used']}")
+    print(f"  SuperSearch credits used: {result['credits_used']}")
     print(f"  Credits per lead: {result['credits_per_lead']}")
     print(f"  Total in sheet: {result['total_in_sheet']}")
 

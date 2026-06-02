@@ -2,7 +2,12 @@
 B2B Startups Sourcing Pipeline
 ================================
 Standalone runner for signal-based outbound to B2B startups.
-Uses SerpAPI (hiring + funding signals) → Apollo enrichment → Claude personalization → Instantly.
+Uses SerpAPI (hiring signals via Google Jobs) → Instantly SuperSearch enrichment
+→ Claude personalization → Instantly campaign.
+
+Apollo has been dropped; the startups signal net now depends entirely on SerpAPI
+Google Jobs. Kept Apollo code dormant for easy revert, but no Apollo calls are
+made at runtime.
 
 Usage:
     python src/startups.py                    # Run with defaults
@@ -22,10 +27,12 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.lead_sourcing.serpapi import SerpAPIClient, search_hiring_signals
-from src.lead_sourcing.apollo import ApolloClient
+from src.lead_sourcing.instantly_enrichment import InstantlyEnrichmentClient
 from src.crm import GoogleSheetsCRM
 from src.outreach import EmailPersonalizer, InstantlyClient, InstantlySyncer
 from src.outreach.personalize import calculate_startup_lead_score
+# Apollo dormant — not used at runtime:
+# from src.lead_sourcing.apollo import ApolloClient
 
 structlog.configure(
     processors=[
@@ -80,18 +87,21 @@ class StartupSourcer:
         self.sc = config["startups"]  # startup config shorthand
         self.daily_target = self.sc["daily_target"]
 
-        # SerpAPI
+        # SerpAPI (sole signal source — Apollo has been dropped)
         serpapi_key = config["api_keys"]["serpapi"]
         self.serpapi_client = SerpAPIClient(
             api_key=serpapi_key,
             budget_per_run=self.sc.get("serpapi_budget_per_run", 30),
         )
 
-        # Apollo
-        apollo_budget = self.sc.get("apollo_credit_budget", 100)
-        self.apollo_client = ApolloClient(
-            config["api_keys"]["apollo"],
-            credit_budget=apollo_budget,
+        # Instantly SuperSearch (replaces Apollo enrichment)
+        supersearch_budget = self.sc.get(
+            "supersearch_credit_budget",
+            self.sc.get("apollo_credit_budget", 100),
+        )
+        self.enrichment_client = InstantlyEnrichmentClient(
+            api_key=config.get("instantly", {}).get("api_key", ""),
+            credit_budget=supersearch_budget,
         )
 
         # CRM (reuses GoogleSheetsCRM with different sheet tab)
@@ -120,57 +130,18 @@ class StartupSourcer:
         logger.info("StartupSourcer initialized",
                      target=self.daily_target,
                      serpapi_budget=self.serpapi_client.budget_per_run,
-                     apollo_budget=apollo_budget)
+                     supersearch_budget=supersearch_budget,
+                     enrichment="instantly_supersearch")
 
     def _collect_signals(self) -> list[dict]:
-        """Collect signals from 3 sources: Apollo hiring orgs, Apollo SDR people, SerpAPI jobs.
+        """Collect hiring signals from SerpAPI Google Jobs.
 
-        Returns deduplicated list of signal dicts, with multi_signal=True for
-        companies appearing in 2+ sources.
+        Apollo signal sources (hiring_organizations, companies_with_sdrs)
+        have been removed — SerpAPI is now the sole signal source.
         """
         exclude_lower = set(c.lower() for c in self.exclude_companies)
-        company_signals: dict[str, dict] = {}  # key: lowercase company name
-        company_sources: dict[str, set] = {}   # key: lowercase company name → set of signal_types
+        company_signals: dict[str, dict] = {}
 
-        def _add_signals(signals: list[dict]):
-            for s in signals:
-                name = s["company_name"].strip()
-                key = name.lower()
-                if any(exc in key for exc in exclude_lower):
-                    continue
-                if key not in company_signals:
-                    company_signals[key] = s
-                    company_sources[key] = {s["signal_type"]}
-                else:
-                    company_sources[key].add(s["signal_type"])
-
-        # Source 1: Apollo orgs hiring sales roles (FREE)
-        apollo_pages = self.sc.get("apollo_search_pages", 5)
-        job_titles = self.sc.get("sales_job_titles", ["SDR", "BDR", "Sales Development", "Account Executive", "Inside Sales"])
-        apollo_locations = self.sc.get("apollo_locations", ["United States"])
-        emp_range = f"{self.min_employees},{self.max_employees}"
-        b2b_keywords = self.sc.get("b2b_keywords", ["saas", "b2b", "software"])
-
-        apollo_hiring = self.apollo_client.search_hiring_organizations(
-            job_titles=job_titles,
-            employee_range=emp_range,
-            locations=apollo_locations,
-            keyword_tags=[kw.title() for kw in b2b_keywords[:3]],  # SaaS, B2B, Software
-            max_pages=apollo_pages,
-        )
-        _add_signals(apollo_hiring)
-
-        # Source 2: Apollo companies that HAVE SDRs (FREE)
-        apollo_sdrs = self.apollo_client.search_companies_with_sdrs(
-            person_titles=job_titles,
-            employee_range=emp_range,
-            locations=apollo_locations,
-            keyword_tags=[kw.title() for kw in b2b_keywords[:2]],  # SaaS, B2B
-            max_pages=apollo_pages,
-        )
-        _add_signals(apollo_sdrs)
-
-        # Source 3: SerpAPI Google Jobs (costs searches, broader net)
         hiring_queries = self.sc.get("hiring_queries", ["SDR", "BDR"])
         locations = self.sc.get("target_locations", ["United States"])
 
@@ -181,29 +152,23 @@ class StartupSourcer:
             exclude_companies=self.exclude_companies,
             client=self.serpapi_client,
         )
-        _add_signals(serpapi_hiring)
 
-        # Tag multi-signal leads
-        signals = []
-        for key, signal in company_signals.items():
-            signal["multi_signal"] = len(company_sources[key]) >= 2
-            signal["source_count"] = len(company_sources[key])
-            signal["sources"] = list(company_sources[key])
-            signals.append(signal)
+        for s in serpapi_hiring:
+            name = s["company_name"].strip()
+            key = name.lower()
+            if any(exc in key for exc in exclude_lower):
+                continue
+            if key not in company_signals:
+                s["multi_signal"] = False
+                s["source_count"] = 1
+                s["sources"] = [s["signal_type"]]
+                company_signals[key] = s
 
-        # Sort: multi-signal first, then apollo_hiring, then apollo_has_sdrs, then serpapi
-        signal_priority = {"apollo_hiring": 0, "apollo_has_sdrs": 1, "hiring_signal": 2}
-        signals.sort(key=lambda s: (
-            not s["multi_signal"],
-            signal_priority.get(s["signal_type"], 3),
-        ))
+        signals = list(company_signals.values())
 
         logger.info("Signals collected",
-                     apollo_hiring=len(apollo_hiring),
-                     apollo_sdrs=len(apollo_sdrs),
                      serpapi_hiring=len(serpapi_hiring),
                      total_deduped=len(signals),
-                     multi_signal=sum(1 for s in signals if s["multi_signal"]),
                      serpapi_searches_used=self.serpapi_client.searches_used)
         return signals
 
@@ -242,49 +207,34 @@ class StartupSourcer:
         return False
 
     def _enrich_and_filter(self, signal: dict) -> dict | None:
-        """Enrich a signal company with Apollo and apply B2B SaaS filter.
+        """Enrich a signal company via Instantly SuperSearch and apply B2B filter.
 
-        Returns enriched lead dict or None if filtered out.
+        Apollo has been dropped. SuperSearch returns industry + employee_count
+        inline, so B2B + size filters run post-enrichment.
         """
         company_name = signal["company_name"]
 
-        # Apollo-sourced signals already carry org data; SerpAPI signals need a lookup
-        if signal["signal_type"] in ("apollo_hiring", "apollo_has_sdrs"):
-            org = {
-                "domain": signal.get("domain", ""),
-                "industry": signal.get("industry", ""),
-                "employee_count": signal.get("employee_count"),
-                "description": signal.get("description", ""),
-                "keywords": signal.get("keywords", []),
-                "city": signal.get("city", ""),
-                "country": signal.get("country", ""),
-                "linkedin_url": signal.get("linkedin_url", ""),
-            }
-            # If Apollo didn't give domain/industry (common for people search), do a free org lookup
-            if not org["domain"] or not org["industry"]:
-                looked_up = self.apollo_client.search_organizations(company_name=company_name)
-                if looked_up:
-                    org.update({k: v for k, v in looked_up.items() if v})
-                elif not org["domain"]:
-                    logger.debug("No Apollo org data for people-sourced signal", company=company_name)
-                    return None
-        else:
-            org = self.apollo_client.search_organizations(company_name=company_name)
-            if not org:
-                logger.debug("No Apollo org data", company=company_name)
-                return None
+        # Enrich directly via SuperSearch — single call for email + contact
+        contact = self.enrichment_client.find_contact_at_company(
+            company_name=company_name,
+            website=signal.get("domain") or None,
+            city=None,
+            country=signal.get("country") or "US",
+            seniority=["owner", "founder", "c_suite"],
+        )
 
-        # 1. B2B SaaS filter
-        if not self._is_b2b_saas(
-            industry=org.get("industry", ""),
-            keywords=org.get("keywords", []),
-            description=org.get("description", ""),
-        ):
-            logger.debug("Filtered: not B2B SaaS", company=company_name, industry=org.get("industry"))
+        if not contact or not contact.get("email"):
+            logger.debug("No email found via SuperSearch", company=company_name)
             return None
 
-        # 2. Employee count filter
-        emp_count = org.get("employee_count") or 0
+        # Post-enrichment B2B filter (SuperSearch returns industry sometimes)
+        industry = contact.get("industry", "")
+        if industry and not self._is_b2b_saas(industry=industry, keywords=[], description=""):
+            logger.debug("Filtered: not B2B SaaS", company=company_name, industry=industry)
+            return None
+
+        # Employee count filter (SuperSearch may return it)
+        emp_count = contact.get("employee_count") or 0
         if isinstance(emp_count, str):
             try:
                 emp_count = int(str(emp_count).replace(",", "").split("-")[0])
@@ -295,38 +245,24 @@ class StartupSourcer:
             logger.debug("Filtered by employee count", company=company_name, employees=emp_count)
             return None
 
-        # 3. Find founder/CEO contact with email (costs 1 credit)
-        contacts = self.apollo_client.find_contacts(
-            company_domain=org.get("domain"),
-            company_name=company_name,
-            seniority=["owner", "founder", "c_suite"],
-            limit=1,
-        )
-
-        if not contacts or not contacts[0].get("email"):
-            logger.debug("No email found", company=company_name)
-            return None
-
-        contact = contacts[0]
-
         return {
             "company": company_name,
             "contact_name": contact.get("full_name", ""),
             "email": contact["email"],
             "phone": contact.get("phone", ""),
-            "website": org.get("domain", ""),
-            "industry": org.get("industry", ""),
+            "website": contact.get("company_domain", "") or signal.get("domain", ""),
+            "industry": industry,
             "employee_count": emp_count,
-            "city": org.get("city", signal.get("location", "")),
-            "country": org.get("country", ""),
+            "city": contact.get("city", "") or signal.get("location", ""),
+            "country": contact.get("country", "") or signal.get("country", ""),
             "linkedin": contact.get("linkedin_url", ""),
             "title": contact.get("title", ""),
-            "source": signal["signal_type"],
-            "description": org.get("description", ""),
-            "technologies": org.get("technologies", []),
-            "keywords": org.get("keywords", []),
+            "source": f"{signal['signal_type']} + instantly_supersearch",
+            "description": "",
+            "technologies": [],
+            "keywords": [],
             "signal_type": signal["signal_type"],
-            "signal_detail": signal["signal_detail"],
+            "signal_detail": signal.get("signal_detail", ""),
             "multi_signal": signal.get("multi_signal", False),
             "sources": signal.get("sources", [signal["signal_type"]]),
         }
@@ -407,7 +343,7 @@ class StartupSourcer:
             queued = self._personalize_and_queue(new_leads)
 
         stats = self.crm.get_stats()
-        credit_summary = self.apollo_client.get_credit_summary()
+        credit_summary = self.enrichment_client.get_credit_summary()
         summary = {
             "signals_collected": len(signals),
             "added": added,
@@ -567,7 +503,7 @@ def main():
     print(f"  Errors: {result['errors']}")
     print(f"  Queued in Instantly: {result['queued_in_instantly']}")
     print(f"  SerpAPI searches used: {result['serpapi_searches_used']}")
-    print(f"  Apollo credits used: {result.get('credits_used', 0)}")
+    print(f"  SuperSearch credits used: {result.get('credits_used', 0)}")
     print(f"  Total in sheet: {result['total_in_sheet']}")
 
 

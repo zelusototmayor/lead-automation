@@ -13,12 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/__init__.py ./src/
 COPY src/crm/ ./src/crm/
 
-# Only copy needed outreach files (avoid personalize.py which needs anthropic)
-RUN mkdir -p ./src/outreach
-COPY src/outreach/instantly_client.py ./src/outreach/
-COPY src/outreach/sync_instantly.py ./src/outreach/
-RUN echo 'from .instantly_client import InstantlyClient\nfrom .sync_instantly import InstantlySyncer' > ./src/outreach/__init__.py
-
 # Copy application code
 COPY dashboard/app/ ./dashboard/app/
 

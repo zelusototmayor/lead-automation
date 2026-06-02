@@ -163,8 +163,10 @@ def requeue_campaign(
         sheet_name=new_tab,
     )
 
+    # get_leads_for_outreach filters to email_1_sent=="FALSE", which excludes
+    # exactly the polluted rows we want. Iterate the raw cache directly.
     try:
-        all_leads = old_crm.get_leads_for_outreach(limit=10000)
+        all_leads = [old_crm._row_to_dict(list(row)) for row in old_crm._cache]
     except Exception as e:
         print(f"  Could not read '{old_tab}' — skipping. Error: {e}")
         return {"scanned": 0, "polluted": 0, "requeued": 0, "skipped_dup": 0}

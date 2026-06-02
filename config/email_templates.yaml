@@ -7,35 +7,36 @@
 
 sequences:
   default:
-    name: "AEC Business Development Sequence"
+    name: "AEC Outbound System Sequence"
+    # Rules (Apr 2026 v2 restart):
+    # - Plain text, no HTML links (product URLs trip spam filters)
+    # - CTA is a reply prompt, not a calendar link
+    # - Keep bodies under ~120 words
+    # - Subject variants live in config/settings.yaml; these are fallbacks
     emails:
       # Email 1: Initial Outreach (Day 0)
       - step: 1
         delay_days: 0
         subject_options:
+          - "Quick question about {{company_name}}'s pipeline"
+          - "{{first_name}}, how does {{company_name}} win new work?"
           - "New project pipeline for {{company_name}}"
-          - "{{first_name}}, quick question about your pipeline"
-          - "How {{company_name}} could win more private-sector work"
         body_template: |
           Hi {{first_name}},
 
           {{personalized_opener}}
 
-          Here's the thing: this email found {{company_name}}, researched your firm,
-          wrote itself, and landed in your inbox — all automatically.
-
-          That's what I build for engineering and architecture firms: a managed
-          business development system. It identifies potential clients, writes
-          personalized introductions, sends them, and follows up — so your
-          principals can focus on delivery, not prospecting.
-
-          Think of it as having a dedicated BD coordinator filling your pipeline,
-          for a fraction of the cost of a full-time hire.
+          This email found {{company_name}}, researched your firm, wrote itself,
+          and landed in your inbox — automatically. That's what I build for
+          engineering and architecture firms: a system that identifies developers,
+          owners, and GCs in your market, writes personalized intros, and
+          delivers warm conversations to your principals.
 
           {{specific_pain_point}}
 
-          If you're open to seeing how this would work for {{company_name}},
-          grab 20 minutes here: https://zelusottomayor.com/book-call
+          Worth a 15-minute call to see if it fits how {{company_name}} wins work?
+
+          Just reply "yes" and I'll send a couple of times.
 
           Best,
           Ze Lu Sottomayor
@@ -44,22 +45,19 @@ sequences:
       - step: 2
         delay_days: 3
         subject_options:
-          - "Re: New project pipeline for {{company_name}}"
+          - "Re: Quick question about {{company_name}}'s pipeline"
         body_template: |
           Hi {{first_name}},
 
-          Quick follow-up.
+          Quick nudge on the note below.
 
           {{specific_pain_point}}
 
-          The short version of what we do: we build outbound systems that run
-          in the background so your team doesn't have to spend time on prospecting.
-          You get leads researched, contacted, and followed up with — automatically.
+          Short version: an always-on BD system running in the background so
+          your team stops losing hours to prospecting — and your principals
+          stay focused on delivery.
 
-          If you're curious about how it works, here's a short video walkthrough:
-          https://zelusottomayor.com/demo
-
-          What are your thoughts on this?
+          Open to a 15-minute look?
 
           Best,
           Ze Lu Sottomayor
@@ -68,7 +66,7 @@ sequences:
       - step: 3
         delay_days: 7
         subject_options:
-          - "Re: New project pipeline for {{company_name}}"
+          - "Re: Quick question about {{company_name}}'s pipeline"
         body_template: |
           Hi {{first_name}},
 
@@ -76,14 +74,10 @@ sequences:
 
           {{industry_specific_insight}}
 
-          Most firms I work with rely on referrals and word-of-mouth for
-          new business. Both work, but neither is proactive — you're
-          always waiting for the phone to ring.
+          Referrals and repeat work are great but reactive. A background system
+          means your pipeline doesn't depend on timing or luck.
 
-          A system that runs in the background means your pipeline
-          doesn't depend on timing or luck.
-
-          Happy to walk you through it: https://zelusottomayor.com/book-call
+          Want me to sketch what it would look like for {{company_name}}?
 
           Best,
           Ze Lu Sottomayor
@@ -92,14 +86,14 @@ sequences:
       - step: 4
         delay_days: 12
         subject_options:
-          - "Closing the loop"
+          - "Closing the loop on {{company_name}}"
         body_template: |
           Hi {{first_name}},
 
-          I'll assume the timing isn't right — no worries at all.
+          I'll assume the timing isn't right — no worries.
 
-          If building a more predictable pipeline ever becomes a priority
-          for {{company_name}}, the door's open.
+          If a more predictable pipeline ever becomes a priority at
+          {{company_name}}, just reply to this thread and I'll pick it up.
 
           Cheers,
           Ze Lu Sottomayor

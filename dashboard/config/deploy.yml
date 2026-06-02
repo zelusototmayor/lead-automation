@@ -30,12 +30,9 @@ registry:
 env:
   clear:
     SPREADSHEET_ID: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
-    SHEET_NAME: "AEC Leads"
+    SHEET_NAME: "PT Logistics"
+    APP_TIMEZONE: "Europe/Lisbon"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
-  secret:
-    - DASHBOARD_USER
-    - DASHBOARD_PASSWORD
-    - INSTANTLY_API_KEY
 
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
