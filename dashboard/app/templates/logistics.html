@@ -2,7 +2,7 @@
 {% block title %}PT Logistics Dashboard{% endblock %}
 
 {% block extra_styles %}
-  .metrics { display: grid; grid-template-columns: repeat(7, minmax(118px, 1fr)); gap: 0; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .metrics { display: grid; grid-template-columns: repeat(10, minmax(108px, 1fr)); gap: 0; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
   .metric { min-height: 58px; padding: 9px 12px; background: transparent; border: 0; border-right: 1px solid rgba(221,211,196,.72); text-align: left; cursor: pointer; }
   .metric:last-child { border-right: 0; }
   .metric:hover, .metric.active { background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -214,13 +214,25 @@
       <div class="metric-label">Overdue Calls</div>
       <div class="metric-value" x-text="stats.calls_overdue || 0"></div>
     </button>
-    <button class="metric amber" :class="{ active: mode === 'email_today' }" @click="showMetric('email_today')">
-      <div class="metric-label">Emails Today</div>
-      <div class="metric-value" x-text="stats.email_followups_today || 0"></div>
+    <button class="metric amber" :class="{ active: mode === 'outreach_today' }" @click="showMetric('outreach_today')">
+      <div class="metric-label">Outreach Today</div>
+      <div class="metric-value" x-text="stats.outreach_followups_today || stats.email_followups_today || 0"></div>
     </button>
-    <button class="metric red" :class="{ active: mode === 'email_overdue' }" @click="showMetric('email_overdue')">
-      <div class="metric-label">Overdue Emails</div>
-      <div class="metric-value" x-text="stats.email_followups_overdue || 0"></div>
+    <button class="metric red" :class="{ active: mode === 'outreach_overdue' }" @click="showMetric('outreach_overdue')">
+      <div class="metric-label">Overdue Outreach</div>
+      <div class="metric-value" x-text="stats.outreach_followups_overdue || stats.email_followups_overdue || 0"></div>
+    </button>
+    <button class="metric amber" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">
+      <div class="metric-label">Proposal FUs</div>
+      <div class="metric-value" x-text="stats.proposal_followups_due || 0"></div>
+    </button>
+    <button class="metric green" :class="{ active: mode === 'proposals' }" @click="showMetric('proposals')">
+      <div class="metric-label">Open Proposals</div>
+      <div class="metric-value" x-text="stats.open_proposals || 0"></div>
+    </button>
+    <button class="metric red" :class="{ active: mode === 'stale_proposals' }" @click="showMetric('stale_proposals')">
+      <div class="metric-label">Stale Proposals</div>
+      <div class="metric-value" x-text="stats.stale_proposals || 0"></div>
     </button>
     <button class="metric green" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">
       <div class="metric-label">Impacted Today</div>
@@ -302,8 +314,9 @@
               <tr>
                 <th>Company</th>
                 <th>Contact</th>
-                <th x-show="!isEmailMode()">Due</th>
-                <th x-show="isEmailMode()">Task</th>
+                <th x-show="!isTaskMode() && !isProposalListMode()">Due</th>
+                <th x-show="isTaskMode()">Task</th>
+                <th x-show="isProposalListMode()">Proposal</th>
                 <th x-show="mode === 'impacted'">Touched</th>
                 <th>Phone</th>
                 <th>Email</th>
@@ -316,10 +329,14 @@
                 <tr :class="{ selected: selected === item }" @click="selectItem(item)">
                   <td x-text="item.company || '-'"></td>
                   <td x-text="item.contact || '-'"></td>
-                  <td x-show="!isEmailMode()" x-text="item.due || '-'"></td>
-                  <td x-show="isEmailMode()">
+                  <td x-show="!isTaskMode() && !isProposalListMode()" x-text="item.due || '-'"></td>
+                  <td x-show="isTaskMode()">
                     <span class="badge badge-task" x-text="item.task_type"></span>
                     <span style="margin-left:6px;" x-text="item.task_due"></span>
+                  </td>
+                  <td x-show="isProposalListMode()">
+                    <span class="badge badge-task" x-text="proposalStatus(item)"></span>
+                    <span style="margin-left:6px;" x-text="(item.proposal_age_days ?? '-') + 'd'"></span>
                   </td>
                   <td x-show="mode === 'impacted'" x-text="item.dashboard_touched || '-'"></td>
                   <td x-text="item.phone || '-'"></td>
@@ -337,8 +354,9 @@
                 <a class="mobile-lead-phone" :href="'tel:' + item.phone" @click.stop x-text="item.phone ? 'Call' : ''"></a>
                 <span class="mobile-lead-meta">
                   <span x-text="item.contact || 'No contact'"></span>
-                  <span x-show="isEmailMode()" x-text="(item.task_type || 'Email') + ' ' + (item.task_due || '')"></span>
-                  <span x-show="!isEmailMode()" x-text="item.due ? 'Due ' + item.due : 'No due'"></span>
+                  <span x-show="isTaskMode()" x-text="(item.task_type || 'Task') + ' ' + (item.task_due || '')"></span>
+                  <span x-show="isProposalListMode()" x-text="'Proposal ' + (item.proposal_age_days ?? '-') + 'd · ' + proposalStatus(item)"></span>
+                  <span x-show="!isTaskMode() && !isProposalListMode()" x-text="item.due ? 'Due ' + item.due : 'No due'"></span>
                   <span class="badge" :class="stageBadge(item.stage)" x-text="item.stage || 'Blank'"></span>
                 </span>
               </button>
@@ -486,9 +504,9 @@
             </div>
           </div>
 
-          <template x-if="isEmailMode()">
+          <template x-if="isOutreachMode()">
             <div class="section email-section">
-              <div class="section-title">Email Follow-up</div>
+              <div class="section-title">Outreach Follow-up</div>
               <div class="task-summary">
                 <span x-text="selected.task_label"></span>
                 <span> due </span>
@@ -498,11 +516,11 @@
               <div class="field"><span>Email to</span><span x-text="selected.email || '-'"></span></div>
               <div class="field"><span>Contact</span><span x-text="selected.contact || '-'"></span></div>
               <div class="field"><span>Current task</span><span x-text="selected.task_type || '-'"></span></div>
-              <div class="field"><span>Proposal</span><span x-text="selected.proposal_sent || '-'"></span></div>
-              <div class="field"><span>FU1</span><span x-text="selected.fu1_sent || '-'"></span></div>
-              <div class="field"><span>FU2</span><span x-text="selected.fu2_sent || '-'"></span></div>
-              <div class="field"><span>FU3</span><span x-text="selected.fu3_sent || '-'"></span></div>
-              <div class="field"><span>Reactivation</span><span x-text="selected.reactivation_sent || '-'"></span></div>
+              <div class="field"><span>Initial</span><span x-text="selected.initial_email_sent || selected.proposal_sent || '-'"></span></div>
+              <div class="field"><span>Outreach FU1</span><span x-text="selected.outreach_fu1_sent || selected.fu1_sent || '-'"></span></div>
+              <div class="field"><span>Outreach FU2</span><span x-text="selected.outreach_fu2_sent || selected.fu2_sent || '-'"></span></div>
+              <div class="field"><span>Outreach FU3</span><span x-text="selected.outreach_fu3_sent || selected.fu3_sent || '-'"></span></div>
+              <div class="field"><span>Reactivation</span><span x-text="selected.outreach_reactivation_sent || selected.reactivation_sent || '-'"></span></div>
               <div style="margin-top:10px;">
                 <label>Optional note</label>
                 <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
@@ -515,9 +533,9 @@
             </div>
           </template>
 
-          <template x-if="!isEmailMode() && stageValue(selected.stage) === 'Send Email'">
+          <template x-if="!isTaskMode() && stageValue(selected.stage) === 'Send Email'">
             <div class="section email-section">
-              <div class="section-title">Email Action</div>
+              <div class="section-title">Outreach Email Action</div>
               <div style="margin-top:10px;">
                 <label>Optional note</label>
                 <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
@@ -530,7 +548,70 @@
             </div>
           </template>
 
-          <template x-if="!isEmailMode()">
+          <template x-if="isProposalContext()">
+            <div class="section email-section">
+              <div class="section-title">Proposal</div>
+              <div class="task-summary">
+                <span x-text="proposalStatus(selected) || 'Proposal'"></span>
+                <span x-show="selected.proposal_age_days !== undefined"> · <span x-text="selected.proposal_age_days"></span>d old</span>
+                <span x-show="selected.proposal_stale"> · stale</span>
+              </div>
+              <div class="field"><span>Proposal Sent</span><span x-text="selected.proposal_sent || '-'"></span></div>
+              <div class="field"><span>Proposal FU1</span><span x-text="selected.proposal_fu1_sent || '-'"></span></div>
+              <div class="field"><span>Proposal FU2</span><span x-text="selected.proposal_fu2_sent || '-'"></span></div>
+              <div class="field"><span>Proposal FU3</span><span x-text="selected.proposal_fu3_sent || '-'"></span></div>
+              <div class="field"><span>Next Action</span><span x-text="selected.proposal_next_action || '-'"></span></div>
+              <div class="field"><span>Next Due</span><span x-text="selected.proposal_next_action_due || '-'"></span></div>
+              <template x-if="isProposalFollowupMode()">
+                <div>
+                  <div style="margin-top:10px;">
+                    <label>Optional note</label>
+                    <textarea x-model="emailForm.notes" placeholder="Add a note about this proposal follow-up..."></textarea>
+                  </div>
+                  <div class="action-row">
+                    <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                      <span x-text="proposalTaskButtonLabel()"></span>
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <div class="form-grid">
+                <div>
+                  <label>Proposal status</label>
+                  <select class="select" x-model="proposalForm.status">
+                    <option value="">Keep current</option>
+                    <option>Sent</option>
+                    <option>Follow-up 1</option>
+                    <option>Follow-up 2</option>
+                    <option>Follow-up 3</option>
+                    <option>Negotiating</option>
+                    <option>Meeting Booked</option>
+                    <option>Lost</option>
+                    <option>Not a Fit</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Next proposal due</label>
+                  <input type="date" x-model="proposalForm.next_action_due">
+                </div>
+              </div>
+              <div style="margin-bottom:8px;">
+                <label>Next proposal action</label>
+                <input class="search" type="text" x-model="proposalForm.next_action" placeholder="Call buyer, send revised pricing, wait for reply...">
+              </div>
+              <div style="margin-bottom:8px;">
+                <label>Proposal note</label>
+                <textarea x-model="proposalForm.notes" placeholder="Add proposal context..."></textarea>
+              </div>
+              <div class="action-row">
+                <button class="btn" @click="saveProposalUpdate()" :disabled="submitting">
+                  <span x-text="submitting ? 'Saving...' : 'Save proposal'"></span>
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="!isTaskMode() && !isProposalListMode()">
             <div class="section call-section">
               <div class="section-title">Log Call</div>
               <div class="btn-grid">
@@ -627,6 +708,7 @@ function logisticsDashboard() {
     stageOptions: ['New', 'Contacted', 'No Answer', 'Call Back', 'Send Proposal', 'Send Email', 'Proposal Sent', 'Email Sent', 'Meeting Booked', 'Not a Fit', 'Lost'],
     callForm: { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false },
     emailForm: { notes: '' },
+    proposalForm: { status: '', next_action: '', next_action_due: '', notes: '' },
     editForm: { due: '', stage: '', priority: '', clear_due: false },
     detailEditing: false,
     detailForm: { contact: '', phone: '', email: '', website: '', city: '', region: '', priority: '', stage: '', due: '', clear_due: false, notes: '' },
@@ -658,8 +740,6 @@ function logisticsDashboard() {
 
     async setMode(mode) {
       this.mode = mode;
-      this.selected = null;
-      this.resetForms();
       await this.loadItems();
     },
 
@@ -672,6 +752,8 @@ function logisticsDashboard() {
         await this.setMode('all');
         return;
       }
+      if (metric === 'email_today') metric = 'outreach_today';
+      if (metric === 'email_overdue') metric = 'outreach_overdue';
       await this.setMode(metric);
     },
 
@@ -702,16 +784,20 @@ function logisticsDashboard() {
     async loadItems() {
       this.loading = true;
       try {
-        const url = this.isEmailMode()
-          ? `/api/email-followups?view=${this.mode === 'email_overdue' ? 'overdue' : 'today'}`
-          : this.mode === 'impacted'
-            ? '/api/impacted-leads'
-            : `/api/leads?view=${encodeURIComponent(this.mode)}`;
+        const url = this.isOutreachMode()
+          ? `/api/outreach-followups?view=${this.mode === 'outreach_overdue' || this.mode === 'email_overdue' ? 'overdue' : 'today'}`
+          : this.isProposalFollowupMode()
+            ? `/api/proposal-followups?view=${this.mode === 'proposal_overdue' ? 'overdue' : 'due'}`
+            : this.isProposalListMode()
+              ? `/api/proposals?view=${this.mode === 'stale_proposals' ? 'stale' : 'open'}`
+              : this.mode === 'impacted'
+                ? '/api/impacted-leads'
+                : `/api/leads?view=${encodeURIComponent(this.mode)}`;
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load dashboard data');
         const previousKey = this.selected ? this.itemIdentity(this.selected) : '';
-        this.items = this.isEmailMode() ? (data.tasks || []) : (data.leads || []);
+        this.items = this.isTaskMode() ? (data.tasks || []) : (data.leads || []);
         this.selected = this.items.find(item => this.itemIdentity(item) === previousKey) || this.items[0] || null;
         this.resetForms();
       } catch (err) {
@@ -739,6 +825,7 @@ function logisticsDashboard() {
       this.detailEditing = false;
       this.callForm = { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false };
       this.emailForm = { notes: '' };
+      this.proposalForm = this.proposalFormFromSelected();
       this.editForm = {
         due: this.toInputDate(this.selected?.due || ''),
         stage: '',
@@ -746,6 +833,16 @@ function logisticsDashboard() {
         clear_due: false,
       };
       this.detailForm = this.detailFormFromSelected();
+    },
+
+    proposalFormFromSelected() {
+      const lead = this.selected || {};
+      return {
+        status: '',
+        next_action: lead.proposal_next_action || '',
+        next_action_due: this.toInputDate(lead.proposal_next_action_due || ''),
+        notes: '',
+      };
     },
 
     detailFormFromSelected() {
@@ -950,7 +1047,12 @@ function logisticsDashboard() {
       this.submitting = true;
       try {
         const isFollowup = Boolean(this.selected.task_type);
-        const res = await fetch(isFollowup ? '/api/mark-email-followup' : '/api/mark-email-sent', {
+        const endpoint = isFollowup && this.isProposalFollowupMode()
+          ? '/api/mark-proposal-followup'
+          : isFollowup
+            ? '/api/mark-email-followup'
+            : '/api/mark-email-sent';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -964,6 +1066,42 @@ function logisticsDashboard() {
         if (!res.ok) throw new Error(data.error || 'Failed to mark email sent');
         notify((isFollowup ? this.selected.task_type : 'Email') + ' marked sent for ' + this.selected.company);
         this.advance();
+        await this.loadStats();
+        await this.loadHistory();
+        await this.loadItems();
+      } catch (err) {
+        notify(err.message, 'err');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async saveProposalUpdate() {
+      if (!this.selected) return;
+      const body = {
+        lead_id: this.selected.id,
+        row_number: this.selected.row_number,
+      };
+      if (this.proposalForm.status) body.status = this.proposalForm.status;
+      body.next_action = this.proposalForm.next_action || '';
+      body.next_action_due = this.proposalForm.next_action_due || '';
+      if (this.proposalForm.notes) body.notes = this.proposalForm.notes;
+
+      if (!body.status && !body.next_action && !body.next_action_due && !body.notes) {
+        notify('No proposal changes to save');
+        return;
+      }
+
+      this.submitting = true;
+      try {
+        const res = await fetch('/api/update-proposal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update proposal');
+        notify('Proposal updated for ' + this.selected.company);
         await this.loadStats();
         await this.loadHistory();
         await this.loadItems();
@@ -1018,7 +1156,38 @@ function logisticsDashboard() {
     },
 
     isEmailMode() {
-      return this.mode === 'email_today' || this.mode === 'email_overdue';
+      return this.isOutreachMode();
+    },
+
+    isOutreachMode() {
+      return ['outreach_today', 'outreach_overdue', 'email_today', 'email_overdue'].includes(this.mode);
+    },
+
+    isProposalFollowupMode() {
+      return this.mode === 'proposal_today' || this.mode === 'proposal_overdue';
+    },
+
+    isProposalListMode() {
+      return this.mode === 'proposals' || this.mode === 'stale_proposals';
+    },
+
+    isProposalContext() {
+      return this.isProposalFollowupMode() || this.isProposalListMode() || Boolean(this.selected?.has_actual_proposal);
+    },
+
+    proposalTaskButtonLabel() {
+      if (this.submitting) return 'Saving...';
+      const task = this.selected?.task_type || 'Proposal task';
+      if (task === 'Proposal Next Action') return 'Complete Proposal Next Action';
+      return 'Mark ' + task + ' Sent Today';
+    },
+
+    isTaskMode() {
+      return this.isOutreachMode() || this.isProposalFollowupMode();
+    },
+
+    proposalStatus(item) {
+      return item?.proposal_status_effective || item?.proposal_status || (item?.has_actual_proposal ? 'Sent' : '');
     },
 
     historyMax() {

@@ -28,6 +28,7 @@ SCOPES = [
 
 _API_CALL_INTERVAL = 1.5
 ACTIVITY_LOG_SHEET_NAME = "Dashboard Activity"
+STAGE_EVENT_SHEET_NAME = "Lead Stage Events"
 
 PT_LOGISTICS_HEADERS = [
     "ID",
@@ -40,7 +41,24 @@ PT_LOGISTICS_HEADERS = [
     "Last Touch Type",
     "What Happened",
     "Due",
+    "Initial Email Sent",
+    "Outreach FU1 Sent",
+    "Outreach FU2 Sent",
+    "Outreach FU3 Sent",
+    "Outreach Reactivation Sent",
     "Proposal Sent",
+    "Proposal Status",
+    "Proposal FU1 Sent",
+    "Proposal FU2 Sent",
+    "Proposal FU3 Sent",
+    "Proposal Reactivation Sent",
+    "Proposal Next Action",
+    "Proposal Next Action Due",
+    "Proposal Outcome",
+    "Proposal Lost Reason",
+    "Proposal Value",
+    "Proposal Probability",
+    "Forecast Category",
     "FU1 Sent",
     "FU2 Sent",
     "FU3 Sent",
@@ -70,6 +88,24 @@ ACTIVITY_LOG_HEADERS = [
     "New Lead Impacted",
     "Full Lead Impacted",
     "Notes",
+    "Proposal Status Before",
+    "Proposal Status After",
+]
+
+STAGE_EVENT_HEADERS = [
+    "Timestamp",
+    "Date",
+    "Lead Key",
+    "Row Number",
+    "Company",
+    "Event Type",
+    "Stage Before",
+    "Stage After",
+    "Proposal Status Before",
+    "Proposal Status After",
+    "Call Status",
+    "Email Task",
+    "Notes",
 ]
 
 FIELD_ALIASES = {
@@ -83,7 +119,24 @@ FIELD_ALIASES = {
     "last_touch_type": "Last Touch Type",
     "what_happened": "What Happened",
     "due": "Due",
+    "initial_email_sent": "Initial Email Sent",
+    "outreach_fu1_sent": "Outreach FU1 Sent",
+    "outreach_fu2_sent": "Outreach FU2 Sent",
+    "outreach_fu3_sent": "Outreach FU3 Sent",
+    "outreach_reactivation_sent": "Outreach Reactivation Sent",
     "proposal_sent": "Proposal Sent",
+    "proposal_status": "Proposal Status",
+    "proposal_fu1_sent": "Proposal FU1 Sent",
+    "proposal_fu2_sent": "Proposal FU2 Sent",
+    "proposal_fu3_sent": "Proposal FU3 Sent",
+    "proposal_reactivation_sent": "Proposal Reactivation Sent",
+    "proposal_next_action": "Proposal Next Action",
+    "proposal_next_action_due": "Proposal Next Action Due",
+    "proposal_outcome": "Proposal Outcome",
+    "proposal_lost_reason": "Proposal Lost Reason",
+    "proposal_value": "Proposal Value",
+    "proposal_probability": "Proposal Probability",
+    "forecast_category": "Forecast Category",
     "fu1_sent": "FU1 Sent",
     "fu2_sent": "FU2 Sent",
     "fu3_sent": "FU3 Sent",
@@ -97,45 +150,117 @@ FIELD_ALIASES = {
     "dashboard_touched": "Dashboard Touched",
 }
 
+DATE_FIELDS = {
+    "due",
+    "initial_email_sent",
+    "outreach_fu1_sent",
+    "outreach_fu2_sent",
+    "outreach_fu3_sent",
+    "outreach_reactivation_sent",
+    "proposal_sent",
+    "proposal_fu1_sent",
+    "proposal_fu2_sent",
+    "proposal_fu3_sent",
+    "proposal_reactivation_sent",
+    "proposal_next_action_due",
+    "fu1_sent",
+    "fu2_sent",
+    "fu3_sent",
+    "reactivation_sent",
+    "meeting_date",
+    "dashboard_touched",
+}
+
 TERMINAL_STAGES = {"lost", "not a fit"}
 PROPOSAL_STAGES = {"send proposal", "proposal requested", "proposal to send"}
 EMAIL_TASK_STAGES = {"send email", "email sent"}
 
-FOLLOWUP_RULES = [
+OUTREACH_FOLLOWUP_RULES = [
     {
-        "type": "Proposal",
-        "source_field": "",
-        "target_field": "proposal_sent",
+        "type": "Initial",
+        "source_field": "dashboard_touched",
+        "target_field": "initial_email_sent",
+        "legacy_target_fields": ["proposal_sent", "fu1_sent"],
         "days_after": 0,
-        "label": "Initial proposal email",
+        "label": "Initial outreach email",
     },
     {
-        "type": "FU1",
-        "source_field": "proposal_sent",
-        "target_field": "fu1_sent",
+        "type": "Outreach FU1",
+        "source_field": "initial_email_sent",
+        "target_field": "outreach_fu1_sent",
+        "legacy_source_fields": ["proposal_sent"],
+        "legacy_target_fields": ["fu1_sent"],
         "days_after": 2,
-        "label": "First follow-up",
+        "label": "First outreach follow-up",
     },
     {
-        "type": "FU2",
-        "source_field": "fu1_sent",
-        "target_field": "fu2_sent",
+        "type": "Outreach FU2",
+        "source_field": "outreach_fu1_sent",
+        "target_field": "outreach_fu2_sent",
+        "legacy_source_fields": ["fu1_sent"],
+        "legacy_target_fields": ["fu2_sent"],
         "days_after": 3,
-        "label": "Second follow-up",
+        "label": "Second outreach follow-up",
     },
     {
-        "type": "FU3",
-        "source_field": "fu2_sent",
-        "target_field": "fu3_sent",
+        "type": "Outreach FU3",
+        "source_field": "outreach_fu2_sent",
+        "target_field": "outreach_fu3_sent",
+        "legacy_source_fields": ["fu2_sent"],
+        "legacy_target_fields": ["fu3_sent"],
         "days_after": 5,
-        "label": "Third follow-up",
+        "label": "Third outreach follow-up",
     },
     {
-        "type": "Reactivation",
-        "source_field": "fu3_sent",
-        "target_field": "reactivation_sent",
+        "type": "Outreach Reactivation",
+        "source_field": "outreach_fu3_sent",
+        "target_field": "outreach_reactivation_sent",
+        "legacy_source_fields": ["fu3_sent"],
+        "legacy_target_fields": ["reactivation_sent"],
         "days_after": 30,
-        "label": "Reactivation email",
+        "label": "Outreach reactivation email",
+    },
+]
+
+PROPOSAL_FOLLOWUP_RULES = [
+    {
+        "type": "Proposal FU1",
+        "source_field": "proposal_sent",
+        "target_field": "proposal_fu1_sent",
+        "legacy_target_fields": ["fu1_sent"],
+        "days_after": 2,
+        "label": "First proposal follow-up",
+        "next_status": "Follow-up 1",
+    },
+    {
+        "type": "Proposal FU2",
+        "source_field": "proposal_fu1_sent",
+        "target_field": "proposal_fu2_sent",
+        "legacy_source_fields": ["fu1_sent"],
+        "legacy_target_fields": ["fu2_sent"],
+        "days_after": 3,
+        "label": "Second proposal follow-up",
+        "next_status": "Follow-up 2",
+    },
+    {
+        "type": "Proposal FU3",
+        "source_field": "proposal_fu2_sent",
+        "target_field": "proposal_fu3_sent",
+        "legacy_source_fields": ["fu2_sent"],
+        "legacy_target_fields": ["fu3_sent"],
+        "days_after": 5,
+        "label": "Third proposal follow-up",
+        "next_status": "Follow-up 3",
+    },
+    {
+        "type": "Proposal Reactivation",
+        "source_field": "proposal_fu3_sent",
+        "target_field": "proposal_reactivation_sent",
+        "legacy_source_fields": ["fu3_sent"],
+        "legacy_target_fields": ["reactivation_sent"],
+        "days_after": 30,
+        "label": "Proposal reactivation",
+        "next_status": "Reactivation",
     },
 ]
 
@@ -205,6 +330,8 @@ class PTLogisticsCRM:
         self._ensure_headers()
         self.activity_sheet = self._get_or_create_activity_sheet()
         self._ensure_activity_headers()
+        self.stage_event_sheet = self._get_or_create_stage_event_sheet()
+        self._ensure_stage_event_headers()
         self._refresh_cache()
 
         logger.info("PTLogisticsCRM initialized", spreadsheet_id=spreadsheet_id, sheet=sheet_name)
@@ -244,6 +371,18 @@ class PTLogisticsCRM:
                 cols=len(ACTIVITY_LOG_HEADERS),
             )
 
+    def _get_or_create_stage_event_sheet(self):
+        try:
+            return self._api_call(self.spreadsheet.worksheet, STAGE_EVENT_SHEET_NAME)
+        except gspread.WorksheetNotFound:
+            logger.info("Creating PT Logistics stage event sheet", sheet_name=STAGE_EVENT_SHEET_NAME)
+            return self._api_call(
+                self.spreadsheet.add_worksheet,
+                title=STAGE_EVENT_SHEET_NAME,
+                rows=3000,
+                cols=len(STAGE_EVENT_HEADERS),
+            )
+
     def _ensure_headers(self):
         current_headers = self._api_call(self.sheet.row_values, 1)
         if not current_headers:
@@ -277,8 +416,41 @@ class PTLogisticsCRM:
 
     def _ensure_activity_headers(self):
         current_headers = self._api_call(self.activity_sheet.row_values, 1)
-        if current_headers != ACTIVITY_LOG_HEADERS:
+        if not current_headers:
             self._api_call(self.activity_sheet.update, "A1", [ACTIVITY_LOG_HEADERS])
+            return
+
+        missing_headers = [header for header in ACTIVITY_LOG_HEADERS if header not in current_headers]
+        if missing_headers:
+            start_col = len(current_headers) + 1
+            required_cols = len(current_headers) + len(missing_headers)
+            current_cols = getattr(self.activity_sheet, "col_count", len(current_headers))
+            if required_cols > current_cols:
+                self._api_call(self.activity_sheet.add_cols, required_cols - current_cols)
+            cells = [
+                Cell(row=1, col=start_col + idx, value=header)
+                for idx, header in enumerate(missing_headers)
+            ]
+            self._api_call(self.activity_sheet.update_cells, cells)
+
+    def _ensure_stage_event_headers(self):
+        current_headers = self._api_call(self.stage_event_sheet.row_values, 1)
+        if not current_headers:
+            self._api_call(self.stage_event_sheet.update, "A1", [STAGE_EVENT_HEADERS])
+            return
+
+        missing_headers = [header for header in STAGE_EVENT_HEADERS if header not in current_headers]
+        if missing_headers:
+            start_col = len(current_headers) + 1
+            required_cols = len(current_headers) + len(missing_headers)
+            current_cols = getattr(self.stage_event_sheet, "col_count", len(current_headers))
+            if required_cols > current_cols:
+                self._api_call(self.stage_event_sheet.add_cols, required_cols - current_cols)
+            cells = [
+                Cell(row=1, col=start_col + idx, value=header)
+                for idx, header in enumerate(missing_headers)
+            ]
+            self._api_call(self.stage_event_sheet.update_cells, cells)
 
     def _refresh_cache(self):
         all_values = self._api_call(self.sheet.get_all_values)
@@ -293,6 +465,137 @@ class PTLogisticsCRM:
             return ""
         return row[idx]
 
+    def _proposal_legacy_date(self, lead: dict, field: str) -> Optional[date]:
+        proposal_date = parse_sheet_date(lead.get("proposal_sent", ""))
+        value_date = parse_sheet_date(lead.get(field, ""))
+        if proposal_date and value_date and value_date >= proposal_date:
+            return value_date
+        return None
+
+    def _proposal_rule_source_date(self, lead: dict, rule: dict) -> Optional[date]:
+        source_date = parse_sheet_date(lead.get(rule["source_field"], ""))
+        if source_date:
+            return source_date
+        for field in rule.get("legacy_source_fields", []):
+            legacy_date = self._proposal_legacy_date(lead, field)
+            if legacy_date:
+                return legacy_date
+        return None
+
+    def _proposal_rule_target_filled(self, lead: dict, rule: dict) -> bool:
+        if is_filled(lead.get(rule["target_field"], "")):
+            return True
+        return any(
+            self._proposal_legacy_date(lead, field)
+            for field in rule.get("legacy_target_fields", [])
+        )
+
+    def _proposal_status(self, lead: dict) -> str:
+        explicit = (lead.get("proposal_status") or "").strip()
+        if explicit:
+            return explicit
+
+        stage = (lead.get("stage") or "").strip()
+        stage_lower = stage.lower()
+        if stage_lower in PROPOSAL_STAGES:
+            return "Requested"
+        if not self._has_actual_proposal(lead):
+            return ""
+        if stage_lower == "lost":
+            return "Lost"
+        if stage_lower == "not a fit":
+            return "Not a Fit"
+        if stage_lower == "meeting booked":
+            return "Meeting Booked"
+        if is_filled(lead.get("proposal_reactivation_sent", "")) or self._proposal_legacy_date(lead, "reactivation_sent"):
+            return "Reactivation"
+        if is_filled(lead.get("proposal_fu3_sent", "")) or self._proposal_legacy_date(lead, "fu3_sent"):
+            return "Follow-up 3"
+        if is_filled(lead.get("proposal_fu2_sent", "")) or self._proposal_legacy_date(lead, "fu2_sent"):
+            return "Follow-up 2"
+        if is_filled(lead.get("proposal_fu1_sent", "")) or self._proposal_legacy_date(lead, "fu1_sent"):
+            return "Follow-up 1"
+        return "Sent"
+
+    def _has_actual_proposal(self, lead: dict) -> bool:
+        if not is_filled(lead.get("proposal_sent", "")):
+            return False
+
+        stage = (lead.get("stage") or "").strip().lower()
+        last_touch = (lead.get("last_touch_type") or "").strip().lower()
+        if stage in {"proposal sent", "meeting booked"} or "proposal" in last_touch:
+            return True
+        if is_filled(lead.get("proposal_status", "")):
+            return True
+        return any(
+            is_filled(lead.get(field, ""))
+            for field in (
+                "proposal_fu1_sent",
+                "proposal_fu2_sent",
+                "proposal_fu3_sent",
+                "proposal_reactivation_sent",
+                "proposal_next_action",
+                "proposal_next_action_due",
+                "proposal_outcome",
+                "proposal_lost_reason",
+                "proposal_value",
+                "proposal_probability",
+                "forecast_category",
+            )
+        )
+
+    def _is_proposal_open(self, lead: dict) -> bool:
+        if not self._has_actual_proposal(lead):
+            return False
+        status = self._proposal_status(lead).strip().lower()
+        stage = (lead.get("stage") or "").strip().lower()
+        return status not in {"lost", "not a fit", "won", "meeting booked"} and stage not in TERMINAL_STAGES
+
+    def _has_outreach_context(self, lead: dict) -> bool:
+        stage = (lead.get("stage") or "").strip().lower()
+        if stage in EMAIL_TASK_STAGES:
+            return True
+        return any(
+            is_filled(lead.get(field, ""))
+            for field in (
+                "initial_email_sent",
+                "outreach_fu1_sent",
+                "outreach_fu2_sent",
+                "outreach_fu3_sent",
+                "outreach_reactivation_sent",
+                "fu1_sent",
+                "fu2_sent",
+                "fu3_sent",
+                "reactivation_sent",
+            )
+        )
+
+    def _field_date(self, lead: dict, field: str) -> Optional[date]:
+        return parse_sheet_date(lead.get(field, ""))
+
+    def _first_filled_date(self, lead: dict, *fields: str) -> Optional[date]:
+        for field in fields:
+            if not field:
+                continue
+            parsed = self._field_date(lead, field)
+            if parsed:
+                return parsed
+        return None
+
+    def _rule_fields(self, rule: dict, field_name: str, legacy_name: str, legacy_list_name: str) -> list[str]:
+        fields = [rule.get(field_name, "")]
+        fields.extend(rule.get(legacy_list_name, []))
+        legacy_field = rule.get(legacy_name, "")
+        if legacy_field:
+            fields.append(legacy_field)
+        return [field for field in fields if field]
+
+    def _rule_target_filled(self, lead: dict, rule: dict) -> bool:
+        return any(
+            is_filled(lead.get(field, ""))
+            for field in self._rule_fields(rule, "target_field", "legacy_target_field", "legacy_target_fields")
+        )
+
     def _row_to_dict(self, row: list[str], row_number: int | None = None) -> dict:
         result = {}
         for field in FIELD_ALIASES:
@@ -300,15 +603,12 @@ class PTLogisticsCRM:
         result["row_number"] = row_number or ""
         result["key"] = result.get("id") or f"row-{row_number}" if row_number else result.get("id", "")
 
-        due_date = parse_sheet_date(result.get("due", ""))
-        result["due_iso"] = due_date.isoformat() if due_date else ""
-
-        for field in ("proposal_sent", "fu1_sent", "fu2_sent", "fu3_sent", "reactivation_sent"):
+        for field in DATE_FIELDS:
             parsed = parse_sheet_date(result.get(field, ""))
             result[f"{field}_iso"] = parsed.isoformat() if parsed else ""
 
-        touched_date = parse_sheet_date(result.get("dashboard_touched", ""))
-        result["dashboard_touched_iso"] = touched_date.isoformat() if touched_date else ""
+        result["has_actual_proposal"] = self._has_actual_proposal(result)
+        result["proposal_status_effective"] = self._proposal_status(result)
 
         return result
 
@@ -382,6 +682,14 @@ class PTLogisticsCRM:
         view: str = "due",
         include_upcoming: bool = False,
     ) -> list[dict]:
+        return self.get_outreach_followups(today, view=view, include_upcoming=include_upcoming)
+
+    def get_outreach_followups(
+        self,
+        today: date,
+        view: str = "due",
+        include_upcoming: bool = False,
+    ) -> list[dict]:
         view = view if view in {"today", "overdue", "due", "upcoming", "all"} else "due"
         tasks = []
         for i, row in enumerate(self._cache):
@@ -389,29 +697,15 @@ class PTLogisticsCRM:
             stage = (lead.get("stage") or "").strip().lower()
             if stage in TERMINAL_STAGES:
                 continue
+            if self._has_actual_proposal(lead):
+                continue
+            if not self._has_outreach_context(lead):
+                continue
 
-            for rule in FOLLOWUP_RULES:
-                if rule["type"] == "Proposal":
-                    if is_filled(lead.get("proposal_sent", "")):
+            for index, rule in enumerate(OUTREACH_FOLLOWUP_RULES):
+                if index == 0:
+                    if stage not in EMAIL_TASK_STAGES or self._rule_target_filled(lead, rule):
                         continue
-                    if stage in PROPOSAL_STAGES:
-                        due_date = today
-                        if self._email_followup_in_view(due_date, today, view, include_upcoming):
-                            tasks.append({
-                                **lead,
-                                "task_type": rule["type"],
-                                "task_label": rule["label"],
-                                "task_due": "Now",
-                                "task_due_iso": due_date.isoformat(),
-                                "task_overdue_days": 0,
-                                "source_field": rule["source_field"],
-                                "target_field": rule["target_field"],
-                                "based_on": "Call outcome",
-                            })
-                        break
-                    continue
-
-                if rule["type"] == "FU1" and stage in EMAIL_TASK_STAGES and not is_filled(lead.get("fu1_sent", "")):
                     due_date = (
                         parse_sheet_date(lead.get("due", ""))
                         or parse_sheet_date(lead.get("dashboard_touched", ""))
@@ -421,21 +715,23 @@ class PTLogisticsCRM:
                         tasks.append({
                             **lead,
                             "task_type": rule["type"],
-                            "task_label": "Send email" if stage == "send email" else "Initial email after call",
+                            "task_workflow": "outreach",
+                            "task_label": "Send initial outreach email" if stage == "send email" else rule["label"],
                             "task_due": due_date.strftime("%Y/%m/%d"),
                             "task_due_iso": due_date.isoformat(),
                             "task_overdue_days": max((today - due_date).days, 0),
-                            "source_field": "dashboard_touched",
+                            "source_field": rule["source_field"],
                             "target_field": rule["target_field"],
                             "based_on": "Email stage",
                         })
                     break
 
-                source_value = lead.get(rule["source_field"], "")
-                target_value = lead.get(rule["target_field"], "")
-                source_date = parse_sheet_date(source_value)
+                source_date = self._first_filled_date(
+                    lead,
+                    *self._rule_fields(rule, "source_field", "legacy_source_field", "legacy_source_fields"),
+                )
 
-                if not source_date or is_filled(target_value):
+                if not source_date or self._rule_target_filled(lead, rule):
                     continue
 
                 due_date = source_date + timedelta(days=rule["days_after"])
@@ -443,6 +739,7 @@ class PTLogisticsCRM:
                     tasks.append({
                         **lead,
                         "task_type": rule["type"],
+                        "task_workflow": "outreach",
                         "task_label": rule["label"],
                         "task_due": due_date.strftime("%Y/%m/%d"),
                         "task_due_iso": due_date.isoformat(),
@@ -454,6 +751,123 @@ class PTLogisticsCRM:
                 break
 
         return sorted(tasks, key=lambda task: (task["task_due_iso"], task["company"].lower()))
+
+    def get_proposal_followups(
+        self,
+        today: date,
+        view: str = "due",
+        include_upcoming: bool = False,
+    ) -> list[dict]:
+        view = view if view in {"today", "overdue", "due", "upcoming", "all"} else "due"
+        tasks = []
+        for i, row in enumerate(self._cache):
+            lead = self._row_to_dict(list(row), i + 2)
+            stage = (lead.get("stage") or "").strip().lower()
+            if stage in TERMINAL_STAGES:
+                continue
+            if stage in PROPOSAL_STAGES and not is_filled(lead.get("proposal_sent", "")):
+                due_date = today
+                if self._email_followup_in_view(due_date, today, view, include_upcoming):
+                    tasks.append({
+                        **lead,
+                        "task_type": "Send Proposal",
+                        "task_workflow": "proposal",
+                        "task_label": "Send actual proposal",
+                        "task_due": "Now",
+                        "task_due_iso": due_date.isoformat(),
+                        "task_overdue_days": 0,
+                        "source_field": "stage",
+                        "target_field": "proposal_sent",
+                        "based_on": "Call outcome",
+                        "next_proposal_status": "Sent",
+                    })
+                continue
+            if not self._is_proposal_open(lead):
+                continue
+
+            next_due = parse_sheet_date(lead.get("proposal_next_action_due", ""))
+            if next_due:
+                if self._email_followup_in_view(next_due, today, view, include_upcoming):
+                    next_action = (lead.get("proposal_next_action") or "").strip()
+                    tasks.append({
+                        **lead,
+                        "task_type": "Proposal Next Action",
+                        "task_workflow": "proposal",
+                        "task_label": next_action or "Proposal next action",
+                        "task_due": next_due.strftime("%Y/%m/%d"),
+                        "task_due_iso": next_due.isoformat(),
+                        "task_overdue_days": max((today - next_due).days, 0),
+                        "source_field": "proposal_next_action_due",
+                        "target_field": "proposal_next_action_due",
+                        "based_on": next_action or "Manual next action",
+                        "next_proposal_status": self._proposal_status(lead),
+                    })
+                continue
+
+            for rule in PROPOSAL_FOLLOWUP_RULES:
+                source_date = self._proposal_rule_source_date(lead, rule)
+                if not source_date or self._proposal_rule_target_filled(lead, rule):
+                    continue
+
+                due_date = source_date + timedelta(days=rule["days_after"])
+                if self._email_followup_in_view(due_date, today, view, include_upcoming):
+                    tasks.append({
+                        **lead,
+                        "task_type": rule["type"],
+                        "task_workflow": "proposal",
+                        "task_label": rule["label"],
+                        "task_due": due_date.strftime("%Y/%m/%d"),
+                        "task_due_iso": due_date.isoformat(),
+                        "task_overdue_days": max((today - due_date).days, 0),
+                        "source_field": rule["source_field"],
+                        "target_field": rule["target_field"],
+                        "based_on": format_sheet_date(source_date),
+                        "next_proposal_status": rule["next_status"],
+                    })
+                break
+
+        return sorted(tasks, key=lambda task: (task["task_due_iso"], task["company"].lower()))
+
+    def get_proposals(self, today: date, view: str = "open") -> list[dict]:
+        proposals = []
+        for i, row in enumerate(self._cache):
+            lead = self._row_to_dict(list(row), i + 2)
+            if not self._has_actual_proposal(lead):
+                continue
+            proposal_date = parse_sheet_date(lead.get("proposal_sent", ""))
+            if not proposal_date:
+                continue
+
+            status = self._proposal_status(lead)
+            open_proposal = self._is_proposal_open(lead)
+            age_days = max((today - proposal_date).days, 0)
+            next_due = parse_sheet_date(lead.get("proposal_next_action_due", ""))
+            proposal = {
+                **lead,
+                "proposal_status_effective": status,
+                "proposal_age_days": age_days,
+                "proposal_open": open_proposal,
+                "proposal_stale": open_proposal and age_days >= 7,
+                "proposal_next_action_due_iso": next_due.isoformat() if next_due else "",
+                "proposal_next_action_overdue_days": max((today - next_due).days, 0) if next_due and next_due < today else 0,
+            }
+
+            if view == "stale" and not proposal["proposal_stale"]:
+                continue
+            if view == "open" and not open_proposal:
+                continue
+            if view == "closed" and open_proposal:
+                continue
+            proposals.append(proposal)
+
+        return sorted(
+            proposals,
+            key=lambda lead: (
+                0 if lead.get("proposal_stale") else 1,
+                -(lead.get("proposal_age_days") or 0),
+                (lead.get("company") or "").lower(),
+            ),
+        )
 
     def _email_followup_in_view(
         self,
@@ -474,20 +888,37 @@ class PTLogisticsCRM:
 
     def get_stats(self, today: date) -> dict:
         leads = self.get_all_leads()
-        followups_today = self.get_email_followups(today, view="today")
-        followups_overdue = self.get_email_followups(today, view="overdue")
-        followups = [*followups_today, *followups_overdue]
+        outreach_today = self.get_outreach_followups(today, view="today")
+        outreach_overdue = self.get_outreach_followups(today, view="overdue")
+        outreach_due = [*outreach_today, *outreach_overdue]
+        proposal_followups_today = self.get_proposal_followups(today, view="today")
+        proposal_followups_overdue = self.get_proposal_followups(today, view="overdue")
+        proposal_followups_due = [*proposal_followups_today, *proposal_followups_overdue]
+        open_proposals = self.get_proposals(today, view="open")
+        stale_proposals = self.get_proposals(today, view="stale")
         stats = {
             "total": len(leads),
             "calls_today": len(self.get_call_leads("today", today)),
             "calls_overdue": len(self.get_call_leads("overdue", today)),
-            "email_followups_today": len(followups_today),
-            "email_followups_overdue": len(followups_overdue),
-            "email_followups_due": len(followups),
+            "email_followups_today": len(outreach_today),
+            "email_followups_overdue": len(outreach_overdue),
+            "email_followups_due": len(outreach_due),
+            "outreach_followups_today": len(outreach_today),
+            "outreach_followups_overdue": len(outreach_overdue),
+            "outreach_followups_due": len(outreach_due),
+            "proposal_followups_today": len(proposal_followups_today),
+            "proposal_followups_overdue": len(proposal_followups_overdue),
+            "proposal_followups_due": len(proposal_followups_due),
+            "open_proposals": len(open_proposals),
+            "stale_proposals": len(stale_proposals),
             "impacted_today": len(self.get_impacted_leads(today)),
             "by_stage": {},
             "by_priority": {},
             "email_tasks_by_type": {},
+            "outreach_tasks_by_type": {},
+            "proposal_tasks_by_type": {},
+            "proposal_status": {},
+            "proposal_age_buckets": {"0-2": 0, "3-7": 0, "8-14": 0, "15+": 0},
         }
 
         for lead in leads:
@@ -495,10 +926,30 @@ class PTLogisticsCRM:
             priority = (lead.get("priority") or "Blank").strip() or "Blank"
             stats["by_stage"][stage] = stats["by_stage"].get(stage, 0) + 1
             stats["by_priority"][priority] = stats["by_priority"].get(priority, 0) + 1
+            if self._has_actual_proposal(lead):
+                status = self._proposal_status(lead) or "Sent"
+                stats["proposal_status"][status] = stats["proposal_status"].get(status, 0) + 1
 
-        for task in followups:
+        for task in outreach_due:
             task_type = task["task_type"]
             stats["email_tasks_by_type"][task_type] = stats["email_tasks_by_type"].get(task_type, 0) + 1
+            stats["outreach_tasks_by_type"][task_type] = stats["outreach_tasks_by_type"].get(task_type, 0) + 1
+
+        for task in proposal_followups_due:
+            task_type = task["task_type"]
+            stats["proposal_tasks_by_type"][task_type] = stats["proposal_tasks_by_type"].get(task_type, 0) + 1
+
+        for proposal in open_proposals:
+            age = proposal.get("proposal_age_days") or 0
+            if age <= 2:
+                bucket = "0-2"
+            elif age <= 7:
+                bucket = "3-7"
+            elif age <= 14:
+                bucket = "8-14"
+            else:
+                bucket = "15+"
+            stats["proposal_age_buckets"][bucket] += 1
 
         return stats
 
@@ -559,22 +1010,29 @@ class PTLogisticsCRM:
         row_num, row = match
         cache_idx = row_num - 2
         before = self._row_to_dict(list(row), row_num)
+        effective_date = touched_date or date.today()
+
+        stage_update = (updates.get("stage") or "").strip().lower()
+        if stage_update == "proposal sent":
+            if not self._has_actual_proposal(before):
+                updates.setdefault("proposal_sent", effective_date)
+                updates.setdefault("proposal_status", "Sent")
+            updates["due"] = ""
+        elif stage_update in {"lost", "not a fit", "meeting booked"} and self._has_actual_proposal(before):
+            stage_status = {
+                "lost": "Lost",
+                "not a fit": "Not a Fit",
+                "meeting booked": "Meeting Booked",
+            }[stage_update]
+            updates.setdefault("proposal_status", stage_status)
+
         cells = []
 
         for field, value in updates.items():
             col_idx = self._columns.get(field)
             if col_idx is None:
                 continue
-            formatted = format_sheet_date(value) if field in {
-                "due",
-                "proposal_sent",
-                "fu1_sent",
-                "fu2_sent",
-                "fu3_sent",
-                "reactivation_sent",
-                "meeting_date",
-                "dashboard_touched",
-            } else str(value)
+            formatted = format_sheet_date(value) if field in DATE_FIELDS else str(value)
             cells.append(Cell(row=row_num, col=col_idx + 1, value=formatted))
             while len(self._cache[cache_idx]) <= col_idx:
                 self._cache[cache_idx].append("")
@@ -590,7 +1048,7 @@ class PTLogisticsCRM:
                     before=before,
                     after=after,
                     activity=activity,
-                    touched_date=touched_date or date.today(),
+                    touched_date=effective_date,
                 )
             except Exception as exc:
                 logger.warning(
@@ -638,6 +1096,7 @@ class PTLogisticsCRM:
         if call_status_norm == "proposal sent":
             updates["stage"] = "Proposal Sent"
             updates["proposal_sent"] = touched_date or date.today()
+            updates["proposal_status"] = "Sent"
             updates["due"] = ""
         elif clear_due:
             updates["due"] = ""
@@ -698,8 +1157,8 @@ class PTLogisticsCRM:
 
         row_num, row = match
         lead = self._row_to_dict(list(row), row_num)
-        task_type = self._next_email_task_type(lead)
-        rule = next((r for r in FOLLOWUP_RULES if r["type"] == task_type), None)
+        rule = self._next_outreach_rule(lead)
+        task_type = rule["type"] if rule else "Initial"
         updates = {
             "last_touch_type": "Email sent",
             "what_happened": "Email sent",
@@ -722,18 +1181,22 @@ class PTLogisticsCRM:
             touched_date=touched_date,
             activity={
                 "event_type": "email",
-                "email_task": task_type or "Manual",
+                "email_task": task_type or "Initial",
                 "notes": notes or "Email sent",
             },
         )
 
-    def _next_email_task_type(self, lead: dict) -> str:
-        for rule in FOLLOWUP_RULES:
-            if rule["type"] == "Proposal":
-                continue
-            if not is_filled(lead.get(rule["target_field"], "")):
-                return rule["type"]
-        return ""
+    def _next_outreach_rule(self, lead: dict) -> dict | None:
+        for rule in OUTREACH_FOLLOWUP_RULES:
+            if not self._rule_target_filled(lead, rule):
+                return rule
+        return None
+
+    def _proposal_rule(self, task_type: str) -> dict | None:
+        return next((r for r in PROPOSAL_FOLLOWUP_RULES if r["type"].lower() == task_type.lower()), None)
+
+    def _outreach_rule(self, task_type: str) -> dict | None:
+        return next((r for r in OUTREACH_FOLLOWUP_RULES if r["type"].lower() == task_type.lower()), None)
 
     def mark_email_followup_sent(
         self,
@@ -744,19 +1207,44 @@ class PTLogisticsCRM:
         row_number: int | str = "",
         touched_date: date | None = None,
     ) -> bool:
-        rule = next((r for r in FOLLOWUP_RULES if r["type"].lower() == task_type.lower()), None)
+        if task_type.lower().startswith("proposal"):
+            return self.mark_proposal_followup_sent(
+                lead_id=lead_id,
+                task_type=task_type,
+                sent_date=sent_date,
+                notes=notes,
+                row_number=row_number,
+                touched_date=touched_date,
+            )
+
+        return self.mark_outreach_followup_sent(
+            lead_id=lead_id,
+            task_type=task_type,
+            sent_date=sent_date,
+            notes=notes,
+            row_number=row_number,
+            touched_date=touched_date,
+        )
+
+    def mark_outreach_followup_sent(
+        self,
+        lead_id: str,
+        task_type: str,
+        sent_date: date,
+        notes: str = "",
+        row_number: int | str = "",
+        touched_date: date | None = None,
+    ) -> bool:
+        rule = self._outreach_rule(task_type)
         if not rule:
             return False
-
-        next_stage = "Email Sent"
-        if rule["type"] == "Proposal":
-            next_stage = "Proposal Sent"
 
         updates = {
             rule["target_field"]: sent_date,
             "last_touch_type": "Email sent",
             "what_happened": rule["label"],
-            "stage": next_stage,
+            "stage": "Email Sent",
+            "due": "",
         }
 
         if notes:
@@ -778,6 +1266,169 @@ class PTLogisticsCRM:
                 "event_type": "email",
                 "email_task": rule["type"],
                 "notes": notes or rule["label"],
+            },
+        )
+
+    def mark_proposal_followup_sent(
+        self,
+        lead_id: str,
+        task_type: str,
+        sent_date: date,
+        notes: str = "",
+        row_number: int | str = "",
+        touched_date: date | None = None,
+    ) -> bool:
+        if task_type.lower() == "proposal next action":
+            updates = {
+                "proposal_next_action": "",
+                "proposal_next_action_due": "",
+                "last_touch_type": "Proposal next action",
+                "what_happened": "Proposal next action completed",
+            }
+            if notes:
+                match = self._find_by_reference(lead_id=lead_id, row_number=row_number)
+                if not match:
+                    return False
+                _, row = match
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                existing = self._value(row, "notes")
+                entry = f"[{timestamp}] Proposal next action completed. {notes}"
+                updates["notes"] = f"{entry}\n---\n{existing}" if existing.strip() else entry
+
+            return self.update_lead(
+                lead_id=lead_id,
+                row_number=row_number,
+                updates=updates,
+                touched_date=touched_date,
+                activity={
+                    "event_type": "proposal_update",
+                    "email_task": "",
+                    "notes": notes or "Proposal next action completed",
+                },
+            )
+
+        if task_type.lower() == "send proposal":
+            updates = {
+                "proposal_sent": sent_date,
+                "proposal_status": "Sent",
+                "stage": "Proposal Sent",
+                "last_touch_type": "Proposal sent",
+                "what_happened": "Proposal sent",
+                "due": "",
+            }
+            if notes:
+                match = self._find_by_reference(lead_id=lead_id, row_number=row_number)
+                if not match:
+                    return False
+                _, row = match
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                existing = self._value(row, "notes")
+                entry = f"[{timestamp}] Proposal sent. {notes}"
+                updates["notes"] = f"{entry}\n---\n{existing}" if existing.strip() else entry
+
+            return self.update_lead(
+                lead_id=lead_id,
+                row_number=row_number,
+                updates=updates,
+                touched_date=touched_date,
+                activity={
+                    "event_type": "proposal_email",
+                    "email_task": "Send Proposal",
+                    "notes": notes or "Proposal sent",
+                },
+            )
+
+        rule = self._proposal_rule(task_type)
+        if not rule:
+            return False
+
+        updates = {
+            rule["target_field"]: sent_date,
+            "last_touch_type": "Proposal follow-up",
+            "what_happened": rule["label"],
+            "proposal_status": rule["next_status"],
+            "proposal_next_action": "",
+            "proposal_next_action_due": "",
+        }
+
+        if notes:
+            match = self._find_by_reference(lead_id=lead_id, row_number=row_number)
+            if not match:
+                return False
+            _, row = match
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            existing = self._value(row, "notes")
+            entry = f"[{timestamp}] {rule['type']} sent. {notes}"
+            updates["notes"] = f"{entry}\n---\n{existing}" if existing.strip() else entry
+
+        return self.update_lead(
+            lead_id=lead_id,
+            row_number=row_number,
+            updates=updates,
+            touched_date=touched_date,
+            activity={
+                "event_type": "proposal_email",
+                "email_task": rule["type"],
+                "notes": notes or rule["label"],
+            },
+        )
+
+    def update_proposal(
+        self,
+        lead_id: str,
+        row_number: int | str = "",
+        status: str = "",
+        next_action: str | None = None,
+        next_action_due: str | None = None,
+        outcome: str = "",
+        lost_reason: str = "",
+        value: str = "",
+        probability: str = "",
+        forecast_category: str = "",
+        notes: str = "",
+        touched_date: date | None = None,
+    ) -> bool:
+        updates = {}
+        if status:
+            updates["proposal_status"] = status
+            status_lower = status.strip().lower()
+            if status_lower in {"lost", "not a fit"}:
+                updates["stage"] = "Lost" if status_lower == "lost" else "Not a Fit"
+            elif status_lower in {"meeting booked", "won"}:
+                updates["stage"] = "Meeting Booked"
+        if next_action is not None:
+            updates["proposal_next_action"] = next_action
+        if next_action_due is not None:
+            updates["proposal_next_action_due"] = next_action_due
+        if outcome:
+            updates["proposal_outcome"] = outcome
+        if lost_reason:
+            updates["proposal_lost_reason"] = lost_reason
+        if value:
+            updates["proposal_value"] = value
+        if probability:
+            updates["proposal_probability"] = probability
+        if forecast_category:
+            updates["forecast_category"] = forecast_category
+
+        if notes:
+            match = self._find_by_reference(lead_id=lead_id, row_number=row_number)
+            if not match:
+                return False
+            _, row = match
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            existing = self._value(row, "notes")
+            entry = f"[{timestamp}] Proposal update. {notes}"
+            updates["notes"] = f"{entry}\n---\n{existing}" if existing.strip() else entry
+
+        return self.update_lead(
+            lead_id=lead_id,
+            row_number=row_number,
+            updates=updates,
+            touched_date=touched_date,
+            activity={
+                "event_type": "proposal_update",
+                "notes": notes or status or next_action or "Proposal update",
             },
         )
 
@@ -804,7 +1455,22 @@ class PTLogisticsCRM:
         today: date,
         first_activity_date: Optional[date],
     ):
-        email_fields = ("proposal_sent", "fu1_sent", "fu2_sent", "fu3_sent", "reactivation_sent")
+        email_fields = (
+            "initial_email_sent",
+            "outreach_fu1_sent",
+            "outreach_fu2_sent",
+            "outreach_fu3_sent",
+            "outreach_reactivation_sent",
+            "proposal_sent",
+            "proposal_fu1_sent",
+            "proposal_fu2_sent",
+            "proposal_fu3_sent",
+            "proposal_reactivation_sent",
+            "fu1_sent",
+            "fu2_sent",
+            "fu3_sent",
+            "reactivation_sent",
+        )
         for i, row in enumerate(self._cache):
             lead = self._row_to_dict(list(row), i + 2)
             key = lead.get("key") or f"row-{i + 2}"
@@ -817,6 +1483,8 @@ class PTLogisticsCRM:
                     day["calls"] += 1
 
             for field in email_fields:
+                if field.startswith("proposal_") and not self._has_actual_proposal(lead):
+                    continue
                 sent = parse_sheet_date(lead.get(field, ""))
                 if sent and start <= sent <= today and (not first_activity_date or sent < first_activity_date):
                     daily[sent.isoformat()]["emails_sent"] += 1
@@ -874,9 +1542,153 @@ class PTLogisticsCRM:
                 "yes" if new_lead_impacted else "no",
                 "yes" if full_lead_impacted else "no",
                 activity.get("notes", ""),
+                before.get("proposal_status_effective", ""),
+                after.get("proposal_status_effective", ""),
             ],
             table_range="A1",
         )
+
+        proposal_before = before.get("proposal_status_effective", "")
+        proposal_after = after.get("proposal_status_effective", "")
+        if (
+            before.get("stage", "") != after.get("stage", "")
+            or proposal_before != proposal_after
+            or event_type.startswith("proposal")
+        ):
+            self._append_stage_event(
+                before=before,
+                after=after,
+                activity=activity,
+                touched_date=touched_date,
+            )
+
+    def _append_stage_event(self, before: dict, after: dict, activity: dict, touched_date: date):
+        self._api_call(
+            self.stage_event_sheet.append_row,
+            [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                touched_date.isoformat(),
+                after.get("key") or before.get("key") or "",
+                after.get("row_number") or before.get("row_number") or "",
+                after.get("company") or before.get("company") or "",
+                activity.get("event_type", "update"),
+                before.get("stage", ""),
+                after.get("stage", ""),
+                before.get("proposal_status_effective", ""),
+                after.get("proposal_status_effective", ""),
+                activity.get("call_status", ""),
+                activity.get("email_task", ""),
+                activity.get("notes", ""),
+            ],
+            table_range="A1",
+        )
+
+    def _stage_event_rows(self) -> list[dict]:
+        try:
+            values = self._api_call(self.stage_event_sheet.get_all_values)
+        except Exception:
+            return []
+        if len(values) <= 1:
+            return []
+        headers = values[0]
+        rows = []
+        for raw in values[1:]:
+            rows.append({header: raw[idx] if idx < len(raw) else "" for idx, header in enumerate(headers)})
+        return rows
+
+    def get_stage_timing(self, today: date, days: int = 120) -> dict:
+        start = today - timedelta(days=max(1, min(int(days or 120), 365)) - 1)
+        rows = []
+        stage_rows = self._stage_event_rows()
+        rows.extend(stage_rows)
+        stage_dates = [parse_sheet_date(row.get("Date", "")) for row in stage_rows]
+        stage_dates = [value for value in stage_dates if value]
+        first_stage_event_date = min(stage_dates) if stage_dates else None
+
+        # Existing Dashboard Activity rows provide useful stage timing for the
+        # period before Lead Stage Events existed.
+        for row in self._activity_rows():
+            event_date = parse_sheet_date(row.get("Date", ""))
+            if first_stage_event_date and event_date and event_date >= first_stage_event_date:
+                continue
+            rows.append({
+                "Timestamp": row.get("Timestamp", ""),
+                "Date": row.get("Date", ""),
+                "Lead Key": row.get("Lead Key", ""),
+                "Row Number": row.get("Row Number", ""),
+                "Company": row.get("Company", ""),
+                "Event Type": row.get("Event Type", ""),
+                "Stage Before": row.get("Stage Before", ""),
+                "Stage After": row.get("Stage After", ""),
+                "Proposal Status Before": row.get("Proposal Status Before", ""),
+                "Proposal Status After": row.get("Proposal Status After", ""),
+                "Call Status": row.get("Call Status", ""),
+                "Email Task": row.get("Email Task", ""),
+                "Notes": row.get("Notes", ""),
+            })
+
+        lead_events: dict[str, list[dict]] = {}
+        for row in rows:
+            event_date = parse_sheet_date(row.get("Date", ""))
+            if not event_date or event_date < start or event_date > today:
+                continue
+            key = row.get("Lead Key") or row.get("Row Number") or row.get("Company")
+            if not key:
+                continue
+            lead_events.setdefault(key, []).append({**row, "_date": event_date})
+
+        transition_days: dict[str, list[int]] = {}
+        transition_counts: dict[str, int] = {}
+        proposal_transition_counts: dict[str, int] = {}
+        for events in lead_events.values():
+            events.sort(key=lambda row: (row["_date"], row.get("Timestamp", "")))
+            last_stage = ""
+            last_stage_date: date | None = None
+            last_proposal = ""
+            last_proposal_date: date | None = None
+
+            for row in events:
+                event_date = row["_date"]
+                stage_before = (row.get("Stage Before") or "").strip() or "Blank"
+                stage_after = (row.get("Stage After") or "").strip() or "Blank"
+                proposal_before = (row.get("Proposal Status Before") or "").strip() or "Blank"
+                proposal_after = (row.get("Proposal Status After") or "").strip() or "Blank"
+
+                if stage_before != stage_after:
+                    key = f"{stage_before} -> {stage_after}"
+                    transition_counts[key] = transition_counts.get(key, 0) + 1
+                    if last_stage_date and last_stage == stage_before:
+                        transition_days.setdefault(key, []).append((event_date - last_stage_date).days)
+                    last_stage = stage_after
+                    last_stage_date = event_date
+
+                if proposal_before != proposal_after:
+                    key = f"{proposal_before} -> {proposal_after}"
+                    proposal_transition_counts[key] = proposal_transition_counts.get(key, 0) + 1
+                    if last_proposal_date and last_proposal == proposal_before:
+                        transition_days.setdefault(f"Proposal: {key}", []).append((event_date - last_proposal_date).days)
+                    last_proposal = proposal_after
+                    last_proposal_date = event_date
+
+        def summarize(values: list[int]) -> dict:
+            values = sorted(values)
+            return {
+                "n": len(values),
+                "avg_days": round(sum(values) / len(values), 2),
+                "median_days": values[len(values) // 2],
+                "min_days": values[0],
+                "max_days": values[-1],
+            }
+
+        return {
+            "stage_transitions": dict(sorted(transition_counts.items(), key=lambda item: (-item[1], item[0]))),
+            "proposal_transitions": dict(sorted(proposal_transition_counts.items(), key=lambda item: (-item[1], item[0]))),
+            "transition_timing": {
+                key: summarize(values)
+                for key, values in sorted(transition_days.items())
+                if values
+            },
+        }
 
     def _is_new_lead_activity(
         self,

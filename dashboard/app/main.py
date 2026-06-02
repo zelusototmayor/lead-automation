@@ -136,9 +136,60 @@ async def api_email_followups(
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
     try:
         view = view if view in {"today", "overdue", "due", "upcoming", "all"} else "today"
-        tasks = sheet.get_email_followups(today_local(), view=view, include_upcoming=include_upcoming)
+        tasks = sheet.get_outreach_followups(today_local(), view=view, include_upcoming=include_upcoming)
         tasks = _filter_leads(tasks, q=q, priority=priority, stage=stage)
         return JSONResponse({"tasks": tasks, "count": len(tasks), "view": view})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/outreach-followups")
+async def api_outreach_followups(
+    view: str = "today",
+    q: str = "",
+    priority: str = "",
+    stage: str = "",
+    include_upcoming: bool = False,
+):
+    return await api_email_followups(
+        view=view,
+        q=q,
+        priority=priority,
+        stage=stage,
+        include_upcoming=include_upcoming,
+    )
+
+
+@app.get("/api/proposal-followups")
+async def api_proposal_followups(
+    view: str = "today",
+    q: str = "",
+    priority: str = "",
+    stage: str = "",
+    include_upcoming: bool = False,
+):
+    sheet = _require_crm()
+    if not sheet:
+        return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
+    try:
+        view = view if view in {"today", "overdue", "due", "upcoming", "all"} else "today"
+        tasks = sheet.get_proposal_followups(today_local(), view=view, include_upcoming=include_upcoming)
+        tasks = _filter_leads(tasks, q=q, priority=priority, stage=stage)
+        return JSONResponse({"tasks": tasks, "count": len(tasks), "view": view})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/proposals")
+async def api_proposals(view: str = "open", q: str = "", priority: str = "", stage: str = ""):
+    sheet = _require_crm()
+    if not sheet:
+        return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
+    try:
+        view = view if view in {"open", "stale", "closed", "all"} else "open"
+        leads = sheet.get_proposals(today_local(), view=view)
+        leads = _filter_leads(leads, q=q, priority=priority, stage=stage)
+        return JSONResponse({"leads": leads, "count": len(leads), "view": view})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -163,6 +214,17 @@ async def api_history(days: int = 30):
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
     try:
         return JSONResponse(sheet.get_activity_history(today_local(), days=days))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/stage-timing")
+async def api_stage_timing(days: int = 120):
+    sheet = _require_crm()
+    if not sheet:
+        return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
+    try:
+        return JSONResponse(sheet.get_stage_timing(today_local(), days=days))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -253,6 +315,67 @@ async def api_mark_email_followup(request: Request):
         )
         if not ok:
             return JSONResponse({"error": "Lead or follow-up task not found"}, status_code=404)
+        return JSONResponse({"success": True})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/mark-proposal-followup")
+async def api_mark_proposal_followup(request: Request):
+    sheet = _require_crm()
+    if not sheet:
+        return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
+    try:
+        body = await request.json()
+        lead_id = body.get("lead_id", "")
+        row_number = body.get("row_number", "")
+        task_type = body.get("task_type", "")
+        if (not lead_id and not row_number) or not task_type:
+            return JSONResponse({"error": "lead_id or row_number, plus task_type, required"}, status_code=400)
+
+        ok = sheet.mark_proposal_followup_sent(
+            lead_id=lead_id,
+            task_type=task_type,
+            sent_date=today_local(),
+            notes=body.get("notes", ""),
+            row_number=row_number,
+            touched_date=today_local(),
+        )
+        if not ok:
+            return JSONResponse({"error": "Lead or proposal follow-up task not found"}, status_code=404)
+        return JSONResponse({"success": True})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/update-proposal")
+async def api_update_proposal(request: Request):
+    sheet = _require_crm()
+    if not sheet:
+        return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
+    try:
+        body = await request.json()
+        lead_id = body.get("lead_id", "")
+        row_number = body.get("row_number", "")
+        if not lead_id and not row_number:
+            return JSONResponse({"error": "lead_id or row_number required"}, status_code=400)
+
+        ok = sheet.update_proposal(
+            lead_id=lead_id,
+            row_number=row_number,
+            status=body.get("status", ""),
+            next_action=body.get("next_action") if "next_action" in body else None,
+            next_action_due=body.get("next_action_due") if "next_action_due" in body else None,
+            outcome=body.get("outcome", ""),
+            lost_reason=body.get("lost_reason", ""),
+            value=body.get("value", ""),
+            probability=body.get("probability", ""),
+            forecast_category=body.get("forecast_category", ""),
+            notes=body.get("notes", ""),
+            touched_date=today_local(),
+        )
+        if not ok:
+            return JSONResponse({"error": "Lead not found"}, status_code=404)
         return JSONResponse({"success": True})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
