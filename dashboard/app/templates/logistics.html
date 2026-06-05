@@ -2,92 +2,72 @@
 {% block title %}PT Logistics Dashboard{% endblock %}
 
 {% block extra_styles %}
-  .metrics { display: grid; grid-template-columns: repeat(10, minmax(108px, 1fr)); gap: 0; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
-  .metric { min-height: 58px; padding: 9px 12px; background: transparent; border: 0; border-right: 1px solid rgba(221,211,196,.72); text-align: left; cursor: pointer; }
-  .metric:last-child { border-right: 0; }
-  .metric:hover, .metric.active { background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
-  .metric.dark { background: transparent; color: var(--ink); }
+  .spaces-app { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 0; min-height: calc(100vh - 72px); margin: -4px -8px 0; }
+  .space-rail { position: sticky; top: 14px; align-self: start; height: calc(100vh - 28px); padding: 12px 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,253,249,.72); }
+  .space-mark { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--dark); color: white; font-weight: 900; margin-bottom: 14px; }
+  .space-tab { width: 52px; height: 46px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 900; margin-bottom: 8px; }
+  .space-tab.active { background: var(--dark); color: white; }
+  .space-main { min-width: 0; padding-left: 14px; }
+  .space-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 12px; }
+  .space-title h1 { margin: 0; font-size: 30px; line-height: 1; font-weight: 900; }
+  .space-title p { margin-top: 5px; color: var(--muted); font-size: 13px; }
+  .space-actions { display: flex; gap: 8px; align-items: center; }
+  .metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; margin-bottom: 10px; }
+  .metric-card { min-height: 64px; padding: 9px 12px; border: 0; border-right: 1px solid rgba(221,211,196,.72); background: transparent; text-align: left; cursor: pointer; }
+  .metric-card:last-child { border-right: 0; }
+  .metric-card:hover, .metric-card.active { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
   .metric-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
-  .metric.dark .metric-label { color: var(--muted); }
-  .metric-value { margin-top: 5px; font-size: 22px; font-weight: 900; line-height: 1; letter-spacing: 0; color: var(--ink); }
-  .metric.red .metric-value { color: var(--red); }
-  .metric.green .metric-value { color: var(--green); }
-  .metric.amber .metric-value { color: var(--amber); }
-  .metric.blue .metric-value { color: var(--blue); }
-
-  .activity-panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; margin-bottom: 12px; }
-  .activity-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; }
-  .activity-title { font-size: 14px; font-weight: 900; color: var(--ink); }
-  .activity-controls { display: flex; align-items: center; gap: 8px; }
-  .activity-summary { display: flex; align-items: center; gap: 22px; min-width: 0; }
-  .activity-stat { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-  .activity-stat-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
-  .activity-stat-value { color: var(--ink); font-size: 20px; line-height: 1; font-weight: 900; }
-  .chart-wrap { overflow-x: auto; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(221,211,196,.65); }
-  .line-chart-shell { min-width: 760px; }
-  .line-chart-shell svg { width: 100%; height: 220px; display: block; }
-  .line-chart-shell .axis-line { stroke: rgba(102,112,133,.22); stroke-width: 1; }
-  .line-chart-shell .series-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-  .line-chart-shell .series-dot { stroke: var(--panel); stroke-width: 2; }
-  .line-chart-shell .chart-label { fill: var(--muted); font-size: 10px; font-weight: 800; text-anchor: middle; }
-  .legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin-top: 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
-  .legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
-
-  .toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 14px; }
-  .segments { display: flex; flex-wrap: wrap; gap: 6px; }
-  .segment {
-    border: 1px solid var(--line); background: var(--panel); color: var(--muted);
-    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 800;
-  }
+  .metric-value { margin-top: 5px; font-size: 24px; font-weight: 900; line-height: 1; color: var(--ink); }
+  .metric-note { margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .metric-card.red .metric-value { color: var(--red); }
+  .metric-card.green .metric-value { color: var(--green); }
+  .metric-card.amber .metric-value { color: var(--amber); }
+  .metric-card.blue .metric-value { color: var(--blue); }
+  .space-grid { display: grid; grid-template-columns: minmax(0, 1fr) 386px; gap: 10px; align-items: start; }
+  .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; box-shadow: var(--shadow); }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: rgba(235,227,214,.48); }
+  .panel-title { font-size: 14px; font-weight: 900; }
+  .panel-subtitle { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .segments { display: flex; flex-wrap: wrap; gap: 4px; }
+  .segment { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 8px; min-height: 30px; padding: 0 10px; font-size: 12px; font-weight: 800; }
   .segment.active { background: var(--dark); color: white; border-color: var(--dark); }
-  .search, .select {
-    width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
-    color: var(--ink); padding: 9px 12px; font-size: 13px; outline: none;
-  }
+  .toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) 160px 160px; gap: 8px; align-items: center; padding: 10px; border-bottom: 1px solid rgba(221,211,196,.72); margin: 0; }
+  .search, .select { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); padding: 8px 10px; min-height: 36px; font-size: 13px; outline: none; }
   .search:focus, .select:focus { border-color: var(--accent); }
-
-  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; min-height: 620px; }
-  .table-wrap { min-height: 620px; max-height: calc(100vh - 230px); overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-  .detail { min-height: 620px; max-height: calc(100vh - 230px); overflow: auto; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel); padding: 15px; }
-  .mobile-list { display: none; }
-  .mobile-primary-actions { display: none; }
-  .mobile-call-submit { display: none; }
+  .table-wrap { min-height: 548px; max-height: calc(100vh - 250px); overflow: auto; background: var(--panel); }
   table { width: 100%; border-collapse: collapse; }
-  th { position: sticky; top: 0; z-index: 2; background: var(--panel-2); color: var(--muted); text-align: left; padding: 10px 12px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
-  td { padding: 11px 12px; border-bottom: 1px solid rgba(221,211,196,.65); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+  th { position: sticky; top: 0; z-index: 2; background: var(--panel-2); color: var(--muted); text-align: left; padding: 9px 11px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 11px; border-bottom: 1px solid rgba(221,211,196,.65); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
   tr { cursor: pointer; }
   tbody tr:hover { background: #f8f4ed; }
   tbody tr.selected { background: var(--accent-soft); }
   tbody tr.selected td { color: var(--ink); }
-
-  .badge { display: inline-flex; align-items: center; max-width: 160px; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-list { display: none; }
+  .mobile-primary-actions { display: none; }
+  .mobile-call-submit { display: none; }
+  .detail { position: sticky; top: 14px; min-height: 548px; max-height: calc(100vh - 138px); overflow: auto; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 13px; box-shadow: var(--shadow); }
+  .empty { display: flex; align-items: center; justify-content: center; min-height: 240px; color: var(--muted); font-weight: 700; }
+  .badge { display: inline-flex; align-items: center; max-width: 160px; min-height: 23px; padding: 0 7px; border-radius: 6px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .badge-new { background: var(--blue-soft); color: var(--blue); }
   .badge-email { background: var(--green-soft); color: var(--green); }
   .badge-call { background: var(--amber-soft); color: var(--amber); }
   .badge-lost { background: var(--red-soft); color: var(--red); }
   .badge-default { background: #eceff3; color: var(--muted); }
   .badge-task { background: var(--accent-soft); color: var(--accent); }
-
-  .empty { display: flex; align-items: center; justify-content: center; min-height: 240px; color: var(--muted); font-weight: 700; }
-  .detail-title { font-size: 20px; font-weight: 900; line-height: 1.1; margin-bottom: 4px; }
-  .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .detail-title { font-size: 19px; font-weight: 900; line-height: 1.1; margin-bottom: 4px; }
+  .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
   .detail-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
   .detail-head .btn { flex: 0 0 auto; padding: 6px 10px; font-size: 11px; }
-  .section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+  .section { border-top: 1px solid var(--line); padding-top: 11px; margin-top: 11px; }
   .section:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
   .section-title { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
-  .field { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12px; }
+  .field { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 12px; }
   .field span:first-child { color: var(--faint); flex: 0 0 auto; }
   .field span:last-child { text-align: right; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
   .detail-edit { display: grid; gap: 9px; }
   .detail-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-  .detail-edit input[type="text"],
-  .detail-edit input[type="email"],
-  .detail-edit input[type="tel"],
-  .detail-edit input[type="url"] {
-    width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--page-bg);
-    color: var(--ink); padding: 9px 10px; font-size: 12px; outline: none;
+  .detail-edit input[type="text"], .detail-edit input[type="email"], .detail-edit input[type="tel"], .detail-edit input[type="url"] {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--page-bg); color: var(--ink); padding: 8px 10px; font-size: 12px; outline: none;
   }
   .detail-edit input:focus { border-color: var(--accent); }
   .btn-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -105,55 +85,66 @@
   .action-row .btn { flex: 1; }
   .task-summary { border-radius: 8px; background: var(--accent-soft); padding: 10px; color: var(--accent); font-size: 12px; font-weight: 800; margin-bottom: 10px; }
   .inline-edit { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
-
+  .analytics-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; }
+  .activity-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px; }
+  .activity-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+  .activity-title { font-size: 14px; font-weight: 900; color: var(--ink); }
+  .activity-controls { display: flex; align-items: center; gap: 8px; }
+  .activity-summary { display: flex; align-items: center; gap: 22px; min-width: 0; }
+  .activity-stat { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .activity-stat-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+  .activity-stat-value { color: var(--ink); font-size: 20px; line-height: 1; font-weight: 900; }
+  .chart-wrap { overflow-x: auto; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(221,211,196,.65); }
+  .line-chart-shell { min-width: 760px; }
+  .line-chart-shell svg { width: 100%; height: 220px; display: block; }
+  .line-chart-shell .axis-line { stroke: rgba(102,112,133,.22); stroke-width: 1; }
+  .line-chart-shell .series-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .line-chart-shell .series-dot { stroke: var(--panel); stroke-width: 2; }
+  .line-chart-shell .chart-label { fill: var(--muted); font-size: 10px; font-weight: 800; text-anchor: middle; }
+  .legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin-top: 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
+  .insight-list { display: grid; gap: 0; }
+  .insight-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px; border-top: 1px solid rgba(221,211,196,.65); align-items: center; }
+  .insight-row:first-child { border-top: 0; }
+  .insight-row strong { display: block; font-size: 13px; }
+  .insight-row span { color: var(--muted); font-size: 12px; }
+  .bar-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) 44px; gap: 8px; align-items: center; padding: 8px 0; color: var(--muted); font-size: 12px; }
+  .bar-track { height: 10px; border-radius: 999px; background: #e5ded2; overflow: hidden; }
+  .bar-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+  .mobile-nav { display: none; }
   @media (max-width: 1040px) {
-    .metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-    .activity-head { grid-template-columns: 1fr; }
-    .activity-summary { flex-wrap: wrap; gap: 10px 16px; }
-    .toolbar { grid-template-columns: 1fr; }
-    .workspace { grid-template-columns: 1fr; }
-    .table-wrap, .detail { min-height: auto; max-height: none; }
+    .spaces-app { grid-template-columns: 1fr; margin: 0; }
+    .space-rail { display: none; }
+    .space-main { padding-left: 0; }
+    .metric-strip { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+    .space-grid, .analytics-grid { grid-template-columns: 1fr; }
+    .detail { position: static; min-height: auto; max-height: none; }
+    .table-wrap { min-height: auto; max-height: none; }
   }
-
   @media (max-width: 720px) {
-    .shell { padding: 12px 14px 30px; }
-    .topbar { align-items: start; gap: 10px; margin-bottom: 9px; }
-    .topbar h1 { font-size: 21px; line-height: 1.05; margin-top: 3px; }
-    .topbar .subtle { font-size: 12px; }
-    .topbar .btn { padding: 8px 10px; white-space: nowrap; }
-    .metrics {
-      display: flex; overflow-x: auto; gap: 0; margin: 0 -12px 10px; padding: 0 12px 2px;
-      border: 0; border-radius: 0; background: transparent; scroll-snap-type: x mandatory;
-    }
-    .metric {
-      flex: 0 0 128px; min-height: 56px; border: 1px solid var(--line); border-radius: 8px;
-      margin-right: 8px; background: var(--panel); scroll-snap-align: start;
-    }
-    .metric:last-child { border-right: 1px solid var(--line); }
+    .shell { padding: 12px 14px 84px; }
+    .space-top { align-items: start; gap: 10px; margin-bottom: 9px; }
+    .space-title h1 { font-size: 25px; }
+    .space-title p { font-size: 12px; }
+    .space-actions { display: none; }
+    .metric-strip { display: flex; overflow-x: auto; gap: 8px; margin: 0 -12px 10px; padding: 0 12px 2px; border: 0; border-radius: 0; background: transparent; scroll-snap-type: x mandatory; }
+    .metric-card { flex: 0 0 122px; min-height: 56px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); scroll-snap-align: start; }
+    .metric-card:last-child { border-right: 1px solid var(--line); }
     .metric-label { font-size: 9px; }
     .metric-value { font-size: 21px; }
-    .activity-panel { display: none; }
-    .activity-head { gap: 10px; }
-    .activity-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
-    .activity-stat { justify-content: space-between; border-top: 1px solid rgba(221,211,196,.55); padding-top: 6px; }
-    .activity-stat-label { font-size: 9px; }
-    .activity-stat-value { font-size: 17px; }
-    .activity-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-    .chart-wrap { max-width: calc(100vw - 46px); }
-    .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .metric-note { display: none; }
+    .panel-head { display: grid; gap: 8px; }
+    .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; }
     .toolbar .search { grid-column: 1 / -1; }
     .search, .select, input[type="date"], textarea { font-size: 16px; }
-    .toolbar .select { min-height: 42px; }
-    .workspace { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-    .detail { order: 1; border-left: 1px solid var(--line); padding: 13px; }
-    .table-wrap { order: 2; min-height: 260px; overflow: visible; }
+    .space-grid { display: flex; flex-direction: column; gap: 10px; }
+    .detail { order: 1; padding: 13px; border-left: 1px solid var(--line); }
+    .queue-panel { order: 2; }
+    .table-wrap { min-height: 260px; overflow: visible; }
     table { display: none; }
     .mobile-list { display: grid; gap: 0; }
-    .mobile-lead {
-      width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
-      padding: 11px 12px; border: 0; border-bottom: 1px solid rgba(221,211,196,.72);
-      background: var(--panel); text-align: left; color: var(--ink);
-    }
+    .mobile-lead { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 11px 12px; border: 0; border-bottom: 1px solid rgba(221,211,196,.72); background: var(--panel); text-align: left; color: var(--ink); }
     .mobile-lead.selected { background: var(--accent-soft); }
     .mobile-lead-title { font-size: 14px; font-weight: 900; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mobile-lead-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -166,139 +157,168 @@
     .quick-section { order: 3; }
     .last-section { order: 4; }
     .notes-section { order: 5; }
-    .detail-title { font-size: 18px; }
-    .detail-meta { margin-bottom: 10px; }
-    .detail-head .btn { min-height: 38px; }
-    .field { font-size: 12px; padding: 3px 0; }
-    .section { padding-top: 11px; margin-top: 11px; }
     .form-grid, .inline-edit, .detail-edit-grid { grid-template-columns: 1fr; }
-    .detail-edit input[type="text"],
-    .detail-edit input[type="email"],
-    .detail-edit input[type="tel"],
-    .detail-edit input[type="url"] { font-size: 16px; min-height: 42px; }
+    .detail-edit input[type="text"], .detail-edit input[type="email"], .detail-edit input[type="tel"], .detail-edit input[type="url"] { font-size: 16px; min-height: 42px; }
     .btn-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
     .choice { min-height: 42px; padding: 9px 8px; font-size: 12px; }
     textarea { min-height: 88px; }
-    .action-row { position: sticky; bottom: 0; z-index: 5; background: linear-gradient(to top, var(--panel) 82%, rgba(255,255,255,0)); padding-top: 8px; }
+    .action-row { position: sticky; bottom: 66px; z-index: 5; background: linear-gradient(to top, var(--panel) 82%, rgba(255,255,255,0)); padding-top: 8px; }
     .action-row .btn { min-height: 46px; }
     .mobile-call-submit { display: flex; position: static; padding-top: 0; background: transparent; margin: 0 0 8px; }
     .call-section > .action-row:not(.mobile-call-submit) { display: none; }
     .history { max-height: 110px; }
+    .activity-panel { padding: 10px; }
+    .activity-head { grid-template-columns: 1fr; gap: 10px; }
+    .activity-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
+    .activity-stat { justify-content: space-between; border-top: 1px solid rgba(221,211,196,.55); padding-top: 6px; }
+    .chart-wrap { max-width: calc(100vw - 46px); }
+    .mobile-nav { display: grid; position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 20; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,253,249,.92); box-shadow: var(--shadow); }
+    .mobile-nav button { min-height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 900; }
+    .mobile-nav button.active { background: var(--dark); color: white; }
   }
 {% endblock %}
 
 {% block content %}
-<div x-data="logisticsDashboard()" x-init="init()">
-  <div class="topbar">
-    <div>
-      <div class="eyebrow">{{ sheet_name }}</div>
-      <h1>PT Logistics Dashboard</h1>
-      <div class="subtle">
-        Today: {{ today }}
-        <span x-show="lastRefreshedAt"> · Refreshed <span x-text="lastRefreshedAt"></span></span>
+<div x-data="logisticsDashboard()" x-init="init()" class="spaces-app">
+  <nav class="space-rail" aria-label="Dashboard spaces">
+    <div class="space-mark">PT</div>
+    <button class="space-tab" :class="{ active: activeSpace === 'today' }" @click="setSpace('today')" title="Today">Day</button>
+    <button class="space-tab" :class="{ active: activeSpace === 'leads' }" @click="setSpace('leads')" title="Leads">Lead</button>
+    <button class="space-tab" :class="{ active: activeSpace === 'proposals' }" @click="setSpace('proposals')" title="Proposals">Prop</button>
+    <button class="space-tab" :class="{ active: activeSpace === 'analytics' }" @click="setSpace('analytics')" title="Analytics">Data</button>
+  </nav>
+
+  <main class="space-main">
+    <div class="space-top">
+      <div class="space-title">
+        <div class="eyebrow">{{ sheet_name }}</div>
+        <h1 x-text="spaceTitle()"></h1>
+        <p>
+          {{ today }}
+          <span x-show="lastRefreshedAt"> · refreshed <span x-text="lastRefreshedAt"></span></span>
+          <span> · </span>
+          <span x-text="spaceSubtitle()"></span>
+        </p>
+      </div>
+      <div class="space-actions">
+        <button class="btn btn-dark" @click="refresh()" :disabled="loading">Refresh Sheet</button>
       </div>
     </div>
-    <button class="btn btn-dark" @click="refresh()" :disabled="loading">Refresh Sheet</button>
-  </div>
 
-  <div class="metrics">
-    <button class="metric dark" :class="{ active: mode === 'all' && !stageFilter }" @click="showMetric('all')">
-      <div class="metric-label">Total Leads</div>
-      <div class="metric-value" x-text="stats.total || 0"></div>
-    </button>
-    <button class="metric green" :class="{ active: mode === 'today' }" @click="showMetric('today')">
-      <div class="metric-label">Calls Today</div>
-      <div class="metric-value" x-text="stats.calls_today || 0"></div>
-    </button>
-    <button class="metric red" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">
-      <div class="metric-label">Overdue Calls</div>
-      <div class="metric-value" x-text="stats.calls_overdue || 0"></div>
-    </button>
-    <button class="metric amber" :class="{ active: mode === 'outreach_today' }" @click="showMetric('outreach_today')">
-      <div class="metric-label">Outreach Today</div>
-      <div class="metric-value" x-text="stats.outreach_followups_today || stats.email_followups_today || 0"></div>
-    </button>
-    <button class="metric red" :class="{ active: mode === 'outreach_overdue' }" @click="showMetric('outreach_overdue')">
-      <div class="metric-label">Overdue Outreach</div>
-      <div class="metric-value" x-text="stats.outreach_followups_overdue || stats.email_followups_overdue || 0"></div>
-    </button>
-    <button class="metric amber" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">
-      <div class="metric-label">Proposal FUs</div>
-      <div class="metric-value" x-text="stats.proposal_followups_due || 0"></div>
-    </button>
-    <button class="metric green" :class="{ active: mode === 'proposals' }" @click="showMetric('proposals')">
-      <div class="metric-label">Open Proposals</div>
-      <div class="metric-value" x-text="stats.open_proposals || 0"></div>
-    </button>
-    <button class="metric red" :class="{ active: mode === 'stale_proposals' }" @click="showMetric('stale_proposals')">
-      <div class="metric-label">Stale Proposals</div>
-      <div class="metric-value" x-text="stats.stale_proposals || 0"></div>
-    </button>
-    <button class="metric green" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">
-      <div class="metric-label">Impacted Today</div>
-      <div class="metric-value" x-text="stats.impacted_today || 0"></div>
-    </button>
-    <button class="metric blue" :class="{ active: mode === 'all' && stageFilter === 'Meeting Booked' }" @click="showMetric('meetings')">
-      <div class="metric-label">Meetings Booked</div>
-      <div class="metric-value" x-text="(stats.by_stage || {})['Meeting Booked'] || 0"></div>
-    </button>
-  </div>
-
-  <div class="activity-panel">
-    <div class="activity-head">
-      <div class="activity-title">Activity History</div>
-      <div class="activity-summary">
-        <div class="activity-stat">
-          <div class="activity-stat-label">Full Impacted</div>
-          <div class="activity-stat-value" x-text="history.totals?.leads_impacted || 0"></div>
-        </div>
-        <div class="activity-stat">
-          <div class="activity-stat-label">New Impacted</div>
-          <div class="activity-stat-value" x-text="history.totals?.new_leads_impacted || 0"></div>
-        </div>
-        <div class="activity-stat">
-          <div class="activity-stat-label">Calls</div>
-          <div class="activity-stat-value" x-text="history.totals?.calls || 0"></div>
-        </div>
-        <div class="activity-stat">
-          <div class="activity-stat-label">Emails Sent</div>
-          <div class="activity-stat-value" x-text="history.totals?.emails_sent || 0"></div>
-        </div>
+    <section x-show="activeSpace !== 'analytics'">
+      <div class="metric-strip" x-show="activeSpace === 'today'">
+        <button class="metric-card green" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">
+          <div class="metric-label">Impact today</div>
+          <div class="metric-value" x-text="stats.impacted_today || 0"></div>
+          <div class="metric-note">Touched leads</div>
+        </button>
+        <button class="metric-card blue" @click="showMetric('impacted')">
+          <div class="metric-label">Calls made</div>
+          <div class="metric-value" x-text="todayHistoryValue('calls')"></div>
+          <div class="metric-note">Actual calls logged</div>
+        </button>
+        <button class="metric-card red" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">
+          <div class="metric-label">Overdue calls</div>
+          <div class="metric-value" x-text="stats.calls_overdue || 0"></div>
+          <div class="metric-note">Clear first</div>
+        </button>
+        <button class="metric-card amber" :class="{ active: mode === 'today' }" @click="showMetric('today')">
+          <div class="metric-label">Calls due</div>
+          <div class="metric-value" x-text="stats.calls_today || 0"></div>
+          <div class="metric-note">Scheduled today</div>
+        </button>
       </div>
-      <div class="activity-controls">
-        <select class="select" x-model.number="historyDays" @change="loadHistory()">
-          <option value="14">14 days</option>
-          <option value="30">30 days</option>
-          <option value="60">60 days</option>
-          <option value="90">90 days</option>
-        </select>
-        <button class="btn" @click="chartOpen = !chartOpen" x-text="chartOpen ? 'Hide graph' : 'Show graph'"></button>
-      </div>
-    </div>
-    <div class="chart-wrap" x-show="chartOpen" x-transition>
-      <div class="line-chart-shell" x-html="lineChartSvg()"></div>
-      <div class="legend">
-        <template x-for="series in historySeries" :key="series.key">
-          <span><i :style="`background:${series.color}`"></i><span x-text="series.label"></span></span>
-        </template>
-      </div>
-    </div>
-  </div>
 
-  <div class="toolbar">
-    <input class="search" type="search" placeholder="Search company, contact, phone, email, city..." x-model.debounce.200ms="search">
-    <select class="select" x-model="priorityFilter">
-      <option value="">All priorities</option>
-      <template x-for="p in priorities" :key="p"><option :value="p" x-text="p"></option></template>
-    </select>
-    <select class="select" x-model="stageFilter">
-      <option value="">All stages</option>
-      <template x-for="s in stages" :key="s"><option :value="s" x-text="s"></option></template>
-    </select>
-  </div>
+      <div class="metric-strip" x-show="activeSpace === 'leads'">
+        <button class="metric-card dark" :class="{ active: mode === 'all' && !stageFilter }" @click="showMetric('all')">
+          <div class="metric-label">Total leads</div>
+          <div class="metric-value" x-text="stats.total || 0"></div>
+          <div class="metric-note">Full database</div>
+        </button>
+        <button class="metric-card blue" :class="{ active: mode === 'all' && stageFilter === 'Blank' }" @click="showStage('Blank')">
+          <div class="metric-label">Untouched</div>
+          <div class="metric-value" x-text="(stats.by_stage || {})['Blank'] || 0"></div>
+          <div class="metric-note">Fresh calling pool</div>
+        </button>
+        <button class="metric-card amber" :class="{ active: mode === 'all' && stageFilter === 'No Answer' }" @click="showStage('No Answer')">
+          <div class="metric-label">No answer</div>
+          <div class="metric-value" x-text="(stats.by_stage || {})['No Answer'] || 0"></div>
+          <div class="metric-note">Retry later</div>
+        </button>
+        <button class="metric-card green" :class="{ active: mode === 'all' && stageFilter === 'Meeting Booked' }" @click="showMetric('meetings')">
+          <div class="metric-label">Meetings</div>
+          <div class="metric-value" x-text="(stats.by_stage || {})['Meeting Booked'] || 0"></div>
+          <div class="metric-note">Booked pipeline</div>
+        </button>
+      </div>
 
-  <div class="workspace">
-    <div class="table-wrap">
+      <div class="metric-strip" x-show="activeSpace === 'proposals'">
+        <button class="metric-card green" :class="{ active: mode === 'proposals' }" @click="showMetric('proposals')">
+          <div class="metric-label">Open proposals</div>
+          <div class="metric-value" x-text="stats.open_proposals || 0"></div>
+          <div class="metric-note">Active deals</div>
+        </button>
+        <button class="metric-card amber" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">
+          <div class="metric-label">Due follow-ups</div>
+          <div class="metric-value" x-text="stats.proposal_followups_due || 0"></div>
+          <div class="metric-note">Work today</div>
+        </button>
+        <button class="metric-card red" :class="{ active: mode === 'stale_proposals' }" @click="showMetric('stale_proposals')">
+          <div class="metric-label">Stale</div>
+          <div class="metric-value" x-text="stats.stale_proposals || 0"></div>
+          <div class="metric-note">Needs decision</div>
+        </button>
+        <button class="metric-card blue" :class="{ active: mode === 'all' && stageFilter === 'Meeting Booked' }" @click="showMetric('meetings')">
+          <div class="metric-label">Meetings</div>
+          <div class="metric-value" x-text="(stats.by_stage || {})['Meeting Booked'] || 0"></div>
+          <div class="metric-note">Next step booked</div>
+        </button>
+      </div>
+
+      <div class="space-grid">
+        <section class="panel queue-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title" x-text="queueTitle()"></div>
+              <div class="panel-subtitle">
+                <span x-text="filteredItems.length"></span>
+                <span x-text="filteredItems.length === 1 ? 'record' : 'records'"></span>
+              </div>
+            </div>
+            <div class="segments" x-show="activeSpace === 'today'">
+              <button class="segment" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">Overdue</button>
+              <button class="segment" :class="{ active: mode === 'today' }" @click="showMetric('today')">Today</button>
+              <button class="segment" :class="{ active: mode === 'outreach_today' }" @click="showMetric('outreach_today')">Outreach</button>
+              <button class="segment" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">Proposal FU</button>
+              <button class="segment" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">Touched</button>
+            </div>
+            <div class="segments" x-show="activeSpace === 'leads'">
+              <button class="segment" :class="{ active: mode === 'all' && !stageFilter }" @click="showMetric('all')">All</button>
+              <button class="segment" :class="{ active: mode === 'all' && stageFilter === 'Blank' }" @click="showStage('Blank')">Blank</button>
+              <button class="segment" :class="{ active: mode === 'all' && stageFilter === 'No Answer' }" @click="showStage('No Answer')">No Answer</button>
+              <button class="segment" :class="{ active: mode === 'all' && stageFilter === 'Send Email' }" @click="showStage('Send Email')">Send Email</button>
+            </div>
+            <div class="segments" x-show="activeSpace === 'proposals'">
+              <button class="segment" :class="{ active: mode === 'proposals' }" @click="showMetric('proposals')">Open</button>
+              <button class="segment" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">Due</button>
+              <button class="segment" :class="{ active: mode === 'proposal_overdue' }" @click="showMetric('proposal_overdue')">Overdue</button>
+              <button class="segment" :class="{ active: mode === 'stale_proposals' }" @click="showMetric('stale_proposals')">Stale</button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <input class="search" type="search" placeholder="Search company, contact, phone, email, city..." x-model.debounce.200ms="search">
+            <select class="select" x-model="priorityFilter">
+              <option value="">All priorities</option>
+              <template x-for="p in priorities" :key="p"><option :value="p" x-text="p"></option></template>
+            </select>
+            <select class="select" x-model="stageFilter">
+              <option value="">All stages</option>
+              <template x-for="s in stages" :key="s"><option :value="s" x-text="s"></option></template>
+            </select>
+          </div>
+
+          <div class="table-wrap">
       <template x-if="loading">
         <div class="empty">Loading...</div>
       </template>
@@ -364,7 +384,8 @@
           </div>
         </div>
       </template>
-    </div>
+          </div>
+        </section>
 
     <aside class="detail">
       <template x-if="!selected">
@@ -673,8 +694,122 @@
           </div>
         </div>
       </template>
-    </aside>
-  </div>
+        </aside>
+      </div>
+    </section>
+
+    <section x-show="activeSpace === 'analytics'" x-cloak>
+      <div class="metric-strip">
+        <button class="metric-card green" @click="historyDays = 30; loadAnalytics()">
+          <div class="metric-label">Full impacted</div>
+          <div class="metric-value" x-text="history.totals?.leads_impacted || 0"></div>
+          <div class="metric-note" x-text="historyDays + ' day view'"></div>
+        </button>
+        <button class="metric-card blue" @click="historyDays = 30; loadAnalytics()">
+          <div class="metric-label">New impacted</div>
+          <div class="metric-value" x-text="history.totals?.new_leads_impacted || 0"></div>
+          <div class="metric-note">Fresh leads reached</div>
+        </button>
+        <button class="metric-card amber" @click="historyDays = 30; loadAnalytics()">
+          <div class="metric-label">Calls</div>
+          <div class="metric-value" x-text="history.totals?.calls || 0"></div>
+          <div class="metric-note">Logged calls</div>
+        </button>
+        <button class="metric-card red" @click="setSpace('proposals')">
+          <div class="metric-label">Stale proposals</div>
+          <div class="metric-value" x-text="stats.stale_proposals || 0"></div>
+          <div class="metric-note">Needs care</div>
+        </button>
+      </div>
+
+      <div class="analytics-grid">
+        <section class="activity-panel">
+          <div class="activity-head">
+            <div class="activity-title">Activity</div>
+            <div class="activity-summary">
+              <div class="activity-stat">
+                <div class="activity-stat-label">Emails</div>
+                <div class="activity-stat-value" x-text="history.totals?.emails_sent || 0"></div>
+              </div>
+              <div class="activity-stat">
+                <div class="activity-stat-label">Today calls</div>
+                <div class="activity-stat-value" x-text="todayHistoryValue('calls')"></div>
+              </div>
+              <div class="activity-stat">
+                <div class="activity-stat-label">Today impact</div>
+                <div class="activity-stat-value" x-text="stats.impacted_today || 0"></div>
+              </div>
+            </div>
+            <div class="activity-controls">
+              <select class="select" x-model.number="historyDays" @change="loadAnalytics()">
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+              </select>
+              <button class="btn" @click="chartOpen = !chartOpen" x-text="chartOpen ? 'Hide graph' : 'Show graph'"></button>
+            </div>
+          </div>
+          <div class="chart-wrap" x-show="chartOpen" x-transition>
+            <div class="line-chart-shell" x-html="lineChartSvg()"></div>
+            <div class="legend">
+              <template x-for="series in historySeries" :key="series.key">
+                <span><i :style="`background:${series.color}`"></i><span x-text="series.label"></span></span>
+              </template>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">Pipeline Health</div>
+              <div class="panel-subtitle">Stage timing and proposal pressure</div>
+            </div>
+          </div>
+          <div class="insight-list">
+            <div class="insight-row">
+              <div>
+                <strong>Open proposals</strong>
+                <span>Active proposal pipeline</span>
+              </div>
+              <strong x-text="stats.open_proposals || 0"></strong>
+            </div>
+            <div class="insight-row">
+              <div>
+                <strong>Proposal follow-ups</strong>
+                <span>Due or overdue now</span>
+              </div>
+              <strong x-text="stats.proposal_followups_due || 0"></strong>
+            </div>
+            <div class="insight-row">
+              <div>
+                <strong>Meetings booked</strong>
+                <span>Leads in meeting stage</span>
+              </div>
+              <strong x-text="(stats.by_stage || {})['Meeting Booked'] || 0"></strong>
+            </div>
+            <template x-for="row in stageTimingRows()" :key="row.label">
+              <div class="insight-row">
+                <div>
+                  <strong x-text="row.label"></strong>
+                  <span x-text="row.count + ' transitions measured'"></span>
+                </div>
+                <strong x-text="row.days + 'd'"></strong>
+              </div>
+            </template>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <nav class="mobile-nav" aria-label="Dashboard spaces">
+    <button :class="{ active: activeSpace === 'today' }" @click="setSpace('today')">Today</button>
+    <button :class="{ active: activeSpace === 'leads' }" @click="setSpace('leads')">Leads</button>
+    <button :class="{ active: activeSpace === 'proposals' }" @click="setSpace('proposals')">Deals</button>
+    <button :class="{ active: activeSpace === 'analytics' }" @click="setSpace('analytics')">Data</button>
+  </nav>
 </div>
 {% endblock %}
 
@@ -682,6 +817,7 @@
 <script>
 function logisticsDashboard() {
   return {
+    activeSpace: 'today',
     mode: 'today',
     stats: {},
     items: [],
@@ -691,8 +827,9 @@ function logisticsDashboard() {
     refreshTimer: null,
     lastRefreshedAt: '',
     historyDays: 30,
-    chartOpen: false,
+    chartOpen: true,
     history: { days: [], totals: {} },
+    stageTiming: { stage_transitions: {}, proposal_transitions: {}, transition_timing: {} },
     historySeries: [
       { key: 'leads_impacted', label: 'Full impacted', color: '#d97706' },
       { key: 'new_leads_impacted', label: 'New impacted', color: '#16a34a' },
@@ -715,6 +852,7 @@ function logisticsDashboard() {
 
     async init() {
       await this.loadStats();
+      this.mode = this.defaultTodayMode();
       await this.loadHistory();
       await this.loadItems();
       this.lastRefreshedAt = this.nowLabel();
@@ -738,6 +876,22 @@ function logisticsDashboard() {
       return rows;
     },
 
+    async setSpace(space) {
+      this.activeSpace = space;
+      this.search = '';
+      this.priorityFilter = '';
+      this.stageFilter = '';
+      if (space === 'today') {
+        await this.setMode(this.defaultTodayMode());
+      } else if (space === 'leads') {
+        await this.setMode('all');
+      } else if (space === 'proposals') {
+        await this.setMode('proposals');
+      } else if (space === 'analytics') {
+        await this.loadAnalytics();
+      }
+    },
+
     async setMode(mode) {
       this.mode = mode;
       await this.loadItems();
@@ -747,6 +901,13 @@ function logisticsDashboard() {
       this.search = '';
       this.priorityFilter = '';
       this.stageFilter = '';
+      if (['proposals', 'stale_proposals', 'proposal_today', 'proposal_overdue'].includes(metric)) {
+        this.activeSpace = 'proposals';
+      } else if (['all', 'meetings'].includes(metric)) {
+        this.activeSpace = this.activeSpace === 'proposals' && metric === 'meetings' ? 'proposals' : 'leads';
+      } else {
+        this.activeSpace = 'today';
+      }
       if (metric === 'meetings') {
         this.stageFilter = 'Meeting Booked';
         await this.setMode('all');
@@ -755,6 +916,22 @@ function logisticsDashboard() {
       if (metric === 'email_today') metric = 'outreach_today';
       if (metric === 'email_overdue') metric = 'outreach_overdue';
       await this.setMode(metric);
+    },
+
+    async showStage(stage) {
+      this.activeSpace = 'leads';
+      this.search = '';
+      this.priorityFilter = '';
+      this.stageFilter = stage;
+      await this.setMode('all');
+    },
+
+    defaultTodayMode() {
+      if ((this.stats.calls_overdue || 0) > 0) return 'overdue';
+      if ((this.stats.calls_today || 0) > 0) return 'today';
+      if ((this.stats.outreach_followups_today || this.stats.email_followups_today || 0) > 0) return 'outreach_today';
+      if ((this.stats.proposal_followups_due || 0) > 0) return 'proposal_today';
+      return 'today';
     },
 
     async loadStats() {
@@ -779,6 +956,22 @@ function logisticsDashboard() {
         notify(err.message, 'err');
         this.history = { days: [], totals: {} };
       }
+    },
+
+    async loadStageTiming() {
+      try {
+        const res = await fetch('/api/stage-timing?days=180');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load stage timing');
+        this.stageTiming = data;
+      } catch (err) {
+        notify(err.message, 'err');
+        this.stageTiming = { stage_transitions: {}, proposal_transitions: {}, transition_timing: {} };
+      }
+    },
+
+    async loadAnalytics() {
+      await Promise.all([this.loadHistory(), this.loadStageTiming()]);
     },
 
     async loadItems() {
@@ -1140,6 +1333,55 @@ function logisticsDashboard() {
       const index = rows.indexOf(this.selected);
       this.selected = rows[index + 1] || rows[0] || null;
       this.resetForms();
+    },
+
+    spaceTitle() {
+      if (this.activeSpace === 'leads') return 'Leads';
+      if (this.activeSpace === 'proposals') return 'Proposals';
+      if (this.activeSpace === 'analytics') return 'Analytics';
+      return 'Today';
+    },
+
+    spaceSubtitle() {
+      if (this.activeSpace === 'leads') return 'prospecting and stage filters';
+      if (this.activeSpace === 'proposals') return 'proposal follow-ups and deal state';
+      if (this.activeSpace === 'analytics') return 'output, movement, and pipeline health';
+      return 'clear due work, then call new leads';
+    },
+
+    queueTitle() {
+      const titles = {
+        today: 'Calls due today',
+        overdue: 'Overdue calls',
+        outreach_today: 'Outreach follow-ups',
+        outreach_overdue: 'Overdue outreach',
+        proposal_today: 'Proposal follow-ups',
+        proposal_overdue: 'Overdue proposal follow-ups',
+        impacted: 'Touched today',
+        all: this.stageFilter ? `${this.stageFilter} leads` : 'All leads',
+        proposals: 'Open proposals',
+        stale_proposals: 'Stale proposals',
+      };
+      return titles[this.mode] || 'Work queue';
+    },
+
+    todayHistoryValue(key) {
+      const today = '{{ today }}';
+      const days = this.history.days || [];
+      const exact = days.find(day => day.date === today);
+      const latest = days[days.length - 1] || {};
+      return (exact || latest)[key] || 0;
+    },
+
+    stageTimingRows() {
+      return Object.entries(this.stageTiming.transition_timing || {})
+        .map(([label, value]) => ({
+          label,
+          count: value.n || 0,
+          days: value.median_days ?? value.avg_days ?? 0,
+        }))
+        .filter(row => row.count > 0)
+        .slice(0, 5);
     },
 
     stageBadge(stage) {
