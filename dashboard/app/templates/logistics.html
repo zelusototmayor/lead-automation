@@ -13,6 +13,7 @@
   .space-title p { margin-top: 5px; color: var(--muted); font-size: 13px; }
   .space-actions { display: flex; gap: 8px; align-items: center; }
   .metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; margin-bottom: 10px; }
+  .metric-strip.today-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .metric-card { min-height: 64px; padding: 9px 12px; border: 0; border-right: 1px solid rgba(221,211,196,.72); background: transparent; text-align: left; cursor: pointer; }
   .metric-card:last-child { border-right: 0; }
   .metric-card:hover, .metric-card.active { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -206,7 +207,7 @@
     </div>
 
     <section x-show="activeSpace !== 'analytics'">
-      <div class="metric-strip" x-show="activeSpace === 'today'">
+      <div class="metric-strip today-strip" x-show="activeSpace === 'today'">
         <button class="metric-card green" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">
           <div class="metric-label">Impact today</div>
           <div class="metric-value" x-text="stats.impacted_today || 0"></div>
@@ -217,15 +218,20 @@
           <div class="metric-value" x-text="todayHistoryValue('calls')"></div>
           <div class="metric-note">Actual calls logged</div>
         </button>
-        <button class="metric-card red" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">
-          <div class="metric-label">Overdue calls</div>
-          <div class="metric-value" x-text="stats.calls_overdue || 0"></div>
-          <div class="metric-note">Clear first</div>
+        <button class="metric-card red" :class="{ active: mode === 'overdue' || mode === 'today' }" @click="showMetric(defaultCallMode())">
+          <div class="metric-label">Call queue</div>
+          <div class="metric-value" x-text="(stats.calls_overdue || 0) + (stats.calls_today || 0)"></div>
+          <div class="metric-note" x-text="callQueueNote()"></div>
         </button>
-        <button class="metric-card amber" :class="{ active: mode === 'today' }" @click="showMetric('today')">
-          <div class="metric-label">Calls due</div>
-          <div class="metric-value" x-text="stats.calls_today || 0"></div>
-          <div class="metric-note">Scheduled today</div>
+        <button class="metric-card amber" :class="{ active: mode === 'outreach_overdue' || mode === 'outreach_today' }" @click="showMetric(defaultEmailMode())">
+          <div class="metric-label">Emails due</div>
+          <div class="metric-value" x-text="regularEmailDueCount()"></div>
+          <div class="metric-note" x-text="regularEmailNote()"></div>
+        </button>
+        <button class="metric-card blue" :class="{ active: mode === 'proposal_today' || mode === 'proposal_overdue' }" @click="showMetric('proposal_today')">
+          <div class="metric-label">Proposal FUs</div>
+          <div class="metric-value" x-text="stats.proposal_followups_due || 0"></div>
+          <div class="metric-note">Proposal only</div>
         </button>
       </div>
 
@@ -287,8 +293,9 @@
             </div>
             <div class="segments" x-show="activeSpace === 'today'">
               <button class="segment" :class="{ active: mode === 'overdue' }" @click="showMetric('overdue')">Overdue</button>
-              <button class="segment" :class="{ active: mode === 'today' }" @click="showMetric('today')">Today</button>
-              <button class="segment" :class="{ active: mode === 'outreach_today' }" @click="showMetric('outreach_today')">Outreach</button>
+              <button class="segment" :class="{ active: mode === 'today' }" @click="showMetric('today')">Calls today</button>
+              <button class="segment" :class="{ active: mode === 'outreach_overdue' }" @click="showMetric('outreach_overdue')">Overdue emails</button>
+              <button class="segment" :class="{ active: mode === 'outreach_today' }" @click="showMetric('outreach_today')">Emails today</button>
               <button class="segment" :class="{ active: mode === 'proposal_today' }" @click="showMetric('proposal_today')">Proposal FU</button>
               <button class="segment" :class="{ active: mode === 'impacted' }" @click="showMetric('impacted')">Touched</button>
             </div>
@@ -929,9 +936,35 @@ function logisticsDashboard() {
     defaultTodayMode() {
       if ((this.stats.calls_overdue || 0) > 0) return 'overdue';
       if ((this.stats.calls_today || 0) > 0) return 'today';
+      if ((this.stats.outreach_followups_overdue || this.stats.email_followups_overdue || 0) > 0) return 'outreach_overdue';
       if ((this.stats.outreach_followups_today || this.stats.email_followups_today || 0) > 0) return 'outreach_today';
       if ((this.stats.proposal_followups_due || 0) > 0) return 'proposal_today';
       return 'today';
+    },
+
+    defaultCallMode() {
+      return (this.stats.calls_overdue || 0) > 0 ? 'overdue' : 'today';
+    },
+
+    defaultEmailMode() {
+      return (this.stats.outreach_followups_overdue || this.stats.email_followups_overdue || 0) > 0
+        ? 'outreach_overdue'
+        : 'outreach_today';
+    },
+
+    regularEmailDueCount() {
+      return (this.stats.outreach_followups_overdue || this.stats.email_followups_overdue || 0)
+        + (this.stats.outreach_followups_today || this.stats.email_followups_today || 0);
+    },
+
+    callQueueNote() {
+      return `${this.stats.calls_overdue || 0} overdue · ${this.stats.calls_today || 0} today`;
+    },
+
+    regularEmailNote() {
+      const overdue = this.stats.outreach_followups_overdue || this.stats.email_followups_overdue || 0;
+      const today = this.stats.outreach_followups_today || this.stats.email_followups_today || 0;
+      return `${overdue} overdue · ${today} today`;
     },
 
     async loadStats() {
@@ -1353,8 +1386,8 @@ function logisticsDashboard() {
       const titles = {
         today: 'Calls due today',
         overdue: 'Overdue calls',
-        outreach_today: 'Outreach follow-ups',
-        outreach_overdue: 'Overdue outreach',
+        outreach_today: 'Emails due today',
+        outreach_overdue: 'Overdue regular emails',
         proposal_today: 'Proposal follow-ups',
         proposal_overdue: 'Overdue proposal follow-ups',
         impacted: 'Touched today',
