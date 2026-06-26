@@ -25,6 +25,7 @@ SPREADSHEET_ID = os.getenv(
 CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "config/google_credentials.json")
 SHEET_NAME = os.getenv("SHEET_NAME", "PT Logistics")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Lisbon")
+CALLBACK_CALENDAR_ID = os.getenv("CALLBACK_CALENDAR_ID", "")
 
 crm: PTLogisticsCRM | None = None
 
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
             credentials_file=CREDENTIALS_FILE,
             spreadsheet_id=SPREADSHEET_ID,
             sheet_name=SHEET_NAME,
+            callback_calendar_id=CALLBACK_CALENDAR_ID,
+            app_timezone=APP_TIMEZONE,
         )
     except Exception as exc:
         print(f"Failed to initialize PT Logistics CRM: {exc}")
@@ -248,6 +251,7 @@ async def api_log_call(request: Request):
             what_happened=body.get("what_happened", ""),
             notes=body.get("notes", ""),
             due=body.get("due", ""),
+            due_time=body.get("due_time", ""),
             clear_due=bool(body.get("clear_due", False)),
             stage=body.get("stage", ""),
             row_number=row_number,
@@ -255,7 +259,7 @@ async def api_log_call(request: Request):
         )
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
-        return JSONResponse({"success": True})
+        return JSONResponse({"success": True, "warning": sheet.consume_warning()})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -287,7 +291,7 @@ async def api_update_lead(request: Request):
         )
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
-        return JSONResponse({"success": True})
+        return JSONResponse({"success": True, "warning": sheet.consume_warning()})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 

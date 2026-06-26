@@ -33,6 +33,7 @@ env:
     SHEET_NAME: "PT Logistics"
     APP_TIMEZONE: "Europe/Lisbon"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
+    CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
 
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"

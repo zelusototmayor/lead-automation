@@ -19,6 +19,8 @@ from gspread.cell import Cell
 from gspread.exceptions import APIError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from src.crm.callback_calendar import CallbackCalendar
+
 logger = structlog.get_logger()
 
 SCOPES = [
@@ -41,6 +43,8 @@ PT_LOGISTICS_HEADERS = [
     "Last Touch Type",
     "What Happened",
     "Due",
+    "Due Time",
+    "Calendar Event ID",
     "Initial Email Sent",
     "Outreach FU1 Sent",
     "Outreach FU2 Sent",
@@ -119,6 +123,8 @@ FIELD_ALIASES = {
     "last_touch_type": "Last Touch Type",
     "what_happened": "What Happened",
     "due": "Due",
+    "due_time": "Due Time",
+    "calendar_event_id": "Calendar Event ID",
     "initial_email_sent": "Initial Email Sent",
     "outreach_fu1_sent": "Outreach FU1 Sent",
     "outreach_fu2_sent": "Outreach FU2 Sent",
@@ -307,6 +313,19 @@ def format_sheet_date(value: str | date | datetime) -> str:
     return parsed.strftime("%Y/%m/%d") if parsed else (value or "")
 
 
+def normalize_time(value: str) -> str:
+    """Normalize a dashboard time input to HH:MM."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return value
+
+
 def is_filled(value: str) -> bool:
     """Treat dates and X/x markers as completed follow-up fields."""
     return bool((value or "").strip())
@@ -315,13 +334,26 @@ def is_filled(value: str) -> bool:
 class PTLogisticsCRM:
     """Google Sheets CRM wrapper for the active PT Logistics workflow."""
 
-    def __init__(self, credentials_file: str, spreadsheet_id: str, sheet_name: str = "PT Logistics"):
+    def __init__(
+        self,
+        credentials_file: str,
+        spreadsheet_id: str,
+        sheet_name: str = "PT Logistics",
+        callback_calendar_id: str = "",
+        app_timezone: str = "Europe/Lisbon",
+    ):
         self.spreadsheet_id = spreadsheet_id
         self.sheet_name = sheet_name
         self._last_api_call = 0.0
         self._cache: list[list[str]] = []
         self.headers: list[str] = []
         self._columns: dict[str, int] = {}
+        self.last_warning = ""
+        self.callback_calendar = CallbackCalendar(
+            credentials_file=credentials_file,
+            calendar_id=callback_calendar_id,
+            timezone=app_timezone,
+        )
 
         creds = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
         self.client = gspread.authorize(creds)
@@ -335,6 +367,11 @@ class PTLogisticsCRM:
         self._refresh_cache()
 
         logger.info("PTLogisticsCRM initialized", spreadsheet_id=spreadsheet_id, sheet=sheet_name)
+
+    def consume_warning(self) -> str:
+        warning = self.last_warning
+        self.last_warning = ""
+        return warning
 
     def _throttle(self):
         elapsed = time.time() - self._last_api_call
@@ -600,6 +637,7 @@ class PTLogisticsCRM:
         result = {}
         for field in FIELD_ALIASES:
             result[field] = self._value(row, field)
+        result["due_time"] = normalize_time(result.get("due_time", ""))
         result["row_number"] = row_number or ""
         result["key"] = result.get("id") or f"row-{row_number}" if row_number else result.get("id", "")
 
@@ -611,6 +649,61 @@ class PTLogisticsCRM:
         result["proposal_status_effective"] = self._proposal_status(result)
 
         return result
+
+    def _write_field(self, row_num: int, field: str, value: str):
+        col_idx = self._columns.get(field)
+        cache_idx = row_num - 2
+        if col_idx is None or cache_idx < 0 or cache_idx >= len(self._cache):
+            return
+
+        self._api_call(self.sheet.update_cells, [Cell(row=row_num, col=col_idx + 1, value=value)])
+        while len(self._cache[cache_idx]) <= col_idx:
+            self._cache[cache_idx].append("")
+        self._cache[cache_idx][col_idx] = value
+
+    def _callback_description(self, lead: dict) -> str:
+        lines = [
+            f"Company: {lead.get('company') or '-'}",
+            f"Contact: {lead.get('contact') or '-'}",
+            f"Phone: {lead.get('phone') or '-'}",
+            f"Email: {lead.get('email') or '-'}",
+            f"Stage: {lead.get('stage') or '-'}",
+        ]
+        what_happened = (lead.get("what_happened") or "").strip()
+        if what_happened:
+            lines.append(f"What happened: {what_happened}")
+        note = (lead.get("notes") or "").strip().split("\n---\n")[0].strip()
+        if note:
+            lines.append(f"Latest note: {note}")
+        lines.append("")
+        lines.append("Created from the PT Logistics dashboard callback workflow.")
+        return "\n".join(lines)
+
+    def _sync_callback_calendar(self, row_num: int, before: dict, after: dict):
+        due = after.get("due_iso") or ""
+        due_time = normalize_time(after.get("due_time", ""))
+        event_id = (after.get("calendar_event_id") or "").strip()
+
+        if due and due_time:
+            result = self.callback_calendar.upsert_event(
+                event_id=event_id,
+                due_date=due,
+                due_time=due_time,
+                title=f"Call: {after.get('company') or 'Lead'}",
+                description=self._callback_description(after),
+            )
+            if result.warning:
+                self.last_warning = result.warning
+            if result.ok and result.event_id != event_id:
+                self._write_field(row_num, "calendar_event_id", result.event_id)
+            return
+
+        if event_id:
+            result = self.callback_calendar.delete_event(event_id)
+            if result.warning:
+                self.last_warning = result.warning
+            if result.ok and result.event_id != event_id:
+                self._write_field(row_num, "calendar_event_id", result.event_id)
 
     def _find_by_id(self, lead_id: str) -> Optional[tuple[int, list[str]]]:
         lead_id_lower = (lead_id or "").lower()
@@ -674,7 +767,14 @@ class PTLogisticsCRM:
             elif view == "all":
                 leads.append(d)
 
-        return sorted(leads, key=lambda lead: lead.get("due_iso") or "9999-12-31")
+        return sorted(
+            leads,
+            key=lambda lead: (
+                lead.get("due_iso") or "9999-12-31",
+                normalize_time(lead.get("due_time", "")) or "99:99",
+                (lead.get("company") or "").lower(),
+            ),
+        )
 
     def get_email_followups(
         self,
@@ -998,6 +1098,7 @@ class PTLogisticsCRM:
         touched_date: date | None = None,
         activity: dict | None = None,
     ) -> bool:
+        self.last_warning = ""
         updates = updates or {}
         match = self._find_by_reference(lead_id=lead_id, row_number=row_number)
         if not match:
@@ -1006,6 +1107,11 @@ class PTLogisticsCRM:
 
         if mark_touched:
             updates = {**updates, "dashboard_touched": touched_date or date.today()}
+
+        if "due" in updates and not updates.get("due"):
+            updates.setdefault("due_time", "")
+        if "due_time" in updates:
+            updates["due_time"] = normalize_time(updates.get("due_time", ""))
 
         row_num, row = match
         cache_idx = row_num - 2
@@ -1018,6 +1124,7 @@ class PTLogisticsCRM:
                 updates.setdefault("proposal_sent", effective_date)
                 updates.setdefault("proposal_status", "Sent")
             updates["due"] = ""
+            updates["due_time"] = ""
         elif stage_update in {"lost", "not a fit", "meeting booked"} and self._has_actual_proposal(before):
             stage_status = {
                 "lost": "Lost",
@@ -1040,6 +1147,26 @@ class PTLogisticsCRM:
 
         if cells:
             self._api_call(self.sheet.update_cells, cells)
+
+        callback_fields = {
+            "due",
+            "due_time",
+            "calendar_event_id",
+            "contact",
+            "phone",
+            "email",
+            "stage",
+            "notes",
+            "what_happened",
+        }
+        if callback_fields.intersection(updates):
+            after_for_calendar = self._row_to_dict(list(self._cache[cache_idx]), row_num)
+            if (
+                after_for_calendar.get("calendar_event_id")
+                or after_for_calendar.get("due_iso")
+                or before.get("calendar_event_id")
+            ):
+                self._sync_callback_calendar(row_num, before, after_for_calendar)
 
         if activity:
             after = self._row_to_dict(list(self._cache[cache_idx]), row_num)
@@ -1083,6 +1210,7 @@ class PTLogisticsCRM:
         what_happened: str = "",
         notes: str = "",
         due: str = "",
+        due_time: str = "",
         clear_due: bool = False,
         stage: str = "",
         row_number: int | str = "",
@@ -1098,15 +1226,19 @@ class PTLogisticsCRM:
             updates["proposal_sent"] = touched_date or date.today()
             updates["proposal_status"] = "Sent"
             updates["due"] = ""
+            updates["due_time"] = ""
         elif clear_due:
             updates["due"] = ""
+            updates["due_time"] = ""
         elif due:
             updates["due"] = due
+            updates["due_time"] = due_time
         if stage:
             updates["stage"] = stage
         elif call_status_norm == "send email":
             updates["stage"] = "Send Email"
             updates["due"] = ""
+            updates["due_time"] = ""
         elif call_status_norm == "email sent":
             updates["stage"] = "Email Sent"
         elif call_status_norm == "no answer":

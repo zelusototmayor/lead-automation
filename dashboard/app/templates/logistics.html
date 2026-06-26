@@ -59,9 +59,23 @@
   .detail-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
   .detail-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
   .detail-head .btn { flex: 0 0 auto; padding: 6px 10px; font-size: 11px; }
+  .snapshot-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-top: 7px; }
+  .snapshot-main { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 700; }
+  .snapshot-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .snapshot-contact { color: var(--ink); font-weight: 900; overflow-wrap: anywhere; }
+  .snapshot-due { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 900; }
+  .contact-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+  .contact-actions .btn { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+  .contact-actions .btn[aria-disabled="true"] { opacity: .45; pointer-events: none; }
   .section { border-top: 1px solid var(--line); padding-top: 11px; margin-top: 11px; }
   .section:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
   .section-title { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+  details.section { padding-top: 0; }
+  details.section summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; padding-top: 11px; }
+  details.section summary::-webkit-details-marker { display: none; }
+  details.section summary::after { content: '+'; color: var(--accent); font-size: 16px; line-height: 1; }
+  details.section[open] summary { margin-bottom: 8px; }
+  details.section[open] summary::after { content: '-'; }
   .field { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 12px; }
   .field span:first-child { color: var(--faint); flex: 0 0 auto; }
   .field span:last-child { text-align: right; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
@@ -78,7 +92,7 @@
   label { display: block; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
   textarea { width: 100%; min-height: 72px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--page-bg); color: var(--ink); font-size: 12px; outline: none; }
   textarea:focus { border-color: var(--accent); }
-  input[type="date"] { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--page-bg); color: var(--ink); font-size: 12px; outline: none; }
+  input[type="date"], input[type="time"] { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--page-bg); color: var(--ink); font-size: 12px; outline: none; }
   .check-row { display: inline-flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: 0; }
   .check-row input { width: 14px; height: 14px; accent-color: var(--accent); }
   .history { max-height: 150px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--page-bg); border-radius: 8px; padding: 10px; color: var(--muted); font-size: 11px; }
@@ -138,7 +152,7 @@
     .panel-head { display: grid; gap: 8px; }
     .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; }
     .toolbar .search { grid-column: 1 / -1; }
-    .search, .select, input[type="date"], textarea { font-size: 16px; }
+    .search, .select, input[type="date"], input[type="time"], textarea { font-size: 16px; }
     .space-grid { display: flex; flex-direction: column; gap: 10px; }
     .detail { order: 1; padding: 13px; border-left: 1px solid var(--line); }
     .queue-panel { order: 2; }
@@ -152,6 +166,9 @@
     .mobile-lead-phone { color: var(--accent); font-size: 12px; font-weight: 900; text-decoration: none; }
     .mobile-primary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
     .mobile-primary-actions .btn { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 43px; }
+    .snapshot-top { display: grid; gap: 8px; }
+    .snapshot-top .badge { max-width: 100%; justify-self: start; }
+    .contact-actions { grid-template-columns: 1fr 1fr; }
     .detail-content { display: flex; flex-direction: column; }
     .lead-summary { order: 1; }
     .call-section, .email-section { order: 2; }
@@ -165,8 +182,7 @@
     textarea { min-height: 88px; }
     .action-row { position: sticky; bottom: 66px; z-index: 5; background: linear-gradient(to top, var(--panel) 82%, rgba(255,255,255,0)); padding-top: 8px; }
     .action-row .btn { min-height: 46px; }
-    .mobile-call-submit { display: flex; position: static; padding-top: 0; background: transparent; margin: 0 0 8px; }
-    .call-section > .action-row:not(.mobile-call-submit) { display: none; }
+    .mobile-call-submit { display: none; }
     .history { max-height: 110px; }
     .activity-panel { padding: 10px; }
     .activity-head { grid-template-columns: 1fr; gap: 10px; }
@@ -383,7 +399,7 @@
                   <span x-text="item.contact || 'No contact'"></span>
                   <span x-show="isTaskMode()" x-text="(item.task_type || 'Task') + ' ' + (item.task_due || '')"></span>
                   <span x-show="isProposalListMode()" x-text="'Proposal ' + (item.proposal_age_days ?? '-') + 'd · ' + proposalStatus(item)"></span>
-                  <span x-show="!isTaskMode() && !isProposalListMode()" x-text="item.due ? 'Due ' + item.due : 'No due'"></span>
+                  <span x-show="!isTaskMode() && !isProposalListMode()" x-text="dueLabel(item)"></span>
                   <span class="badge" :class="stageBadge(item.stage)" x-text="item.stage || 'Blank'"></span>
                 </span>
               </button>
@@ -412,18 +428,39 @@
                   <span x-text="selected.priority || 'No priority'"></span>
                 </div>
               </div>
-              <button class="btn" x-show="!detailEditing" @click="startDetailEdit()">Edit details</button>
+              <span class="badge" :class="stageBadge(selected.stage)" x-show="!detailEditing" x-text="selected.stage || 'Blank'"></span>
             </div>
 
             <template x-if="!detailEditing">
               <div>
-                <div class="field"><span>Contact</span><span x-text="selected.contact || '-'"></span></div>
-                <div class="field"><span>Phone</span><span><a :href="'tel:' + selected.phone" x-text="selected.phone || '-'"></a></span></div>
-                <div class="field"><span>Email</span><span><a :href="'mailto:' + selected.email" x-text="selected.email || '-'"></a></span></div>
-                <div class="field" x-show="selected.website"><span>Website</span><span><a :href="selected.website" target="_blank" x-text="selected.website"></a></span></div>
-                <div class="field"><span>Stage</span><span><span class="badge" :class="stageBadge(selected.stage)" x-text="selected.stage || 'Blank'"></span></span></div>
-                <div class="field"><span>Due</span><span x-text="selected.due || '-'"></span></div>
-                <div class="field"><span>Dashboard Touched</span><span x-text="selected.dashboard_touched || '-'"></span></div>
+                <div class="snapshot-top">
+                  <div class="snapshot-main">
+                    <div class="snapshot-contact" x-text="selected.contact || 'No contact name'"></div>
+                    <div class="snapshot-line">
+                      <span x-text="selected.phone || 'No phone'"></span>
+                      <span>·</span>
+                      <span x-text="selected.email || 'No email'"></span>
+                    </div>
+                    <div class="snapshot-line">
+                      <span class="snapshot-due" x-text="dueLabel(selected)"></span>
+                    </div>
+                  </div>
+                  <button class="btn" @click="startDetailEdit()">Edit</button>
+                </div>
+                <div class="contact-actions">
+                  <a class="btn btn-primary" :href="selected.phone ? 'tel:' + selected.phone : '#'" :aria-disabled="!selected.phone">Call</a>
+                  <a class="btn" :href="selected.email ? 'mailto:' + selected.email : '#'" :aria-disabled="!selected.email">Email</a>
+                </div>
+                <details class="section">
+                  <summary>Details</summary>
+                  <div class="field"><span>Contact</span><span x-text="selected.contact || '-'"></span></div>
+                  <div class="field"><span>Phone</span><span><a :href="'tel:' + selected.phone" x-text="selected.phone || '-'"></a></span></div>
+                  <div class="field"><span>Email</span><span><a :href="'mailto:' + selected.email" x-text="selected.email || '-'"></a></span></div>
+                  <div class="field" x-show="selected.website"><span>Website</span><span><a :href="selected.website" target="_blank" x-text="selected.website"></a></span></div>
+                  <div class="field"><span>Stage</span><span><span class="badge" :class="stageBadge(selected.stage)" x-text="selected.stage || 'Blank'"></span></span></div>
+                  <div class="field"><span>Due</span><span x-text="dueLabel(selected)"></span></div>
+                  <div class="field"><span>Dashboard Touched</span><span x-text="selected.dashboard_touched || '-'"></span></div>
+                </details>
               </div>
             </template>
 
@@ -478,9 +515,12 @@
                   </div>
                   <div>
                     <label>Due date</label>
-                    <input type="date" x-model="detailForm.due" :disabled="detailForm.clear_due">
+                    <div class="form-grid">
+                      <input type="date" x-model="detailForm.due" :disabled="detailForm.clear_due">
+                      <input type="time" x-model="detailForm.due_time" :disabled="detailForm.clear_due || !detailForm.due">
+                    </div>
                     <label class="check-row">
-                      <input type="checkbox" x-model="detailForm.clear_due" @change="if (detailForm.clear_due) detailForm.due = ''">
+                      <input type="checkbox" x-model="detailForm.clear_due" @change="if (detailForm.clear_due) { detailForm.due = ''; detailForm.due_time = ''; }">
                       No next call
                     </label>
                   </div>
@@ -491,23 +531,25 @@
                 </div>
               </div>
             </template>
-            <div class="mobile-primary-actions" x-show="!detailEditing">
-              <a class="btn btn-primary" :href="'tel:' + selected.phone">Call</a>
-              <button class="btn" @click="skip()">Next lead</button>
-            </div>
           </div>
 
-          <div class="section quick-section">
-            <div class="section-title">Quick Update</div>
+          <details class="section quick-section">
+            <summary>Quick Update</summary>
             <div class="form-grid">
               <div>
-                <label>Due date</label>
+                <label>Next call date</label>
                 <input type="date" x-model="editForm.due" :disabled="editForm.clear_due">
                 <label class="check-row">
-                  <input type="checkbox" x-model="editForm.clear_due" @change="if (editForm.clear_due) editForm.due = ''">
+                  <input type="checkbox" x-model="editForm.clear_due" @change="if (editForm.clear_due) { editForm.due = ''; editForm.due_time = ''; }">
                   No next call
                 </label>
               </div>
+              <div>
+                <label>Time</label>
+                <input type="time" x-model="editForm.due_time" :disabled="editForm.clear_due || !editForm.due">
+              </div>
+            </div>
+            <div class="form-grid">
               <div>
                 <label>Stage</label>
                 <select class="select" x-model="editForm.stage" @change="handleQuickStageChange()">
@@ -515,8 +557,6 @@
                   <template x-for="stage in stageOptions" :key="stage"><option :value="stage" x-text="stage"></option></template>
                 </select>
               </div>
-            </div>
-            <div class="inline-edit">
               <div>
                 <label>Priority</label>
                 <select class="select" x-model="editForm.priority">
@@ -526,11 +566,13 @@
                   <option>Low</option>
                 </select>
               </div>
+            </div>
+            <div class="action-row">
               <button class="btn" @click="saveQuickUpdate()" :disabled="submitting">
                 <span x-text="submitting ? 'Saving...' : 'Save'"></span>
               </button>
             </div>
-          </div>
+          </details>
 
           <template x-if="isOutreachMode()">
             <div class="section email-section">
@@ -647,21 +689,21 @@
                   <button class="choice" :class="{ active: callForm.call_status === status }" @click="setCallStatus(status)" x-text="status"></button>
                 </template>
               </div>
-              <div class="action-row mobile-call-submit">
-                <button class="btn btn-primary" @click="logCall()" :disabled="!callForm.call_status || submitting">
-                  <span x-text="submitting ? 'Saving...' : 'Log & Next'"></span>
-                </button>
-                <button class="btn" @click="skip()">Skip</button>
-              </div>
               <div class="form-grid">
                 <div>
-                  <label>Next due date</label>
+                  <label>Next call date</label>
                   <input type="date" x-model="callForm.due" :disabled="callForm.clear_due">
                   <label class="check-row">
-                    <input type="checkbox" x-model="callForm.clear_due" @change="if (callForm.clear_due) callForm.due = ''">
+                    <input type="checkbox" x-model="callForm.clear_due" @change="if (callForm.clear_due) { callForm.due = ''; callForm.due_time = ''; }">
                     No next call
                   </label>
                 </div>
+                <div>
+                  <label>Time</label>
+                  <input type="time" x-model="callForm.due_time" :disabled="callForm.clear_due || !callForm.due">
+                </div>
+              </div>
+              <div class="form-grid">
                 <div>
                   <label>Stage</label>
                   <select class="select" x-model="callForm.stage" @change="handleCallStageChange()">
@@ -669,10 +711,10 @@
                     <template x-for="stage in stageOptions" :key="stage"><option :value="stage" x-text="stage"></option></template>
                   </select>
                 </div>
-              </div>
-              <div style="margin-bottom:8px;">
-                <label>What happened</label>
-                <input class="search" type="text" x-model="callForm.what_happened" placeholder="Short outcome, gatekeeper name, callback instruction...">
+                <div>
+                  <label>What happened</label>
+                  <input class="search" type="text" x-model="callForm.what_happened" placeholder="Short outcome...">
+                </div>
               </div>
               <div>
                 <label>Notes</label>
@@ -687,18 +729,18 @@
             </div>
           </template>
 
-          <div class="section last-section">
-            <div class="section-title">Last Touch</div>
+          <details class="section last-section">
+            <summary>Last Touch</summary>
             <div class="field"><span>Type</span><span x-text="selected.last_touch_type || '-'"></span></div>
             <div class="field"><span>What Happened</span><span x-text="selected.what_happened || '-'"></span></div>
             <div class="field"><span>Meeting</span><span x-text="selected.meeting_date || '-'"></span></div>
             <div class="field"><span>Outcome</span><span x-text="selected.outcome || '-'"></span></div>
-          </div>
+          </details>
 
-          <div class="section notes-section" x-show="selected.notes">
-            <div class="section-title">Notes</div>
+          <details class="section notes-section" x-show="selected.notes">
+            <summary>Notes</summary>
             <div class="history" x-text="selected.notes"></div>
-          </div>
+          </details>
         </div>
       </template>
         </aside>
@@ -850,12 +892,12 @@ function logisticsDashboard() {
     stages: [],
     callStatuses: ['Reached', 'Send Proposal', 'Proposal Sent', 'Send Email', 'Email Sent', 'No Answer', 'Gatekeeper'],
     stageOptions: ['New', 'Contacted', 'No Answer', 'Call Back', 'Send Proposal', 'Send Email', 'Proposal Sent', 'Email Sent', 'Meeting Booked', 'Not a Fit', 'Lost'],
-    callForm: { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false },
+    callForm: { call_status: '', what_happened: '', notes: '', due: '', due_time: '', stage: '', clear_due: false },
     emailForm: { notes: '' },
     proposalForm: { status: '', next_action: '', next_action_due: '', notes: '' },
-    editForm: { due: '', stage: '', priority: '', clear_due: false },
+    editForm: { due: '', due_time: '', stage: '', priority: '', clear_due: false },
     detailEditing: false,
-    detailForm: { contact: '', phone: '', email: '', website: '', city: '', region: '', priority: '', stage: '', due: '', clear_due: false, notes: '' },
+    detailForm: { contact: '', phone: '', email: '', website: '', city: '', region: '', priority: '', stage: '', due: '', due_time: '', clear_due: false, notes: '' },
 
     async init() {
       await this.loadStats();
@@ -1049,11 +1091,12 @@ function logisticsDashboard() {
 
     resetForms() {
       this.detailEditing = false;
-      this.callForm = { call_status: '', what_happened: '', notes: '', due: '', stage: '', clear_due: false };
+      this.callForm = { call_status: '', what_happened: '', notes: '', due: '', due_time: '', stage: '', clear_due: false };
       this.emailForm = { notes: '' };
       this.proposalForm = this.proposalFormFromSelected();
       this.editForm = {
         due: this.toInputDate(this.selected?.due || ''),
+        due_time: this.toInputTime(this.selected?.due_time || ''),
         stage: '',
         priority: '',
         clear_due: false,
@@ -1083,6 +1126,7 @@ function logisticsDashboard() {
         priority: lead.priority || '',
         stage: lead.stage || '',
         due: this.toInputDate(lead.due || ''),
+        due_time: this.toInputTime(lead.due_time || ''),
         clear_due: false,
         notes: lead.notes || '',
       };
@@ -1120,16 +1164,19 @@ function logisticsDashboard() {
       if (this.callForm.call_status === 'Proposal Sent') {
         this.callForm.stage = 'Proposal Sent';
         this.callForm.due = '';
+        this.callForm.due_time = '';
         this.callForm.clear_due = true;
       }
       if (this.callForm.call_status === 'Send Email') {
         this.callForm.stage = 'Send Email';
         this.callForm.due = '';
+        this.callForm.due_time = '';
         this.callForm.clear_due = true;
       }
       if (this.callForm.call_status === 'Email Sent') {
         this.callForm.stage = 'Email Sent';
         this.callForm.due = '';
+        this.callForm.due_time = '';
         this.callForm.clear_due = true;
       }
     },
@@ -1137,6 +1184,7 @@ function logisticsDashboard() {
     handleQuickStageChange() {
       if (['Email Sent', 'Send Email'].includes(this.editForm.stage)) {
         this.editForm.due = '';
+        this.editForm.due_time = '';
         this.editForm.clear_due = true;
       }
     },
@@ -1144,6 +1192,7 @@ function logisticsDashboard() {
     handleCallStageChange() {
       if (['Email Sent', 'Send Email'].includes(this.callForm.stage)) {
         this.callForm.due = '';
+        this.callForm.due_time = '';
         this.callForm.clear_due = true;
       }
     },
@@ -1151,6 +1200,7 @@ function logisticsDashboard() {
     handleDetailStageChange() {
       if (['Email Sent', 'Send Email'].includes(this.detailForm.stage)) {
         this.detailForm.due = '';
+        this.detailForm.due_time = '';
         this.detailForm.clear_due = true;
       }
     },
@@ -1166,10 +1216,15 @@ function logisticsDashboard() {
       });
 
       const currentDue = this.toInputDate(this.selected.due || '');
+      const currentDueTime = this.toInputTime(this.selected.due_time || '');
       if (this.detailForm.clear_due) {
         if (currentDue) updates.due = '';
+        if (currentDueTime) updates.due_time = '';
       } else if ((this.detailForm.due || '') !== currentDue) {
         updates.due = this.detailForm.due || '';
+      }
+      if (!this.detailForm.clear_due && (this.detailForm.due_time || '') !== currentDueTime) {
+        updates.due_time = this.detailForm.due_time || '';
       }
 
       if (Object.keys(updates).length === 0) {
@@ -1192,6 +1247,7 @@ function logisticsDashboard() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to update details');
         notify('Details updated for ' + this.selected.company);
+        this.showSaveWarning(data);
         this.detailEditing = false;
         await this.loadStats();
         await this.loadHistory();
@@ -1206,8 +1262,15 @@ function logisticsDashboard() {
     async saveQuickUpdate() {
       if (!this.selected) return;
       const updates = {};
-      if (this.editForm.clear_due) updates.due = '';
-      else if (this.editForm.due) updates.due = this.editForm.due;
+      const currentDue = this.toInputDate(this.selected.due || '');
+      const currentDueTime = this.toInputTime(this.selected.due_time || '');
+      if (this.editForm.clear_due) {
+        updates.due = '';
+        updates.due_time = '';
+      } else {
+        if (this.editForm.due && this.editForm.due !== currentDue) updates.due = this.editForm.due;
+        if ((this.editForm.due_time || '') !== currentDueTime) updates.due_time = this.editForm.due_time || '';
+      }
       if (this.editForm.stage) updates.stage = this.editForm.stage;
       if (this.editForm.priority) updates.priority = this.editForm.priority;
       if (Object.keys(updates).length === 0) return;
@@ -1226,6 +1289,7 @@ function logisticsDashboard() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to update lead');
         notify('Updated ' + this.selected.company);
+        this.showSaveWarning(data);
         await this.loadStats();
         await this.loadHistory();
         await this.loadItems();
@@ -1250,6 +1314,7 @@ function logisticsDashboard() {
             what_happened: this.callForm.what_happened,
             notes: this.callForm.notes,
             due: this.callForm.due,
+            due_time: this.callForm.due_time,
             clear_due: this.callForm.clear_due,
             stage: this.callForm.stage,
           }),
@@ -1257,6 +1322,7 @@ function logisticsDashboard() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to log call');
         notify('Call logged for ' + this.selected.company);
+        this.showSaveWarning(data);
         this.advance();
         await this.loadStats();
         await this.loadHistory();
@@ -1541,6 +1607,22 @@ function logisticsDashboard() {
       if (parts.length !== 3) return '';
       if (parts[0].length === 4) return normalized;
       return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    },
+
+    toInputTime(value) {
+      const match = String(value || '').match(/\b(\d{1,2}):(\d{2})\b/);
+      if (!match) return '';
+      return `${match[1].padStart(2, '0')}:${match[2]}`;
+    },
+
+    dueLabel(item) {
+      if (!item?.due) return 'No next call';
+      const time = this.toInputTime(item.due_time || '');
+      return time ? `Due ${item.due} at ${time}` : `Due ${item.due}`;
+    },
+
+    showSaveWarning(data) {
+      if (data?.warning) notify(data.warning, 'err');
     },
 
     itemIdentity(item) {
