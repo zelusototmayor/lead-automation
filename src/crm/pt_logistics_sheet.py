@@ -1580,6 +1580,9 @@ class PTLogisticsCRM:
         dates = [value for value in dates if value]
         return min(dates) if dates else None
 
+    def _counts_as_completed_call(self, call_status: str) -> bool:
+        return (call_status or "").strip().lower() not in {"", "no answer"}
+
     def _add_legacy_history(
         self,
         daily: dict,
@@ -1611,7 +1614,7 @@ class PTLogisticsCRM:
                 day = daily[touched.isoformat()]
                 day["_leads"].add(key)
                 last_touch = (lead.get("last_touch_type") or "").strip().lower()
-                if last_touch and last_touch != "email sent":
+                if last_touch != "email sent" and self._counts_as_completed_call(last_touch):
                     day["calls"] += 1
 
             for field in email_fields:
@@ -1639,7 +1642,7 @@ class PTLogisticsCRM:
             if row.get("New Lead Impacted", "").lower() == "yes" and key:
                 day["_new_leads"].add(key)
             event_type = (row.get("Event Type") or "").strip().lower()
-            if event_type == "call":
+            if event_type == "call" and self._counts_as_completed_call(row.get("Call Status", "")):
                 day["calls"] += 1
             if event_type == "email" or row.get("Email Task"):
                 day["emails_sent"] += 1
