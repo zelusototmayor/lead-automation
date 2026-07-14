@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import date
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
@@ -55,6 +56,33 @@ def test_auth_fails_closed_when_dashboard_credentials_are_missing(monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Dashboard authentication is not configured"
+
+
+@pytest.mark.parametrize("path", ["/api/account-profiles", "/api/portfolio", "/api/recommendations"])
+def test_crm_intelligence_apis_require_basic_auth(monkeypatch, path):
+    monkeypatch.setenv("DASHBOARD_USER", "jose")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
+    client = TestClient(dashboard_main.app)
+
+    response = client.get(path)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Basic"
+
+
+def test_dashboard_wires_read_only_portfolio_and_recommendations(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_USER", "jose")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
+    token = base64.b64encode(b"jose:secret").decode()
+    client = TestClient(dashboard_main.app)
+
+    response = client.get("/", headers={"Authorization": f"Basic {token}"})
+
+    assert response.status_code == 200
+    assert 'data-testid="portfolio-summary"' in response.text
+    assert 'data-testid="crm-recommendations"' in response.text
+    assert "fetch('/api/portfolio')" in response.text
+    assert "fetch('/api/recommendations')" in response.text
 
 
 def test_account_profile_after_meeting_booked_collects_context_and_timeline():
