@@ -969,6 +969,195 @@ class PTLogisticsCRM:
             ),
         )
 
+    def _money_value(self, value: str) -> float:
+        cleaned = "".join(ch for ch in str(value or "") if ch.isdigit() or ch in ".,")
+        if not cleaned:
+            return 0.0
+        if "," in cleaned and "." in cleaned:
+            cleaned = cleaned.replace(",", "")
+        elif "," in cleaned:
+            cleaned = cleaned.replace(",", ".")
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+    def _probability_value(self, value: str, default: float = 50.0) -> float:
+        cleaned = "".join(ch for ch in str(value or "") if ch.isdigit() or ch == ".")
+        if not cleaned:
+            return default
+        try:
+            return max(0.0, min(float(cleaned), 100.0))
+        except ValueError:
+            return default
+
+    def _proposal_snapshot(self, lead: dict, today: date) -> dict:
+        value = self._money_value(lead.get("proposal_value", ""))
+        probability = self._probability_value(lead.get("proposal_probability", ""), default=100.0 if self._proposal_status(lead).lower() == "won" else 50.0)
+        sent_date = parse_sheet_date(lead.get("proposal_sent", ""))
+        next_due = parse_sheet_date(lead.get("proposal_next_action_due", ""))
+        return {
+            "sent": lead.get("proposal_sent", ""),
+            "status": self._proposal_status(lead),
+            "value": round(value),
+            "probability": probability,
+            "weighted_value": round(value * probability / 100),
+            "forecast_category": lead.get("forecast_category", "") or "Uncategorized",
+            "age_days": max((today - sent_date).days, 0) if sent_date else 0,
+            "next_action": lead.get("proposal_next_action", ""),
+            "next_action_due": lead.get("proposal_next_action_due", ""),
+            "next_action_due_iso": next_due.isoformat() if next_due else "",
+            "outcome": lead.get("proposal_outcome", ""),
+            "lost_reason": lead.get("proposal_lost_reason", ""),
+            "open": self._is_proposal_open(lead),
+        }
+
+    def _timeline_for_lead(self, lead: dict) -> list[dict]:
+        key = lead.get("key") or lead.get("id") or ""
+        row_number = str(lead.get("row_number") or "")
+        company = (lead.get("company") or "").strip().lower()
+        timeline = []
+        for row in self._activity_rows():
+            row_key = row.get("Lead Key", "")
+            row_number_match = str(row.get("Row Number", ""))
+            row_company = (row.get("Company") or "").strip().lower()
+            if not (
+                (key and row_key == key)
+                or (row_number and row_number_match == row_number)
+                or (company and row_company == company)
+            ):
+                continue
+            timeline.append({
+                "timestamp": row.get("Timestamp", ""),
+                "date": row.get("Date", ""),
+                "event_type": row.get("Event Type", ""),
+                "call_status": row.get("Call Status", ""),
+                "email_task": row.get("Email Task", ""),
+                "notes": row.get("Notes", ""),
+            })
+        return sorted(timeline, key=lambda event: event.get("timestamp") or event.get("date") or "", reverse=True)
+
+    def get_account_profiles(self, today: date, stage: str = "Meeting Booked") -> list[dict]:
+        target = (stage or "Meeting Booked").strip().lower()
+        profiles = []
+        for lead in self.get_all_leads():
+            if (lead.get("stage") or "").strip().lower() != target:
+                continue
+            notes = [part.strip() for part in (lead.get("notes") or "").split("\n---\n") if part.strip()]
+            timeline = self._timeline_for_lead(lead)
+            profiles.append({
+                **lead,
+                "account": {
+                    "company": lead.get("company", ""),
+                    "contact": lead.get("contact", ""),
+                    "phone": lead.get("phone", ""),
+                    "email": lead.get("email", ""),
+                    "website": lead.get("website", ""),
+                    "city": lead.get("city", ""),
+                    "region": lead.get("region", ""),
+                },
+                "meeting": {
+                    "date": lead.get("meeting_date", ""),
+                    "date_iso": lead.get("meeting_date_iso", ""),
+                    "last_touch_type": lead.get("last_touch_type", ""),
+                },
+                "proposal": self._proposal_snapshot(lead, today),
+                "notes": notes,
+                "granola_notes": [note for note in notes if "granola" in note.lower()],
+                "timeline": timeline,
+                "emails": [event for event in timeline if (event.get("event_type") or "").lower() == "email" or event.get("email_task")],
+                "meetings": [event for event in timeline if "meeting" in (event.get("event_type") or "").lower() or "meeting" in (event.get("call_status") or "").lower()],
+            })
+        return sorted(profiles, key=lambda profile: (profile.get("meeting", {}).get("date_iso") or "9999-12-31", profile.get("company", "").lower()))
+
+    def get_portfolio_summary(self, today: date) -> dict:
+        proposals = self.get_proposals(today, view="all")
+        counts = {"open": 0, "won": 0, "lost": 0, "all": len(proposals)}
+        value = {"open": 0, "won": 0, "lost": 0, "all": 0}
+        forecast_by_category = {}
+        open_durations = []
+        followups_due = 0
+        weighted_forecast = 0
+
+        for proposal in proposals:
+            snapshot = self._proposal_snapshot(proposal, today)
+            status = snapshot["status"].strip().lower()
+            if status in {"won", "meeting booked"}:
+                bucket = "won"
+                weighted = snapshot["value"]
+            elif status in {"lost", "not a fit"} or (proposal.get("stage") or "").strip().lower() in TERMINAL_STAGES:
+                bucket = "lost"
+                weighted = 0
+            else:
+                bucket = "open"
+                weighted = snapshot["weighted_value"]
+                open_durations.append(snapshot["age_days"])
+                next_due = parse_sheet_date(proposal.get("proposal_next_action_due", ""))
+                if next_due and next_due <= today:
+                    followups_due += 1
+
+            counts[bucket] += 1
+            value[bucket] += snapshot["value"]
+            value["all"] += snapshot["value"]
+            weighted_forecast += weighted
+            category = snapshot["forecast_category"]
+            forecast_by_category[category] = forecast_by_category.get(category, 0) + weighted
+
+        return {
+            "counts": counts,
+            "value": value,
+            "weighted_forecast": weighted_forecast,
+            "forecast_by_category": forecast_by_category,
+            "followups_due": followups_due,
+            "average_open_duration_days": round(sum(open_durations) / len(open_durations)) if open_durations else 0,
+            "proposals": proposals,
+        }
+
+    def get_recommendations(self, today: date, limit: int = 12) -> list[dict]:
+        recommendations = []
+        for proposal in self.get_proposals(today, view="open"):
+            snapshot = self._proposal_snapshot(proposal, today)
+            next_due = parse_sheet_date(proposal.get("proposal_next_action_due", ""))
+            overdue_days = (today - next_due).days if next_due and next_due < today else 0
+            if overdue_days > 0:
+                recommendations.append({
+                    "priority": "high",
+                    "action": "Follow up on overdue proposal",
+                    "reason": f"Proposal follow-up overdue by {overdue_days} days",
+                    "lead_id": proposal.get("id", ""),
+                    "company": proposal.get("company", ""),
+                    "weighted_value": snapshot["weighted_value"],
+                    "due_iso": next_due.isoformat() if next_due else "",
+                })
+            elif snapshot["age_days"] >= 7 and snapshot["forecast_category"].lower() in {"commit", "best case"}:
+                recommendations.append({
+                    "priority": "medium",
+                    "action": "Refresh stale proposal",
+                    "reason": f"Open {snapshot['forecast_category']} proposal is {snapshot['age_days']} days old",
+                    "lead_id": proposal.get("id", ""),
+                    "company": proposal.get("company", ""),
+                    "weighted_value": snapshot["weighted_value"],
+                    "due_iso": snapshot["next_action_due_iso"],
+                })
+
+        for profile in self.get_account_profiles(today, stage="Meeting Booked"):
+            if not self._has_actual_proposal(profile):
+                recommendations.append({
+                    "priority": "medium",
+                    "action": "Prepare meeting follow-up",
+                    "reason": "Meeting booked without a tracked proposal yet",
+                    "lead_id": profile.get("id", ""),
+                    "company": profile.get("company", ""),
+                    "weighted_value": 0,
+                    "due_iso": profile.get("meeting_date_iso", ""),
+                })
+
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        return sorted(
+            recommendations,
+            key=lambda rec: (priority_order.get(rec["priority"], 9), -rec.get("weighted_value", 0), rec.get("due_iso") or "9999-12-31"),
+        )[:limit]
+
     def _email_followup_in_view(
         self,
         due_date: date,
