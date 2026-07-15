@@ -225,7 +225,7 @@
         </p>
       </div>
       <div class="space-actions">
-        <button class="btn btn-dark" @click="refresh()" :disabled="loading">Refresh Sheet</button>
+        <button class="btn btn-dark" @click="reloadView()" :disabled="loading">Reload view</button>
       </div>
     </div>
 
@@ -479,7 +479,7 @@
                       <span class="snapshot-due" x-text="dueLabel(selected)"></span>
                     </div>
                   </div>
-                  <button class="btn" @click="startDetailEdit()">Edit</button>
+                  <button class="btn" @click="startDetailEdit()" :disabled="publicReadOnly" title="Editing is unavailable in the public read-only view" aria-label="Edit unavailable in public read-only view">Edit</button>
                 </div>
                 <div class="contact-actions">
                   <a class="btn btn-primary" :href="selected.phone ? 'tel:' + selected.phone : '#'" :aria-disabled="!selected.phone">Call</a>
@@ -501,7 +501,7 @@
             <template x-if="detailEditing">
               <div class="detail-edit">
                 <div class="action-row">
-                  <button class="btn btn-primary" @click="saveDetailUpdate()" :disabled="submitting">
+                  <button class="btn btn-primary" @click="saveDetailUpdate()" :disabled="publicReadOnly || submitting" title="Saving is unavailable in the public read-only view">
                     <span x-text="submitting ? 'Saving...' : 'Save details'"></span>
                   </button>
                   <button class="btn" @click="cancelDetailEdit()" :disabled="submitting">Cancel</button>
@@ -602,8 +602,8 @@
               </div>
             </div>
             <div class="action-row">
-              <button class="btn" @click="saveQuickUpdate()" :disabled="submitting">
-                <span x-text="submitting ? 'Saving...' : 'Save'"></span>
+              <button class="btn" @click="saveQuickUpdate()" :disabled="publicReadOnly || submitting" title="Saving is unavailable in the public read-only view">
+                <span x-text="submitting ? 'Saving...' : 'Quick Save'"></span>
               </button>
             </div>
           </details>
@@ -630,7 +630,7 @@
                 <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
               </div>
               <div class="action-row">
-                <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                <button class="btn btn-primary" @click="markEmailSent()" :disabled="publicReadOnly || submitting" title="Marking email or follow-up activity is unavailable in the public read-only view">
                   <span x-text="submitting ? 'Saving...' : 'Mark ' + selected.task_type + ' Sent Today'"></span>
                 </button>
               </div>
@@ -645,7 +645,7 @@
                 <textarea x-model="emailForm.notes" placeholder="Add a note about the email you sent..."></textarea>
               </div>
               <div class="action-row">
-                <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                <button class="btn btn-primary" @click="markEmailSent()" :disabled="publicReadOnly || submitting" title="Marking email or follow-up activity is unavailable in the public read-only view">
                   <span x-text="submitting ? 'Saving...' : 'Log Email Sent'"></span>
                 </button>
               </div>
@@ -673,7 +673,7 @@
                     <textarea x-model="emailForm.notes" placeholder="Add a note about this proposal follow-up..."></textarea>
                   </div>
                   <div class="action-row">
-                    <button class="btn btn-primary" @click="markEmailSent()" :disabled="submitting">
+                    <button class="btn btn-primary" @click="markEmailSent()" :disabled="publicReadOnly || submitting" title="Marking email or follow-up activity is unavailable in the public read-only view">
                       <span x-text="proposalTaskButtonLabel()"></span>
                     </button>
                   </div>
@@ -708,7 +708,7 @@
                 <textarea x-model="proposalForm.notes" placeholder="Add proposal context..."></textarea>
               </div>
               <div class="action-row">
-                <button class="btn" @click="saveProposalUpdate()" :disabled="submitting">
+                <button class="btn" @click="saveProposalUpdate()" :disabled="publicReadOnly || submitting" title="Saving proposals is unavailable in the public read-only view">
                   <span x-text="submitting ? 'Saving...' : 'Save proposal'"></span>
                 </button>
               </div>
@@ -755,7 +755,7 @@
                 <textarea x-model="callForm.notes" placeholder="Add call notes..."></textarea>
               </div>
               <div class="action-row">
-                <button class="btn btn-primary" @click="logCall()" :disabled="!callForm.call_status || submitting">
+                <button class="btn btn-primary" @click="logCall()" :disabled="publicReadOnly || !callForm.call_status || submitting" title="Logging calls is unavailable in the public read-only view">
                   <span x-text="submitting ? 'Saving...' : 'Log Call & Next'"></span>
                 </button>
                 <button class="btn" @click="skip()">Skip</button>
@@ -900,6 +900,7 @@
 <script>
 function logisticsDashboard() {
   return {
+    publicReadOnly: true,
     activeSpace: 'today',
     mode: 'today',
     stats: {},
@@ -942,7 +943,7 @@ function logisticsDashboard() {
       await this.loadHistory();
       await this.loadItems();
       this.lastRefreshedAt = this.nowLabel();
-      this.refreshTimer = setInterval(() => this.refresh(true), 60 * 60 * 1000);
+      this.refreshTimer = setInterval(() => this.reloadView(true), 60 * 60 * 1000);
       this.$watch('search', () => this.syncSelection());
       this.$watch('priorityFilter', () => this.syncSelection());
       this.$watch('stageFilter', () => this.syncSelection());
@@ -1466,19 +1467,16 @@ function logisticsDashboard() {
       }
     },
 
-    async refresh(silent = false) {
-      if (this.submitting) return;
+    async reloadView(silent = false) {
+      if (this.loading) return;
       this.loading = !silent;
       try {
-        const res = await fetch('/api/refresh', { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Refresh failed');
-        if (!silent) notify('Sheet refreshed: ' + data.rows + ' rows');
         await this.loadStats();
         await this.loadHistory();
         await this.loadItems();
         if (this.activeSpace === 'proposals') await this.loadCRMIntelligence();
         this.lastRefreshedAt = this.nowLabel();
+        if (!silent) notify('View reloaded');
       } catch (err) {
         notify(err.message, 'err');
       } finally {

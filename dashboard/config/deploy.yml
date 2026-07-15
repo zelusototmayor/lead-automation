@@ -34,6 +34,11 @@ env:
     APP_TIMEZONE: "Europe/Lisbon"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
     CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
+    CRM_ENV: "production"
+    CRM_ALLOWED_WRITE_ORIGINS: "https://leads.zelusottomayor.com"
+  secret:
+    - CRM_WRITE_TOKEN
+    - CRM_CSRF_TOKEN
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
 

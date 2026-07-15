@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.crm.pt_logistics_sheet import PTLogisticsCRM
+from dashboard.app.security import require_write_access
 
 SPREADSHEET_ID = os.getenv(
     "SPREADSHEET_ID",
@@ -55,6 +56,39 @@ app = FastAPI(
     description="Call and follow-up dashboard for the PT Logistics CRM",
     lifespan=lifespan,
 )
+
+# Temporary compatibility debt: the current Jinja/Alpine UI uses inline assets,
+# and Alpine's standard CDN build evaluates expressions at runtime.
+CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "default-src 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+        "form-action 'self'",
+        "img-src 'self' data:",
+        "font-src 'self' https://fonts.gstatic.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
+        "connect-src 'self'",
+    )
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
@@ -265,7 +299,7 @@ async def api_stage_timing(days: int = 120):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/log-call")
+@app.post("/api/log-call", dependencies=[Depends(require_write_access)])
 async def api_log_call(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -297,7 +331,7 @@ async def api_log_call(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/update-lead")
+@app.post("/api/update-lead", dependencies=[Depends(require_write_access)])
 async def api_update_lead(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -329,7 +363,7 @@ async def api_update_lead(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/mark-email-followup")
+@app.post("/api/mark-email-followup", dependencies=[Depends(require_write_access)])
 async def api_mark_email_followup(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -357,7 +391,7 @@ async def api_mark_email_followup(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/mark-proposal-followup")
+@app.post("/api/mark-proposal-followup", dependencies=[Depends(require_write_access)])
 async def api_mark_proposal_followup(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -385,7 +419,7 @@ async def api_mark_proposal_followup(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/update-proposal")
+@app.post("/api/update-proposal", dependencies=[Depends(require_write_access)])
 async def api_update_proposal(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -418,7 +452,7 @@ async def api_update_proposal(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/mark-email-sent")
+@app.post("/api/mark-email-sent", dependencies=[Depends(require_write_access)])
 async def api_mark_email_sent(request: Request):
     sheet = _require_crm()
     if not sheet:
@@ -444,7 +478,7 @@ async def api_mark_email_sent(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.post("/api/refresh")
+@app.post("/api/refresh", dependencies=[Depends(require_write_access)])
 async def api_refresh():
     sheet = _require_crm()
     if not sheet:
