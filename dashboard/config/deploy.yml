@@ -34,10 +34,6 @@ env:
     APP_TIMEZONE: "Europe/Lisbon"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
     CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
-  secret:
-    - DASHBOARD_USER
-    - DASHBOARD_PASSWORD
-
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
 

@@ -9,11 +9,8 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import secrets
-
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -31,33 +28,6 @@ APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Lisbon")
 CALLBACK_CALENDAR_ID = os.getenv("CALLBACK_CALENDAR_ID", "")
 
 crm: PTLogisticsCRM | None = None
-security = HTTPBasic()
-
-
-def authenticate(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    """Protect dashboard data with HTTP Basic Auth.
-
-    Fail closed if credentials are not configured. A public CRM dashboard with
-    predictable defaults is worse than a temporarily unavailable dashboard.
-    """
-    expected_user = os.getenv("DASHBOARD_USER", "").strip()
-    expected_password = os.getenv("DASHBOARD_PASSWORD", "")
-    if not expected_user or not expected_password or expected_password == "changeme":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Dashboard authentication is not configured",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-    username_ok = secrets.compare_digest(credentials.username, expected_user)
-    password_ok = secrets.compare_digest(credentials.password, expected_password)
-    if not (username_ok and password_ok):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
 
 def today_local() -> date:
     return datetime.now(ZoneInfo(APP_TIMEZONE)).date()
@@ -100,7 +70,7 @@ async def health_check():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, username: str = Depends(authenticate)):
+async def dashboard(request: Request):
     return templates.TemplateResponse(
         "logistics.html",
         {
@@ -131,7 +101,7 @@ def _require_crm() -> PTLogisticsCRM | None:
 
 
 @app.get("/api/stats")
-async def api_stats(username: str = Depends(authenticate)):
+async def api_stats():
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -142,7 +112,7 @@ async def api_stats(username: str = Depends(authenticate)):
 
 
 @app.get("/api/leads")
-async def api_leads(view: str = "today", q: str = "", priority: str = "", stage: str = "", username: str = Depends(authenticate)):
+async def api_leads(view: str = "today", q: str = "", priority: str = "", stage: str = ""):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -162,7 +132,6 @@ async def api_email_followups(
     priority: str = "",
     stage: str = "",
     include_upcoming: bool = False,
-    username: str = Depends(authenticate),
 ):
     sheet = _require_crm()
     if not sheet:
@@ -183,7 +152,6 @@ async def api_outreach_followups(
     priority: str = "",
     stage: str = "",
     include_upcoming: bool = False,
-    username: str = Depends(authenticate),
 ):
     return await api_email_followups(
         view=view,
@@ -202,7 +170,6 @@ async def api_proposal_followups(
     priority: str = "",
     stage: str = "",
     include_upcoming: bool = False,
-    username: str = Depends(authenticate),
 ):
     sheet = _require_crm()
     if not sheet:
@@ -217,7 +184,7 @@ async def api_proposal_followups(
 
 
 @app.get("/api/proposals")
-async def api_proposals(view: str = "open", q: str = "", priority: str = "", stage: str = "", username: str = Depends(authenticate)):
+async def api_proposals(view: str = "open", q: str = "", priority: str = "", stage: str = ""):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -231,7 +198,7 @@ async def api_proposals(view: str = "open", q: str = "", priority: str = "", sta
 
 
 @app.get("/api/impacted-leads")
-async def api_impacted_leads(q: str = "", priority: str = "", stage: str = "", username: str = Depends(authenticate)):
+async def api_impacted_leads(q: str = "", priority: str = "", stage: str = ""):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -244,7 +211,7 @@ async def api_impacted_leads(q: str = "", priority: str = "", stage: str = "", u
 
 
 @app.get("/api/history")
-async def api_history(days: int = 30, username: str = Depends(authenticate)):
+async def api_history(days: int = 30):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -255,7 +222,7 @@ async def api_history(days: int = 30, username: str = Depends(authenticate)):
 
 
 @app.get("/api/account-profiles")
-async def api_account_profiles(stage: str = "Meeting Booked", username: str = Depends(authenticate)):
+async def api_account_profiles(stage: str = "Meeting Booked"):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -266,7 +233,7 @@ async def api_account_profiles(stage: str = "Meeting Booked", username: str = De
 
 
 @app.get("/api/portfolio")
-async def api_portfolio(username: str = Depends(authenticate)):
+async def api_portfolio():
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -277,7 +244,7 @@ async def api_portfolio(username: str = Depends(authenticate)):
 
 
 @app.get("/api/recommendations")
-async def api_recommendations(username: str = Depends(authenticate)):
+async def api_recommendations():
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -288,7 +255,7 @@ async def api_recommendations(username: str = Depends(authenticate)):
 
 
 @app.get("/api/stage-timing")
-async def api_stage_timing(days: int = 120, username: str = Depends(authenticate)):
+async def api_stage_timing(days: int = 120):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -299,7 +266,7 @@ async def api_stage_timing(days: int = 120, username: str = Depends(authenticate
 
 
 @app.post("/api/log-call")
-async def api_log_call(request: Request, username: str = Depends(authenticate)):
+async def api_log_call(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -331,7 +298,7 @@ async def api_log_call(request: Request, username: str = Depends(authenticate)):
 
 
 @app.post("/api/update-lead")
-async def api_update_lead(request: Request, username: str = Depends(authenticate)):
+async def api_update_lead(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -363,7 +330,7 @@ async def api_update_lead(request: Request, username: str = Depends(authenticate
 
 
 @app.post("/api/mark-email-followup")
-async def api_mark_email_followup(request: Request, username: str = Depends(authenticate)):
+async def api_mark_email_followup(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -391,7 +358,7 @@ async def api_mark_email_followup(request: Request, username: str = Depends(auth
 
 
 @app.post("/api/mark-proposal-followup")
-async def api_mark_proposal_followup(request: Request, username: str = Depends(authenticate)):
+async def api_mark_proposal_followup(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -419,7 +386,7 @@ async def api_mark_proposal_followup(request: Request, username: str = Depends(a
 
 
 @app.post("/api/update-proposal")
-async def api_update_proposal(request: Request, username: str = Depends(authenticate)):
+async def api_update_proposal(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -452,7 +419,7 @@ async def api_update_proposal(request: Request, username: str = Depends(authenti
 
 
 @app.post("/api/mark-email-sent")
-async def api_mark_email_sent(request: Request, username: str = Depends(authenticate)):
+async def api_mark_email_sent(request: Request):
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)
@@ -478,7 +445,7 @@ async def api_mark_email_sent(request: Request, username: str = Depends(authenti
 
 
 @app.post("/api/refresh")
-async def api_refresh(username: str = Depends(authenticate)):
+async def api_refresh():
     sheet = _require_crm()
     if not sheet:
         return JSONResponse({"error": "PT Logistics CRM not initialized"}, status_code=503)

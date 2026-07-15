@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from datetime import date
 
 import pytest
@@ -29,54 +28,33 @@ def _crm_with_rows(rows: list[dict]) -> PTLogisticsCRM:
     return crm
 
 
-def test_data_apis_require_basic_auth(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_USER", "jose")
-    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
+def test_data_apis_are_public(monkeypatch):
     dashboard_main.crm = None
     client = TestClient(dashboard_main.app)
 
-    unauthenticated = client.get("/api/stats")
-    assert unauthenticated.status_code == 401
-    assert unauthenticated.headers["www-authenticate"] == "Basic"
-
-    token = base64.b64encode(b"jose:secret").decode()
-    authenticated = client.get("/api/stats", headers={"Authorization": f"Basic {token}"})
-    assert authenticated.status_code == 503
-    assert authenticated.json()["error"] == "PT Logistics CRM not initialized"
-
-
-def test_auth_fails_closed_when_dashboard_credentials_are_missing(monkeypatch):
-    monkeypatch.delenv("DASHBOARD_USER", raising=False)
-    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
-    dashboard_main.crm = None
-    client = TestClient(dashboard_main.app)
-    token = base64.b64encode(b"admin:changeme").decode()
-
-    response = client.get("/api/stats", headers={"Authorization": f"Basic {token}"})
+    response = client.get("/api/stats")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Dashboard authentication is not configured"
+    assert response.json()["error"] == "PT Logistics CRM not initialized"
+    assert "www-authenticate" not in response.headers
 
 
 @pytest.mark.parametrize("path", ["/api/account-profiles", "/api/portfolio", "/api/recommendations"])
-def test_crm_intelligence_apis_require_basic_auth(monkeypatch, path):
-    monkeypatch.setenv("DASHBOARD_USER", "jose")
-    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
+def test_crm_intelligence_apis_are_public(monkeypatch, path):
+    dashboard_main.crm = None
     client = TestClient(dashboard_main.app)
 
     response = client.get(path)
 
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Basic"
+    assert response.status_code == 503
+    assert response.json()["error"] == "PT Logistics CRM not initialized"
+    assert "www-authenticate" not in response.headers
 
 
 def test_dashboard_wires_read_only_portfolio_and_recommendations(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_USER", "jose")
-    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret")
-    token = base64.b64encode(b"jose:secret").decode()
     client = TestClient(dashboard_main.app)
 
-    response = client.get("/", headers={"Authorization": f"Basic {token}"})
+    response = client.get("/")
 
     assert response.status_code == 200
     assert 'data-testid="portfolio-summary"' in response.text
