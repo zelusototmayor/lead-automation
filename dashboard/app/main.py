@@ -159,7 +159,6 @@ async def api_outreach_followups(
         priority=priority,
         stage=stage,
         include_upcoming=include_upcoming,
-        username=username,
     )
 
 
