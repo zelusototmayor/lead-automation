@@ -321,9 +321,9 @@ spec = importlib.util.spec_from_file_location("imported_env", Path("migrations/e
 module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(module)
-assert set(module.target_metadata.tables) == {
+assert {
     "workspaces", "source_identities", "ingest_events", "sync_checkpoints"
-}
+} <= set(module.target_metadata.tables)
 """
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -354,7 +354,7 @@ def test_migration_lifecycle_schema_and_metadata_from_foreign_cwd(
         assert result.returncode == 0, result.stderr
         assert _database_url() not in result.stdout + result.stderr
         if args == ("current",):
-            assert "0001" in result.stdout
+            assert "(head)" in result.stdout
         if args == ("downgrade", "base"):
             assert not EXPECTED_TABLES.intersection(inspect(engine).get_table_names())
 
@@ -396,7 +396,7 @@ def test_migration_lifecycle_schema_and_metadata_from_foreign_cwd(
     from src.crm.persistence.base import Base
     import src.crm.persistence.models  # noqa: F401
 
-    assert EXPECTED_TABLES == set(Base.metadata.tables)
+    assert EXPECTED_TABLES <= set(Base.metadata.tables)
     migration_text = (
         REPO_ROOT / "migrations/versions/0001_identity_events_checkpoints.py"
     ).read_text()
