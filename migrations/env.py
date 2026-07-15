@@ -12,6 +12,7 @@ from alembic import context
 
 from dashboard.app.db import create_database_engine, get_database_settings
 from src.crm.persistence.base import Base
+import src.crm.persistence.models  # noqa: F401  # register tables for autogenerate
 
 
 target_metadata = Base.metadata
