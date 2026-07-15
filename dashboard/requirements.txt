@@ -6,3 +6,7 @@ gspread==6.1.2
 google-auth==2.34.0
 structlog==24.4.0
 tenacity>=8.2.0
+sqlalchemy>=2,<3
+alembic>=1.13,<2
+psycopg[binary]>=3.2,<4
+pydantic-settings>=2,<3

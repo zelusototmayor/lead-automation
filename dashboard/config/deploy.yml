@@ -39,6 +39,7 @@ env:
   secret:
     - CRM_WRITE_TOKEN
     - CRM_CSRF_TOKEN
+    - DATABASE_URL
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
 

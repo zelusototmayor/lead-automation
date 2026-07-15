@@ -16,6 +16,9 @@ COPY src/crm/ ./src/crm/
 # Copy application code
 COPY dashboard/app/ ./dashboard/app/
 
+# Copy migration tooling without running migrations during image startup
+COPY migrations/ ./migrations/
+
 # Create config directory (credentials will be mounted)
 RUN mkdir -p config
 
