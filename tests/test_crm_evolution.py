@@ -39,6 +39,78 @@ def test_data_apis_are_public(monkeypatch):
     assert "www-authenticate" not in response.headers
 
 
+def test_outreach_followups_alias_preserves_email_followup_query_contract(monkeypatch):
+    class FakeCRM:
+        def __init__(self):
+            self.calls = []
+
+        def get_outreach_followups(self, today, view, include_upcoming):
+            self.calls.append({"today": today, "view": view, "include_upcoming": include_upcoming})
+            return [
+                {
+                    "id": "matching",
+                    "company": "Acme Logistics",
+                    "contact": "Ana",
+                    "priority": "High",
+                    "stage": "Contacted",
+                },
+                {
+                    "id": "wrong-priority",
+                    "company": "Acme Logistics",
+                    "contact": "Bruno",
+                    "priority": "Low",
+                    "stage": "Contacted",
+                },
+                {
+                    "id": "wrong-query",
+                    "company": "Beta Freight",
+                    "contact": "Carla",
+                    "priority": "High",
+                    "stage": "Contacted",
+                },
+                {
+                    "id": "wrong-stage",
+                    "company": "Acme Freight",
+                    "contact": "Diego",
+                    "priority": "High",
+                    "stage": "New",
+                },
+            ]
+
+    fake_crm = FakeCRM()
+    monkeypatch.setattr(dashboard_main, "crm", fake_crm)
+    client = TestClient(dashboard_main.app)
+
+    response = client.get(
+        "/api/outreach-followups",
+        params={
+            "view": "overdue",
+            "q": "acme",
+            "priority": "high",
+            "stage": "contacted",
+            "include_upcoming": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tasks": [
+            {
+                "id": "matching",
+                "company": "Acme Logistics",
+                "contact": "Ana",
+                "priority": "High",
+                "stage": "Contacted",
+            }
+        ],
+        "count": 1,
+        "view": "overdue",
+    }
+    assert len(fake_crm.calls) == 1
+    assert fake_crm.calls[0]["view"] == "overdue"
+    assert fake_crm.calls[0]["include_upcoming"] is True
+
+
 @pytest.mark.parametrize("path", ["/api/account-profiles", "/api/portfolio", "/api/recommendations"])
 def test_crm_intelligence_apis_are_public(monkeypatch, path):
     dashboard_main.crm = None
