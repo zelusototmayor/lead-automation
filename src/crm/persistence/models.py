@@ -68,6 +68,7 @@ PROCESSING_STATUSES = (
     "failed",
     "dead_letter",
 )
+OUTBOX_STATUSES = ("pending", "publishing", "published", "failed")
 
 
 def _in_check(column: str, values: tuple[str, ...]) -> str:
@@ -98,6 +99,93 @@ class Workspace(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(event_type)) > 0", name="ck_outbox_event_type_nonblank"
+        ),
+        CheckConstraint(
+            "length(btrim(aggregate_type)) > 0",
+            name="ck_outbox_aggregate_type_nonblank",
+        ),
+        CheckConstraint(
+            "semantic_hash ~ '^[0-9a-f]{64}$'", name="ck_outbox_semantic_hash"
+        ),
+        CheckConstraint(_in_check("status", OUTBOX_STATUSES), name="ck_outbox_status"),
+        CheckConstraint(
+            "attempt_count >= 0", name="ck_outbox_attempt_count_nonnegative"
+        ),
+        CheckConstraint(
+            "octet_length(payload::text) <= 4096", name="ck_outbox_payload_bounded"
+        ),
+        CheckConstraint(
+            "published_at IS NULL OR status = 'published'",
+            name="ck_outbox_published_state",
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_outbox_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "command_id", name="uq_outbox_workspace_command"
+        ),
+        ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
+        Index("ix_outbox_pending", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    command_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    semantic_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint("length(btrim(action)) > 0", name="ck_audit_action_nonblank"),
+        CheckConstraint(
+            "length(btrim(entity_type)) > 0", name="ck_audit_entity_type_nonblank"
+        ),
+        CheckConstraint(
+            "octet_length(details::text) <= 4096", name="ck_audit_details_bounded"
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_audit_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "command_id", name="uq_audit_workspace_command"
+        ),
+        ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
+        Index("ix_audit_workspace_created", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    command_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    actor_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -1398,3 +1486,5 @@ event.listen(Activity, "before_update", _reject_activity_mutation)
 event.listen(Activity, "before_delete", _reject_activity_mutation)
 event.listen(Evidence, "before_update", _reject_activity_mutation)
 event.listen(Evidence, "before_delete", _reject_activity_mutation)
+event.listen(AuditEvent, "before_update", _reject_activity_mutation)
+event.listen(AuditEvent, "before_delete", _reject_activity_mutation)

@@ -55,6 +55,14 @@ def require_disposable_postgres() -> str:
 def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
     with Session(engine) as session, session.begin():
         session.execute(text("SET LOCAL session_replication_role = replica"))
+        from src.crm.persistence.models import AuditEvent, OutboxEvent
+
+        session.execute(
+            delete(AuditEvent).where(AuditEvent.workspace_id == workspace_id)
+        )
+        session.execute(
+            delete(OutboxEvent).where(OutboxEvent.workspace_id == workspace_id)
+        )
         session.execute(
             delete(Recommendation).where(Recommendation.workspace_id == workspace_id)
         )

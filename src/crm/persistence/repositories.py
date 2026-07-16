@@ -11,10 +11,12 @@ from sqlalchemy.orm import Session
 from src.crm.persistence.models import (
     Account,
     Activity,
+    AuditEvent,
     Contact,
     Evidence,
     IngestEvent,
     Lead,
+    OutboxEvent,
     Proposal,
     ProposalItem,
     ProposalVersion,
@@ -227,3 +229,21 @@ class ReviewCandidateRepository(Repository[ReviewCandidate]):
 class IngestEventRepository(Repository[IngestEvent]):
     def __init__(self, session: Session):
         super().__init__(session, IngestEvent)
+
+
+class OutboxEventRepository(Repository[OutboxEvent]):
+    def __init__(self, session: Session):
+        super().__init__(session, OutboxEvent)
+
+    def by_command(self, workspace_id: UUID, command_id: UUID) -> OutboxEvent | None:
+        return self.session.scalar(
+            select(OutboxEvent).where(
+                OutboxEvent.workspace_id == workspace_id,
+                OutboxEvent.command_id == command_id,
+            )
+        )
+
+
+class AuditEventRepository(Repository[AuditEvent]):
+    def __init__(self, session: Session):
+        super().__init__(session, AuditEvent)

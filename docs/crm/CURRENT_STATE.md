@@ -346,3 +346,39 @@ Ruff e format dos ficheiros alterados: passed
 ```
 
 O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, outbound, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 15–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 15
+
+### Human commands, outbox transacional e auditoria concluídos localmente
+
+A Tarefa 15 acrescenta uma fronteira de comandos humanos que mantém a mutação de domínio, a mensagem de outbox e o registo de auditoria na mesma transação controlada pelo chamador:
+
+- transições de fase exigem principal confiável da mesma workspace, permissão explícita e `expected_version`;
+- uma transição humana para fase que exige conta é rejeitada atomicamente quando o lead não tem conta associada, em vez de quebrar a invariante central;
+- conflitos de versão, replay divergente e fases inválidas devolvem erros genéricos;
+- replay idêntico não repete a mutação nem cria nova outbox/auditoria, incluindo concorrência;
+- IDs determinísticos incluem a workspace, evitando colisões quando duas workspaces usam o mesmo `command_id`;
+- rollback persiste zero alterações; commit persiste domínio, outbox pendente e auditoria em conjunto;
+- payloads da outbox são JSON estrito e limitados antes de chegar ao PostgreSQL;
+- auditoria é append-only tanto no ORM como por trigger PostgreSQL;
+- o helper de outbox nunca publica, envia ou faz commit. Workers externos só podem atuar depois da transação canónica estar persistida.
+
+A migration `0006` cria `outbox_events` e `audit_events`, com isolamento por workspace, estados e payloads limitados, índices operacionais e rollback aditivo.
+
+### Evidência de execução da Tarefa 15
+
+Em PostgreSQL 16 descartável local, sem dados ou credenciais reais:
+
+```text
+Task 15 command/outbox focused: 13 passed
+Persistence lifecycle + Task 15: 45 passed
+CRM/API/security/unit/migration/persistence regression: 791 passed, 1 skipped
+Alembic lifecycle explícito: 0006 -> 0005 removeu outbox/audit; 0005 -> 0006 restaurou head
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Ruff, format, compileall e git diff --check: passed
+```
+
+O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, outbound, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 16–19 continuam pendentes.

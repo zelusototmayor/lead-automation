@@ -1893,7 +1893,7 @@ def test_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_path):
         return result
 
     try:
-        assert "0005 (head)" in run("current").stdout
+        assert "0006 (head)" in run("current").stdout
         run("downgrade", "0001")
         inspector = inspect(engine)
         assert {
@@ -1934,6 +1934,8 @@ def test_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_path):
             "evidence",
             "review_candidates",
             "recommendations",
+            "outbox_events",
+            "audit_events",
         } <= set(inspector.get_table_names())
         assert "uq_source_identities_workspace_id" in {
             row["name"] for row in inspector.get_unique_constraints("source_identities")

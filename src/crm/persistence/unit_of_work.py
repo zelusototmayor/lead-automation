@@ -21,10 +21,12 @@ from src.crm.persistence.models import (
 from src.crm.persistence.repositories import (
     AccountRepository,
     ActivityRepository,
+    AuditEventRepository,
     ContactRepository,
     EvidenceRepository,
     IngestEventRepository,
     LeadRepository,
+    OutboxEventRepository,
     ProposalItemRepository,
     ProposalRepository,
     ProposalVersionRepository,
@@ -55,6 +57,8 @@ class SqlAlchemyUnitOfWork:
         self.review_candidates = ReviewCandidateRepository(self.session)
         self.source_identities = SourceIdentityRepository(self.session)
         self.ingest_events = IngestEventRepository(self.session)
+        self.outbox_events = OutboxEventRepository(self.session)
+        self.audit_events = AuditEventRepository(self.session)
         return self
 
     def __exit__(
