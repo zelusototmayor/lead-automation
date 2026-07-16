@@ -111,4 +111,38 @@ Nenhuma consulta ou alteração foi feita no Google Sheets, Gmail, Calendar, Gra
 
 As novas superfícies ricas de Contas, Propostas e Inteligência não podem ser públicas. A Tarefa 8 deve manter as rotas novas desligadas e fail-closed por omissão, usando uma fronteira de principal autenticado injetável para testes. A escolha do fornecedor de identidade/sessão de produção continua pendente e qualquer ativação live exige decisão e aprovação explícitas.
 
-As Tarefas 8–19 continuam pendentes neste ponto. O dashboard ainda lê a projeção legada para utilizadores; PostgreSQL permanece em shadow mode.
+O dashboard ainda lê a projeção legada para utilizadores; PostgreSQL permanece em shadow mode.
+
+---
+
+## Estado da implementação até à Tarefa 8
+
+### Área de Contas concluída localmente
+
+A Tarefa 8 acrescenta uma área de Contas independente de Leads, Propostas e Inteligência:
+
+- `GET /api/v1/accounts` e `GET /api/v1/accounts/{account_id}`;
+- `GET /contas` e `GET /contas/{account_id}`;
+- lista paginada e perfil com contagens de contactos, atividades de email, reuniões e evidência de proposta;
+- probabilidade permanece `null` enquanto não existir evidência/modelo canónico;
+- próxima ação permanece `null` até existir um modelo canónico de tarefa pendente; atividades históricas não são apresentadas como ações atuais;
+- referências de evidência são allowlisted, sem payloads, notas ou emails brutos, e limitadas às 50 mais recentes;
+- queries têm scope obrigatório de workspace e contagem constante, sem N+1;
+- IDOR cross-workspace devolve `404`.
+
+As quatro rotas são fail-closed por omissão. O workspace deriva exclusivamente de um `CRMPrincipal` confiável injetado no servidor; URL, query, headers e cookies criados por esta tarefa não selecionam workspace. O resolver de produção permanece deny-only até existir uma decisão explícita sobre o adapter de identidade/sessão. Nenhum token é enviado para o browser.
+
+### Evidência de execução da Tarefa 8
+
+Em PostgreSQL 16 descartável, sem dados ou credenciais reais:
+
+```text
+tests/integration/api: 17 passed
+unit + integration + security + migration + CRM evolution: 639 passed, 1 skipped
+Alembic check: No new upgrade operations detected
+Ruff, compileall e git diff --check: passed
+```
+
+Os quatro warnings são as depreciações preexistentes de `TemplateResponse` nas rotas legadas. As páginas novas usam a assinatura atual e foram exercitadas por `TestClient` com fixtures realistas, incluindo loading, empty, error, paginação inválida e isolamento cross-workspace.
+
+Não houve deploy, alteração de Sheet, acesso a sistemas live ou ativação da autenticação de produção. As Tarefas 9–19 continuam pendentes.

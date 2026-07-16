@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
+from uuid import UUID
 
 from fastapi import HTTPException, Request, status
 
@@ -11,11 +13,21 @@ from .config import get_settings
 _FORBIDDEN = "Forbidden"
 
 
+@dataclass(frozen=True)
+class CRMPrincipal:
+    """Trusted server-side identity; workspace never comes from request input."""
+
+    workspace_id: UUID
+    subject: str
+
+
 def _matches(provided: str | None, expected: str | None) -> bool:
     if provided is None or expected is None:
         return False
     try:
-        return secrets.compare_digest(provided.encode("ascii"), expected.encode("ascii"))
+        return secrets.compare_digest(
+            provided.encode("ascii"), expected.encode("ascii")
+        )
     except (UnicodeEncodeError, TypeError):
         return False
 
@@ -25,7 +37,9 @@ async def require_write_access(request: Request) -> None:
     try:
         settings = get_settings()
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN) from None
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN
+        ) from None
 
     authorization = request.headers.get("authorization", "")
     scheme, separator, bearer = authorization.partition(" ")
@@ -41,3 +55,9 @@ async def require_write_access(request: Request) -> None:
 
     if not (valid_bearer and valid_csrf and valid_origin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
+
+
+async def require_crm_principal() -> CRMPrincipal:
+    """Deny until deployment supplies a trusted authentication adapter."""
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
