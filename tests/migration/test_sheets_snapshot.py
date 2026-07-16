@@ -84,7 +84,7 @@ def test_google_source_exposes_only_read_scope_and_read_operation():
     public_operations = {
         name for name in dir(GoogleSheetsSource) if not name.startswith("_")
     }
-    assert public_operations == {"read_values"}
+    assert public_operations == {"fetch_page", "read_values"}
 
 
 def test_snapshot_json_round_trip_preserves_canonical_identity(tmp_path):

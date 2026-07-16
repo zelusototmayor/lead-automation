@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
+import json
 from typing import Any, Protocol, Sequence
 
 from src.crm.ingestion.checkpoints import EventToPersist
@@ -15,6 +17,15 @@ MAX_PAGE_ITEMS = 1000
 
 class ConnectorDisabledError(RuntimeError):
     """A connector or requested source scope is not explicitly enabled."""
+
+
+def _scoped_event_key(system: str, scope: str, *parts: object) -> str:
+    """Encode provider identity without delimiter collisions across source scopes."""
+
+    canonical = json.dumps(
+        [scope, *parts], ensure_ascii=False, separators=(",", ":"), allow_nan=False
+    )
+    return f"{system}:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
 class PageTransport(Protocol):
@@ -40,7 +51,13 @@ def _timestamp(value: object) -> datetime:
 
 
 def _page(
-    raw: object, *, system: str, scope: str, event_type: str, key
+    raw: object,
+    *,
+    system: str,
+    scope: str,
+    event_type: str,
+    key,
+    allowed_fact_names: frozenset[str],
 ) -> ConnectorPage:
     if not isinstance(raw, dict):
         raise RuntimeError("connector payload invalid")
@@ -61,6 +78,7 @@ def _page(
         facts = {
             name: value.isoformat() if isinstance(value, datetime) else value
             for name, value in item.items()
+            if name in allowed_fact_names
         }
         envelope = EventEnvelope.model_validate(
             {
@@ -152,7 +170,19 @@ class GoogleSheetsSource(_EnabledSource):
                 system="google_sheets",
                 scope=scope,
                 event_type="sheet.row.observed",
-                key=lambda item: f"google_sheets:{item['id']}",
+                key=lambda item: _scoped_event_key("google_sheets", scope, item["id"]),
+                allowed_fact_names=frozenset(
+                    {
+                        "id",
+                        "occurred_at",
+                        "stage",
+                        "company_name",
+                        "contact_email",
+                        "domain",
+                        "sector",
+                        "commercial_vertical",
+                    }
+                ),
             )
         except ConnectorDisabledError:
             raise

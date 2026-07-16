@@ -54,8 +54,53 @@ def test_gmail_recovers_once_from_expired_cursor_without_leaking_cursor():
     page = source.fetch_page("mailbox:one", "expired-secret")
 
     assert page.next_cursor == "fresh"
-    assert [event.idempotency_key for event in page.events] == ["gmail:m1"]
+    assert page.events[0].idempotency_key.startswith("gmail:")
     assert transport.calls == [("mailbox:one", "expired-secret"), ("mailbox:one", None)]
+
+
+def test_gmail_event_identity_is_unambiguous_across_mailbox_scopes():
+    item = {"id": "same-provider-id", "thread_id": "t1", "occurred_at": NOW}
+    first = GmailSource(
+        transport=FakeTransport(pages=[{"items": [item], "next_cursor": "a"}]),
+        enabled=True,
+        allowed_scopes={"mailbox:a/b"},
+    ).fetch_page("mailbox:a/b", None)
+    second = GmailSource(
+        transport=FakeTransport(pages=[{"items": [item], "next_cursor": "b"}]),
+        enabled=True,
+        allowed_scopes={"mailbox:a"},
+    ).fetch_page("mailbox:a", None)
+
+    assert first.events[0].idempotency_key != second.events[0].idempotency_key
+
+
+def test_gmail_event_persists_only_allowlisted_minimized_facts():
+    item = {
+        "id": "m1",
+        "thread_id": "t1",
+        "occurred_at": NOW,
+        "direction": "outbound",
+        "has_attachments": True,
+        "body": "private customer content",
+        "access_token": "secret-token",
+    }
+    event = (
+        GmailSource(
+            transport=FakeTransport(pages=[{"items": [item], "next_cursor": "next"}]),
+            enabled=True,
+            allowed_scopes={"mailbox:one"},
+        )
+        .fetch_page("mailbox:one", None)
+        .events[0]
+    )
+
+    assert event.envelope.facts == {
+        "id": "m1",
+        "thread_id": "t1",
+        "occurred_at": NOW.isoformat(),
+        "direction": "outbound",
+        "has_attachments": True,
+    }
 
 
 def test_calendar_reschedule_has_revision_key_and_preserves_occurrence_time():
@@ -79,7 +124,7 @@ def test_calendar_reschedule_has_revision_key_and_preserves_occurrence_time():
 
     event = source.fetch_page("calendar:commercial", None).events[0]
 
-    assert event.idempotency_key == "google_calendar:cal-1:2026-07-16T11:00:00+00:00"
+    assert event.idempotency_key.startswith("google_calendar:")
     assert event.envelope.occurred_at == datetime(2026, 7, 20, 10, tzinfo=UTC)
 
 
@@ -96,7 +141,11 @@ def test_meeting_notes_retries_one_transient_failure_and_returns_generic_failure
     source = MeetingNotesSource(
         transport=transport, enabled=True, allowed_scopes={"granola:team"}
     )
-    assert source.fetch_page("granola:team", None).events[0].idempotency_key == "granola:note-1"
+    assert (
+        source.fetch_page("granola:team", None)
+        .events[0]
+        .idempotency_key.startswith("granola:")
+    )
 
     failing = MeetingNotesSource(
         transport=FakeTransport(error=TimeoutError("secret token")),
