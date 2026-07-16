@@ -18,10 +18,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.crm.persistence.models import (
     Account,
     Activity,
+    Evidence,
     Proposal,
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
+    SourceIdentity,
     Workspace,
 )
 from src.crm.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -65,6 +67,29 @@ def engine():
 
 def _preserve_until_schema_disposal(_engine, _workspace_id) -> None:
     """Append-only proposal graphs are disposed with the test schema."""
+
+
+def _add_document_evidence(session, workspace_id, account_id):
+    source = SourceIdentity(
+        workspace_id=workspace_id,
+        source_system="manual",
+        entity_kind="document",
+        source_scope="test",
+        external_id=f"document:{uuid4()}",
+    )
+    session.add(source)
+    session.flush()
+    evidence = Evidence(
+        workspace_id=workspace_id,
+        account_id=account_id,
+        source_identity_id=source.id,
+        evidence_type="manual_confirmation",
+        content_hash=uuid4().hex + uuid4().hex,
+        captured_at=datetime.now(UTC),
+    )
+    session.add(evidence)
+    session.flush()
+    return evidence.id
 
 
 def test_proposal_migration_creates_separate_versioned_portfolio_tables(engine):
@@ -193,7 +218,9 @@ def test_unknown_and_confirmed_zero_values_persist_without_synthetic_defaults(en
             proposal_id=proposal.id,
             version_number=2,
             one_off_amount=Decimal("0.00"),
-            source_document_evidence_id=uuid4(),
+            source_document_evidence_id=_add_document_evidence(
+                session, workspace_id, account_id
+            ),
             confirmed_by=uuid4(),
             confirmed_at=datetime.now(UTC),
         )
@@ -574,7 +601,9 @@ def test_concurrent_confirmation_and_supersession_cannot_commit_invalid_value_st
             status="sent",
             sent_at=datetime.now(UTC),
             one_off_amount=Decimal("10.00"),
-            source_document_evidence_id=uuid4(),
+            source_document_evidence_id=_add_document_evidence(
+                session, workspace_id, account_id
+            ),
             confirmed_by=uuid4(),
             confirmed_at=datetime.now(UTC),
         )

@@ -49,6 +49,16 @@ ENTITY_KINDS = (
     "proposal",
     "document",
 )
+EVIDENCE_TYPES = (
+    "sheet_cell",
+    "email_message",
+    "attachment",
+    "calendar_event",
+    "meeting_note",
+    "manual_confirmation",
+    "contract",
+    "payment",
+)
 PROCESSING_STATUSES = (
     "received",
     "processing",
@@ -764,6 +774,157 @@ class Activity(Base):
     )
 
 
+class Evidence(Base):
+    __tablename__ = "evidence"
+    __table_args__ = (
+        CheckConstraint(
+            _in_check("evidence_type", EVIDENCE_TYPES), name="ck_evidence_type"
+        ),
+        CheckConstraint(
+            "content_hash ~ '^[0-9a-f]{64}$'", name="ck_evidence_content_hash_sha256"
+        ),
+        CheckConstraint(
+            "uri IS NULL OR length(btrim(uri)) > 0", name="ck_evidence_uri_nonblank"
+        ),
+        CheckConstraint(
+            "excerpt_redacted IS NULL OR length(btrim(excerpt_redacted)) > 0",
+            name="ck_evidence_excerpt_nonblank",
+        ),
+        CheckConstraint(
+            "length(btrim(sensitivity)) > 0", name="ck_evidence_sensitivity_nonblank"
+        ),
+        CheckConstraint(
+            "retention_until IS NULL OR retention_until >= captured_at",
+            name="ck_evidence_retention_interval",
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_evidence_workspace_id"),
+        UniqueConstraint(
+            "workspace_id",
+            "source_identity_id",
+            "content_hash",
+            name="uq_evidence_workspace_source_hash",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_evidence_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "source_identity_id"],
+            ["source_identities.workspace_id", "source_identities.id"],
+            name="fk_evidence_workspace_source_identity",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_evidence_account_captured_at", "account_id", "captured_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    evidence_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_identity_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False
+    )
+    uri: Mapped[str | None] = mapped_column(Text)
+    excerpt_redacted: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    sensitivity: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'confidential'")
+    )
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ReviewCandidate(Base):
+    __tablename__ = "review_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "action_type IN ('send_promised_proposal', 'review_proposal_value')",
+            name="ck_review_candidates_action_type",
+        ),
+        CheckConstraint(
+            "state IN ('open', 'resolved', 'dismissed')",
+            name="ck_review_candidates_state",
+        ),
+        CheckConstraint(
+            "length(btrim(dedupe_key)) > 0",
+            name="ck_review_candidates_dedupe_key_nonblank",
+        ),
+        CheckConstraint(
+            "resolved_at IS NULL OR state <> 'open'",
+            name="ck_review_candidates_resolution_state",
+        ),
+        UniqueConstraint(
+            "workspace_id", "id", name="uq_review_candidates_workspace_id"
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_review_candidates_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "evidence_id"],
+            ["evidence.workspace_id", "evidence.id"],
+            name="fk_review_candidates_workspace_evidence",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "proposal_id"],
+            ["proposals.workspace_id", "proposals.id"],
+            name="fk_review_candidates_workspace_proposal",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "uq_review_candidates_open_dedupe",
+            "workspace_id",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("state = 'open'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    proposal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    evidence_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'open'")
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 PROPOSAL_STATUSES = (
     "draft",
     "promised",
@@ -871,6 +1032,25 @@ class Proposal(Base):
         ),
         Index("ix_proposals_account_id", "account_id"),
         Index("ix_proposals_lead_id", "lead_id"),
+        Index(
+            "uq_proposals_workspace_thread",
+            "workspace_id",
+            "thread_source_identity_id",
+            unique=True,
+            postgresql_where=text("thread_source_identity_id IS NOT NULL"),
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "thread_source_identity_id"],
+            ["source_identities.workspace_id", "source_identities.id"],
+            name="fk_proposals_workspace_thread_identity",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "sent_evidence_id"],
+            ["evidence.workspace_id", "evidence.id"],
+            name="fk_proposals_workspace_sent_evidence",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -883,6 +1063,7 @@ class Proposal(Base):
     )
     account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    thread_source_identity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     proposal_number: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -1004,7 +1185,7 @@ class ProposalVersion(Base):
         String(16), nullable=False, server_default=text("'unknown'")
     )
     source_document_evidence_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True)
+        PGUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="RESTRICT")
     )
     extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
     confirmed_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
@@ -1113,3 +1294,5 @@ def _reject_activity_mutation(*_args: object, **_kwargs: object) -> None:
 
 event.listen(Activity, "before_update", _reject_activity_mutation)
 event.listen(Activity, "before_delete", _reject_activity_mutation)
+event.listen(Evidence, "before_update", _reject_activity_mutation)
+event.listen(Evidence, "before_delete", _reject_activity_mutation)

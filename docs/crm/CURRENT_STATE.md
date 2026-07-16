@@ -245,3 +245,43 @@ Ruff e format nos ficheiros alterados, compileall e git diff --check: passed
 O skip é condicional e preexistente. Os quatro warnings continuam a ser as depreciações preexistentes de `TemplateResponse` nas rotas legadas. Uma verificação Ruff global também continua a encontrar dívida preexistente fora dos ficheiros alterados; nenhum desses ficheiros fora de escopo foi reformatado ou corrigido.
 
 Não houve deploy, push, envio de email, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 12–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 12
+
+### Evidência e discovery/review de propostas concluídos localmente
+
+A Tarefa 12 acrescenta evidência canónica append-only e discovery determinístico de propostas:
+
+- `evidence` guarda proveniência tenant-safe, hash de conteúdo, metadados minimizados, sensibilidade e retenção, sem payload bruto;
+- `review_candidates` representa ações abertas para proposta prometida ainda não enviada e valores ambíguos, com dedupe por workspace;
+- os UUIDs de evidência não canónica anteriores a `0004` deixam de sustentar falsos estados `verified`/`confirmed`; observações monetárias permanecem candidatas e envios anteriores permanecem `legacy_unverified`;
+- email outbound classificado explicitamente como promessa cria ação de review, não proposta enviada;
+- anexo enviado cria proposta/versão candidata com evidência de mensagem e documento;
+- valor ambíguo permanece `NULL` e abre review;
+- novo anexo no mesmo thread cria uma nova versão, mantendo a anterior;
+- follow-up não cria proposta nem versão;
+- replay do mesmo artefacto não duplica evidência, proposta, versão ou review aberto;
+- decisões usam apenas factos/classificações determinísticas fornecidos pelo connector; nenhum LLM decide envio, valor ou associação;
+- serviços não fazem commit: transações continuam pertencendo ao chamador.
+
+A migration `0004` acrescenta FKs de proveniência, isolamento por workspace/account, unicidade parcial por thread e review aberto, trigger append-only de evidência e validação tenant-safe da evidência documental.
+
+### Evidência de execução da Tarefa 12
+
+Em PostgreSQL 16 descartável local, sem dados ou credenciais reais:
+
+```text
+RED observado: collection falhou por ausência do modelo Evidence
+Task 12 unit focused: 4 passed
+Task 12 persistence focused: 3 passed
+Focused proposal/evidence regression: 43 passed
+CRM/API/security/unit/migration/persistence regression: 753 passed, 1 skipped
+Alembic lifecycle: base -> 0001 -> 0002 -> 0003 -> 0004; downgrade até base;
+re-upgrade até 0004; downgrade 0004 -> 0003; re-upgrade até 0004
+Alembic check: No new upgrade operations detected
+Ruff, format, compileall e git diff --check: passed
+```
+
+O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, envio de mensagens, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 13–19 continuam pendentes.

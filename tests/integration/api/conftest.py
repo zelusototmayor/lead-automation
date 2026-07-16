@@ -19,11 +19,13 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    Evidence,
     Lead,
     Proposal,
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
+    SourceIdentity,
     Workspace,
 )
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
@@ -209,6 +211,8 @@ def proposal_api_fixture():
     foreign_id = uuid4()
     sent_evidence_id = uuid4()
     document_evidence_id = uuid4()
+    won_evidence_id = uuid4()
+    lost_evidence_id = uuid4()
     confirmer_id = uuid4()
     now = datetime.now(UTC)
 
@@ -245,6 +249,36 @@ def proposal_api_fixture():
             highest_stage_rank=70,
         )
         session.add_all([account, foreign_account])
+        session.flush()
+
+        evidence_rows = []
+        for label, evidence_id, evidence_type in (
+            ("sent", sent_evidence_id, "email_message"),
+            ("document", document_evidence_id, "attachment"),
+            ("won", won_evidence_id, "manual_confirmation"),
+            ("lost", lost_evidence_id, "manual_confirmation"),
+        ):
+            source = SourceIdentity(
+                workspace_id=workspace_id,
+                source_system="manual",
+                entity_kind="document" if label != "sent" else "message",
+                source_scope="api-fixture",
+                external_id=f"{label}:{workspace_id}",
+            )
+            session.add(source)
+            session.flush()
+            evidence_rows.append(
+                Evidence(
+                    id=evidence_id,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    source_identity_id=source.id,
+                    evidence_type=evidence_type,
+                    content_hash=(label.encode().hex() * 64)[:64],
+                    captured_at=now,
+                )
+            )
+        session.add_all(evidence_rows)
         session.flush()
 
         confirmed = Proposal(
@@ -339,7 +373,7 @@ def proposal_api_fixture():
             status="accepted",
             one_off_amount=Decimal("500.00"),
             arr_amount=Decimal("1200.00"),
-            source_document_evidence_id=uuid4(),
+            source_document_evidence_id=won_evidence_id,
             confirmed_by=confirmer_id,
             confirmed_at=now - timedelta(days=2),
         )
@@ -349,7 +383,7 @@ def proposal_api_fixture():
             status="sent",
             sent_at=lost.sent_at,
             one_off_amount=Decimal("250.00"),
-            source_document_evidence_id=uuid4(),
+            source_document_evidence_id=lost_evidence_id,
             confirmed_by=confirmer_id,
             confirmed_at=now - timedelta(days=3),
         )

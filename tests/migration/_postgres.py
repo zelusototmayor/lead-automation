@@ -13,12 +13,14 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    Evidence,
     IngestEvent,
     Lead,
     Proposal,
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
+    ReviewCandidate,
     SourceIdentity,
     SyncCheckpoint,
     Workspace,
@@ -57,6 +59,9 @@ def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
             ProposalVersion.proposal_id.in_(proposal_ids)
         )
         session.execute(
+            delete(ReviewCandidate).where(ReviewCandidate.workspace_id == workspace_id)
+        )
+        session.execute(
             delete(ProposalFollowup).where(
                 ProposalFollowup.proposal_id.in_(proposal_ids)
             )
@@ -70,6 +75,7 @@ def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
             delete(ProposalVersion).where(ProposalVersion.proposal_id.in_(proposal_ids))
         )
         session.execute(delete(Proposal).where(Proposal.workspace_id == workspace_id))
+        session.execute(delete(Evidence).where(Evidence.workspace_id == workspace_id))
         session.execute(delete(Activity).where(Activity.workspace_id == workspace_id))
         session.execute(text("SET LOCAL session_replication_role = origin"))
         for model in (

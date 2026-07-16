@@ -22,11 +22,13 @@ from src.crm.persistence.repositories import (
     AccountRepository,
     ActivityRepository,
     ContactRepository,
+    EvidenceRepository,
     IngestEventRepository,
     LeadRepository,
     ProposalItemRepository,
     ProposalRepository,
     ProposalVersionRepository,
+    ReviewCandidateRepository,
     SourceIdentityRepository,
 )
 
@@ -49,6 +51,8 @@ class SqlAlchemyUnitOfWork:
         self.proposals = ProposalRepository(self.session)
         self.proposal_versions = ProposalVersionRepository(self.session)
         self.proposal_items = ProposalItemRepository(self.session)
+        self.evidence = EvidenceRepository(self.session)
+        self.review_candidates = ReviewCandidateRepository(self.session)
         self.source_identities = SourceIdentityRepository(self.session)
         self.ingest_events = IngestEventRepository(self.session)
         return self

@@ -12,11 +12,13 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    Evidence,
     IngestEvent,
     Lead,
     Proposal,
     ProposalItem,
     ProposalVersion,
+    ReviewCandidate,
     SourceIdentity,
 )
 
@@ -129,6 +131,21 @@ class ProposalRepository(Repository[Proposal]):
         )
         return list(self.session.execute(statement).all())
 
+    def by_thread(
+        self,
+        workspace_id: UUID,
+        thread_source_identity_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Proposal | None:
+        statement = select(Proposal).where(
+            Proposal.workspace_id == workspace_id,
+            Proposal.thread_source_identity_id == thread_source_identity_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
 
 class ProposalVersionRepository(Repository[ProposalVersion]):
     def __init__(self, session: Session):
@@ -173,6 +190,38 @@ class ProposalItemRepository(Repository[ProposalItem]):
 class SourceIdentityRepository(Repository[SourceIdentity]):
     def __init__(self, session: Session):
         super().__init__(session, SourceIdentity)
+
+
+class EvidenceRepository(Repository[Evidence]):
+    def __init__(self, session: Session):
+        super().__init__(session, Evidence)
+
+    def by_source(
+        self, workspace_id: UUID, source_identity_id: UUID, content_hash: str
+    ) -> Evidence | None:
+        return self.session.scalar(
+            select(Evidence).where(
+                Evidence.workspace_id == workspace_id,
+                Evidence.source_identity_id == source_identity_id,
+                Evidence.content_hash == content_hash,
+            )
+        )
+
+
+class ReviewCandidateRepository(Repository[ReviewCandidate]):
+    def __init__(self, session: Session):
+        super().__init__(session, ReviewCandidate)
+
+    def open_by_key(
+        self, workspace_id: UUID, dedupe_key: str
+    ) -> ReviewCandidate | None:
+        return self.session.scalar(
+            select(ReviewCandidate).where(
+                ReviewCandidate.workspace_id == workspace_id,
+                ReviewCandidate.dedupe_key == dedupe_key,
+                ReviewCandidate.state == "open",
+            )
+        )
 
 
 class IngestEventRepository(Repository[IngestEvent]):
