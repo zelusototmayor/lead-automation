@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.crm.pt_logistics_sheet import PTLogisticsCRM
 from dashboard.app.routers.accounts import router as accounts_router
 from dashboard.app.routers.proposals import router as proposals_router
+from dashboard.app.routers.intelligence import router as intelligence_router
 from dashboard.app.security import require_write_access
 
 SPREADSHEET_ID = os.getenv(
@@ -87,7 +88,7 @@ async def add_security_headers(request: Request, call_next):
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     )
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
-    if request.url.path.startswith(("/api/", "/contas", "/propostas")):
+    if request.url.path.startswith(("/api/", "/contas", "/propostas", "/inteligencia")):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -101,6 +102,7 @@ if static_dir.exists():
 
 app.include_router(accounts_router)
 app.include_router(proposals_router)
+app.include_router(intelligence_router)
 
 
 @app.get("/up")

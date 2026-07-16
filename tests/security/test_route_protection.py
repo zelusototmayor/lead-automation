@@ -254,6 +254,7 @@ def test_public_dashboard_reload_is_get_only_for_manual_and_hourly_refresh():
     assert "await this.loadStats()" in response.text
     assert "await this.loadHistory()" in response.text
     assert "await this.loadItems()" in response.text
-    assert "await this.loadCRMIntelligence()" in response.text
+    assert "loadCRMIntelligence" not in response.text
+    assert "fetch('/api/recommendations')" not in response.text
     assert "fetch('/api/refresh', { method: 'POST' })" not in response.text
     assert '@click="refresh()"' not in response.text

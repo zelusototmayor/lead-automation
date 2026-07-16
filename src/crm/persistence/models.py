@@ -925,6 +925,108 @@ class ReviewCandidate(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+RECOMMENDATION_RULE_CODES = (
+    "held_meeting_without_notes",
+    "promised_proposal_not_sent",
+    "proposal_missing_next_action",
+    "proposal_stale",
+    "inbound_awaiting_response",
+    "meeting_without_calendar_event",
+    "contradictory_value_status_sources",
+    "matching_review_candidate",
+    "value_review_candidate",
+)
+RECOMMENDATION_PRIORITIES = ("critical", "high", "medium", "low")
+RECOMMENDATION_STATES = ("open", "resolved", "dismissed")
+
+
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+    __table_args__ = (
+        CheckConstraint(
+            _in_check("rule_code", RECOMMENDATION_RULE_CODES),
+            name="ck_recommendations_rule_code",
+        ),
+        CheckConstraint(
+            _in_check("priority", RECOMMENDATION_PRIORITIES),
+            name="ck_recommendations_priority",
+        ),
+        CheckConstraint(
+            _in_check("state", RECOMMENDATION_STATES),
+            name="ck_recommendations_state",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(evidence) = 'array' AND jsonb_array_length(evidence) > 0",
+            name="ck_recommendations_evidence_nonempty",
+        ),
+        CheckConstraint(
+            "length(btrim(dedupe_key)) > 0",
+            name="ck_recommendations_dedupe_key_nonblank",
+        ),
+        CheckConstraint(
+            "resolved_at IS NULL OR state <> 'open'",
+            name="ck_recommendations_resolution_state",
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_recommendations_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_recommendations_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "proposal_id"],
+            ["proposals.workspace_id", "proposals.id"],
+            name="fk_recommendations_workspace_proposal",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "uq_recommendations_open_dedupe",
+            "workspace_id",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("state = 'open'"),
+        ),
+        Index(
+            "ix_recommendations_workspace_priority_created",
+            "workspace_id",
+            "priority",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    proposal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    rule_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[list[str]] = mapped_column("evidence", JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'open'")
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 PROPOSAL_STATUSES = (
     "draft",
     "promised",

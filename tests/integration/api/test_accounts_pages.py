@@ -27,7 +27,7 @@ def test_accounts_index_page_has_loading_empty_error_and_mobile_contract(
     assert 'data-state="error"' in response.text
     assert "/static/accounts.js" in response.text
     assert 'href="/propostas"' in response.text
-    assert "Inteligência" not in response.text
+    assert 'href="/inteligencia"' in response.text
 
 
 def test_account_detail_page_is_separate_and_does_not_embed_rich_data(

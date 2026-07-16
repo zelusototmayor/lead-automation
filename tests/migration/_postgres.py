@@ -20,6 +20,7 @@ from src.crm.persistence.models import (
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
+    Recommendation,
     ReviewCandidate,
     SourceIdentity,
     SyncCheckpoint,
@@ -54,6 +55,9 @@ def require_disposable_postgres() -> str:
 def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
     with Session(engine) as session, session.begin():
         session.execute(text("SET LOCAL session_replication_role = replica"))
+        session.execute(
+            delete(Recommendation).where(Recommendation.workspace_id == workspace_id)
+        )
         proposal_ids = select(Proposal.id).where(Proposal.workspace_id == workspace_id)
         version_ids = select(ProposalVersion.id).where(
             ProposalVersion.proposal_id.in_(proposal_ids)

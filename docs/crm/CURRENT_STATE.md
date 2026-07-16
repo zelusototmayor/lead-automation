@@ -285,3 +285,34 @@ Ruff, format, compileall e git diff --check: passed
 ```
 
 O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, envio de mensagens, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 13–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 13
+
+### Workspace separado de Inteligência concluído localmente
+
+A Tarefa 13 acrescenta recomendações determinísticas, persistidas e separadas de Propostas:
+
+- `GET /api/v1/intelligence/recommendations`, detalhe por ID e `GET /inteligencia` são protegidos pelo principal confiável do servidor e isolados por workspace;
+- cada recomendação contém `rule_code`, prioridade, referências allowlisted de evidência, estado e chave determinística, com uma única recomendação aberta por workspace/chave;
+- a migration `0005` impõe códigos, prioridades, estados, evidência não vazia, resolução coerente, FKs tenant-safe e unicidade parcial de recomendações abertas;
+- o serviço materializa regras sem LLM e sem commit implícito para reunião realizada sem notas, proposta prometida não enviada, proposta sem próxima ação, proposta parada há 14 dias, inbound aguardando resposta, reunião sem evento de Calendar, fontes de valor/estado contraditórias e candidatos de revisão de matching/valor quando representáveis pelos factos canónicos existentes;
+- recomendações deixam de ser carregadas ou apresentadas dentro da área legada de Propostas; a navegação encaminha para o workspace independente de Inteligência;
+- API e UI expõem apenas nomes de conta e referências opacas allowlisted, nunca payloads, notas, endereços ou conteúdo bruto; IDOR cross-workspace devolve `404` e falhas da UI são genéricas.
+
+### Evidência de execução da Tarefa 13
+
+Em PostgreSQL 16 descartável local, sem dados ou credenciais reais:
+
+```text
+RED observado: collection falhou por ausência de src.crm.services.intelligence_service
+Task 13 focused: 70 passed
+CRM/API/security/unit/migration/persistence regression: 764 passed, 1 skipped
+Alembic lifecycle: base -> 0001 -> 0002 -> 0003 -> 0004 -> 0005; downgrade até 0001;
+re-upgrade até 0005; downgrade 0005 -> 0004; re-upgrade até 0005
+Alembic check: No new upgrade operations detected
+Ruff, format dos ficheiros de implementação da Tarefa 13, compileall e git diff --check: passed
+```
+
+O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, envio de mensagens, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 14–19 continuam pendentes.

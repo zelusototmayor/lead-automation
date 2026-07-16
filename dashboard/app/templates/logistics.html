@@ -125,12 +125,6 @@
   .insight-row strong { display: block; font-size: 13px; }
   .insight-row span { color: var(--muted); font-size: 12px; }
   .crm-intelligence { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
-  .recommendation-row { padding: 10px 12px; border-top: 1px solid rgba(221,211,196,.65); }
-  .recommendation-row:first-child { border-top: 0; }
-  .recommendation-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
-  .recommendation-head strong { font-size: 13px; }
-  .recommendation-reason { margin-top: 3px; color: var(--muted); font-size: 12px; }
-  .recommendation-meta { margin-top: 5px; color: var(--faint); font-size: 11px; font-weight: 700; }
   .bar-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) 44px; gap: 8px; align-items: center; padding: 8px 0; color: var(--muted); font-size: 12px; }
   .bar-track { height: 10px; border-radius: 999px; background: #e5ded2; overflow: hidden; }
   .bar-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
@@ -887,9 +881,6 @@ function logisticsDashboard() {
     chartOpen: true,
     history: { days: [], totals: {} },
     stageTiming: { stage_transitions: {}, proposal_transitions: {}, transition_timing: {} },
-    portfolio: { counts: {}, value: {}, weighted_forecast: 0, followups_due: 0, average_open_duration_days: 0 },
-    recommendations: [],
-    intelligenceLoading: false,
     historySeries: [
       { key: 'leads_impacted', label: 'Full impacted', color: '#d97706' },
       { key: 'new_leads_impacted', label: 'New impacted', color: '#16a34a' },
@@ -1062,30 +1053,6 @@ function logisticsDashboard() {
 
     async loadAnalytics() {
       await Promise.all([this.loadHistory(), this.loadStageTiming()]);
-    },
-
-    async loadCRMIntelligence() {
-      this.intelligenceLoading = true;
-      try {
-        const [portfolioResponse, recommendationsResponse] = await Promise.all([
-          fetch('/api/portfolio'),
-          fetch('/api/recommendations'),
-        ]);
-        const [portfolio, recommendationData] = await Promise.all([
-          portfolioResponse.json(),
-          recommendationsResponse.json(),
-        ]);
-        if (!portfolioResponse.ok) throw new Error(portfolio.error || 'Failed to load portfolio');
-        if (!recommendationsResponse.ok) throw new Error(recommendationData.error || 'Failed to load recommendations');
-        this.portfolio = portfolio;
-        this.recommendations = recommendationData.recommendations || [];
-      } catch (err) {
-        notify('Failed to load CRM intelligence: ' + err.message, 'err');
-        this.portfolio = { counts: {}, value: {}, weighted_forecast: 0, followups_due: 0, average_open_duration_days: 0 };
-        this.recommendations = [];
-      } finally {
-        this.intelligenceLoading = false;
-      }
     },
 
     async loadItems() {
@@ -1450,7 +1417,6 @@ function logisticsDashboard() {
         await this.loadStats();
         await this.loadHistory();
         await this.loadItems();
-        if (this.activeSpace === 'proposals') await this.loadCRMIntelligence();
         this.lastRefreshedAt = this.nowLabel();
         if (!silent) notify('View reloaded');
       } catch (err) {
