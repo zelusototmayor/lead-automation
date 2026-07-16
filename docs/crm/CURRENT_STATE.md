@@ -189,3 +189,23 @@ Ruff e format nos ficheiros alterados, compileall e git diff --check: passed
 ```
 
 Os quatro warnings continuam a ser as depreciações preexistentes de `TemplateResponse` nas rotas legadas. Não houve deploy, mutação de sistemas live, push, merge ou migração de produção. A migração de propostas legadas permanece para a Tarefa 10.
+
+---
+
+## Estado da implementação até à Tarefa 10
+
+### Backfill seguro de propostas legadas concluído localmente
+
+A Tarefa 10 acrescenta um importador dry-run por omissão que consome snapshots locais imutáveis e associa propostas às contas/leads já importados pela identidade estável da Sheet. Valor vazio permanece `missing`; valor estritamente parseável fica `candidate`, nunca confirmado. Envios ficam `legacy_unverified`, sem evidência inventada, e `Won` permanece `won` em vez de ser convertido em `Meeting Booked`.
+
+O apply exige URL PostgreSQL e workspace UUID explícitos, rejeita campos inválidos para revisão, reporta contas sem correspondência e usa ledger/identidade de origem para replay idempotente. O CLI redige falhas e não consulta Sheets.
+
+Evidência local em PostgreSQL 16 descartável, sem dados ou credenciais reais:
+
+```text
+Task 10 focused: 4 passed
+Migration aplicada até 0003 antes do teste de persistência
+Replay idêntico: 0 novos registos, 2 no-op
+```
+
+Nenhum sistema live foi consultado ou alterado. As Tarefas 11–19 continuam pendentes.
