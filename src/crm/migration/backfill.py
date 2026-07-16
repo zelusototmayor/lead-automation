@@ -173,9 +173,14 @@ def _identity(
     if identity is None:
         raise RuntimeError("identity claim failed")
     identity.metadata_json = {"last_locator": locator}
-    # Keep both ends of the seen interval on the PostgreSQL clock. The client
-    # and disposable Docker VM clocks can differ by milliseconds.
-    identity.last_seen_at = func.now()
+    # A concurrent transaction may have inserted this row after our transaction
+    # started. PostgreSQL's now() is fixed at transaction start, so it can be
+    # older than the winner's first_seen_at. Use the wall clock and preserve the
+    # persisted lower bound to keep the seen interval valid under that race.
+    identity.last_seen_at = func.greatest(
+        identity.first_seen_at,
+        func.clock_timestamp(),
+    )
     return identity
 
 
