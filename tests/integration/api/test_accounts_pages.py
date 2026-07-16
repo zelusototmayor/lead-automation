@@ -26,7 +26,7 @@ def test_accounts_index_page_has_loading_empty_error_and_mobile_contract(
     assert 'data-state="empty"' in response.text
     assert 'data-state="error"' in response.text
     assert "/static/accounts.js" in response.text
-    assert "Propostas" not in response.text
+    assert 'href="/propostas"' in response.text
     assert "Inteligência" not in response.text
 
 

@@ -4,7 +4,7 @@ import os
 from uuid import UUID
 
 import pytest
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import Session
@@ -15,6 +15,10 @@ from src.crm.persistence.models import (
     Contact,
     IngestEvent,
     Lead,
+    Proposal,
+    ProposalFollowup,
+    ProposalItem,
+    ProposalVersion,
     SourceIdentity,
     SyncCheckpoint,
     Workspace,
@@ -48,6 +52,24 @@ def require_disposable_postgres() -> str:
 def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
     with Session(engine) as session, session.begin():
         session.execute(text("SET LOCAL session_replication_role = replica"))
+        proposal_ids = select(Proposal.id).where(Proposal.workspace_id == workspace_id)
+        version_ids = select(ProposalVersion.id).where(
+            ProposalVersion.proposal_id.in_(proposal_ids)
+        )
+        session.execute(
+            delete(ProposalFollowup).where(
+                ProposalFollowup.proposal_id.in_(proposal_ids)
+            )
+        )
+        session.execute(
+            delete(ProposalItem).where(
+                ProposalItem.proposal_version_id.in_(version_ids)
+            )
+        )
+        session.execute(
+            delete(ProposalVersion).where(ProposalVersion.proposal_id.in_(proposal_ids))
+        )
+        session.execute(delete(Proposal).where(Proposal.workspace_id == workspace_id))
         session.execute(delete(Activity).where(Activity.workspace_id == workspace_id))
         session.execute(text("SET LOCAL session_replication_role = origin"))
         for model in (

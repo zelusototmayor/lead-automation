@@ -209,3 +209,39 @@ Replay idêntico: 0 novos registos, 2 no-op
 ```
 
 Nenhum sistema live foi consultado ou alterado. As Tarefas 11–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 11
+
+### Área independente de Propostas concluída localmente
+
+A Tarefa 11 acrescenta páginas e APIs protegidas para consultar o portefólio relacional:
+
+- `GET /api/v1/proposals`, `GET /api/v1/proposals/{proposal_id}` e `GET /api/v1/proposals/portfolio`;
+- `GET /propostas` e `GET /propostas/{proposal_id}`;
+- paginação e filtros validados por estado, conta, owner, moeda, idade de envio verificado, próxima ação, forecast e vertical comercial;
+- totais de `one_off`, `mrr` e `arr` separados por moeda, com pipeline aberto, ponderado, ganho e perdido;
+- valores `missing`, `candidate`, `confirmed` e `rejected` contados separadamente; apenas valores confirmados entram nos totais;
+- ponderação apenas quando a probabilidade e a respetiva origem aprovada estão presentes;
+- idade apenas para envios `verified`, mantendo `legacy_unverified` explícito em vez de o apresentar como envio comprovado;
+- detalhe com versões, itens e referências allowlisted de evidência/follow-up, sem payloads, notas, contactos, emails ou identidade do confirmador;
+- queries de lista e detalhe com contagem constante, sem N+1, e IDOR cross-workspace tratado como `404`.
+
+O template legado deixou de incorporar os cards de portefólio/recomendações e encaminha a área antiga para `/propostas`. Propostas não contém recomendações; Inteligência continua reservada para a Tarefa 13.
+
+Todas as páginas e APIs novas usam exclusivamente o `CRMPrincipal` confiável do servidor para derivar a workspace e falham fechadas por omissão. Query string, headers e cookies não selecionam tenant; nenhum token é enviado ao browser e o resolver de produção continua deny-only.
+
+### Evidência de execução da Tarefa 11
+
+Em PostgreSQL 16 descartável local, migrado até `0003`, sem dados ou credenciais reais:
+
+```text
+Task 11 focused: 26 passed
+CRM/API/security/unit/migration/persistence regression: 746 passed, 1 skipped
+Ruff e format nos ficheiros alterados, compileall e git diff --check: passed
+```
+
+O skip é condicional e preexistente. Os quatro warnings continuam a ser as depreciações preexistentes de `TemplateResponse` nas rotas legadas. Uma verificação Ruff global também continua a encontrar dívida preexistente fora dos ficheiros alterados; nenhum desses ficheiros fora de escopo foi reformatado ou corrigido.
+
+Não houve deploy, push, envio de email, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 12–19 continuam pendentes.

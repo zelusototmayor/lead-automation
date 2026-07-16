@@ -304,33 +304,6 @@
         </button>
       </div>
 
-      <div class="crm-intelligence" x-show="activeSpace === 'proposals'" x-cloak data-testid="crm-intelligence">
-        <section class="panel" data-testid="portfolio-summary">
-          <div class="panel-head"><div><div class="panel-title">Portfolio intelligence</div><div class="panel-subtitle">Read-only value and forecast summary</div></div></div>
-          <div class="insight-list">
-            <div class="insight-row"><div><strong>Open pipeline</strong><span x-text="(portfolio.counts?.open || 0) + ' active proposals'"></span></div><strong x-text="formatMoney(portfolio.value?.open)"></strong></div>
-            <div class="insight-row"><div><strong>Weighted forecast</strong><span>Probability-adjusted value</span></div><strong x-text="formatMoney(portfolio.weighted_forecast)"></strong></div>
-            <div class="insight-row"><div><strong>Won value</strong><span x-text="(portfolio.counts?.won || 0) + ' won proposals'"></span></div><strong x-text="formatMoney(portfolio.value?.won)"></strong></div>
-            <div class="insight-row"><div><strong>Average open age</strong><span x-text="(portfolio.followups_due || 0) + ' follow-ups due'"></span></div><strong x-text="(portfolio.average_open_duration_days || 0) + 'd'"></strong></div>
-          </div>
-        </section>
-
-        <section class="panel" data-testid="crm-recommendations">
-          <div class="panel-head"><div><div class="panel-title">Recommended next actions</div><div class="panel-subtitle">Evidence-based prompts; no automatic writes</div></div></div>
-          <div class="empty" style="min-height:120px;" x-show="intelligenceLoading">Loading intelligence...</div>
-          <div class="empty" style="min-height:120px;" x-show="!intelligenceLoading && recommendations.length === 0">No recommendations right now</div>
-          <div x-show="!intelligenceLoading && recommendations.length > 0">
-            <template x-for="recommendation in recommendations.slice(0, 5)" :key="recommendation.lead_id + '-' + recommendation.action">
-              <div class="recommendation-row">
-                <div class="recommendation-head"><strong x-text="recommendation.company || 'Unknown account'"></strong><span class="badge" :class="recommendation.priority === 'high' ? 'badge-lost' : 'badge-call'" x-text="recommendation.priority"></span></div>
-                <div class="recommendation-reason"><strong x-text="recommendation.action"></strong> · <span x-text="recommendation.reason"></span></div>
-                <div class="recommendation-meta"><span x-show="recommendation.due_iso">Due <span x-text="recommendation.due_iso"></span></span><span x-show="recommendation.weighted_value"> · weighted <span x-text="formatMoney(recommendation.weighted_value)"></span></span></div>
-              </div>
-            </template>
-          </div>
-        </section>
-      </div>
-
       <div class="space-grid">
         <section class="panel queue-panel">
           <div class="panel-head">
@@ -964,6 +937,10 @@ function logisticsDashboard() {
     },
 
     async setSpace(space) {
+      if (space === 'proposals') {
+        window.location.assign('/propostas');
+        return;
+      }
       this.activeSpace = space;
       this.search = '';
       this.priorityFilter = '';
@@ -982,7 +959,6 @@ function logisticsDashboard() {
     async setMode(mode) {
       this.mode = mode;
       await this.loadItems();
-      if (this.activeSpace === 'proposals') await this.loadCRMIntelligence();
     },
 
     async showMetric(metric) {

@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
-from src.crm import pt_logistics_sheet as sheet_mod
 from src.crm.pt_logistics_sheet import FIELD_ALIASES, PTLogisticsCRM, PT_LOGISTICS_HEADERS
 
 
@@ -123,16 +122,15 @@ def test_crm_intelligence_apis_are_public(monkeypatch, path):
     assert "www-authenticate" not in response.headers
 
 
-def test_dashboard_wires_read_only_portfolio_and_recommendations(monkeypatch):
+def test_dashboard_routes_proposals_without_embedded_recommendations(monkeypatch):
     client = TestClient(dashboard_main.app)
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert 'data-testid="portfolio-summary"' in response.text
-    assert 'data-testid="crm-recommendations"' in response.text
-    assert "fetch('/api/portfolio')" in response.text
-    assert "fetch('/api/recommendations')" in response.text
+    assert "window.location.assign('/propostas')" in response.text
+    assert 'data-testid="portfolio-summary"' not in response.text
+    assert 'data-testid="crm-recommendations"' not in response.text
 
 
 def test_account_profile_after_meeting_booked_collects_context_and_timeline():

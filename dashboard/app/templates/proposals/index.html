@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Propostas · CRM{% endblock %}
+{% block extra_styles %}
+  .filters { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .filters label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+  .filters input, .filters select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .portfolio { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .portfolio-card, .proposal-card, .state { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .proposal-list { display: grid; gap: 10px; }
+  .proposal-card { display: grid; grid-template-columns: minmax(190px, 2fr) repeat(3, minmax(90px, 1fr)); gap: 12px; color: var(--ink); }
+  .proposal-card:hover { border-color: var(--accent); text-decoration: none; }
+  @media (max-width: 800px) { .filters { grid-template-columns: repeat(2, 1fr); } .proposal-card { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 520px) { .shell { padding: 18px 14px 36px; } .filters, .proposal-card { grid-template-columns: 1fr; } }
+{% endblock %}
+{% block content %}
+<section id="proposals-app" aria-live="polite">
+  <header class="topbar"><div><p class="eyebrow">CRM</p><h1>Propostas</h1><p class="subtle">Portefólio comercial por moeda e dimensão.</p></div></header>
+  <form class="filters" data-filters>
+    <label>Estado<select name="status"><option value="">Todos</option><option>draft</option><option>promised</option><option>sent</option><option>viewed</option><option>negotiation</option><option>won</option><option>lost</option><option>withdrawn</option><option>expired</option></select></label>
+    <label>Conta<input name="account_id" inputmode="text" placeholder="UUID da conta"></label>
+    <label>Owner<input name="owner_id" inputmode="text" placeholder="UUID do owner"></label>
+    <label>Moeda<input name="currency" maxlength="3" placeholder="EUR"></label>
+    <label>Idade mínima<input name="age_min_days" type="number" min="0"></label>
+    <label>Próxima ação<select name="next_action"><option value="">Todas</option><option value="present">Registada</option><option value="missing">Em falta</option><option value="due">Vencida</option></select></label>
+    <label>Forecast<input name="forecast_category" maxlength="64"></label>
+    <label>Vertical<input name="commercial_vertical" maxlength="255"></label>
+    <button class="btn btn-primary" type="submit">Filtrar</button>
+  </form>
+  <div class="portfolio" data-field="portfolio"></div>
+  <div class="state" data-state="loading">A carregar propostas…</div>
+  <div class="state hidden" data-state="empty">Ainda não existem propostas para estes filtros.</div>
+  <div class="state hidden" data-state="error">Não foi possível carregar o portefólio.</div>
+  <div class="proposal-list hidden" data-state="ready"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script defer src="/static/proposals.js"></script>{% endblock %}
