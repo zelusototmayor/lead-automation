@@ -10,7 +10,7 @@ import json
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -173,7 +173,9 @@ def _identity(
     if identity is None:
         raise RuntimeError("identity claim failed")
     identity.metadata_json = {"last_locator": locator}
-    identity.last_seen_at = datetime.now(UTC)
+    # Keep both ends of the seen interval on the PostgreSQL clock. The client
+    # and disposable Docker VM clocks can differ by milliseconds.
+    identity.last_seen_at = func.now()
     return identity
 
 
