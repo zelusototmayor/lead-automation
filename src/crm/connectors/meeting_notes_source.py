@@ -43,6 +43,11 @@ class MeetingNotesSource(_EnabledSource):
                         "meeting_external_id",
                         "classification",
                         "has_notes",
+                        "contact_email",
+                        "domain",
+                        "company_name",
+                        "sector",
+                        "commercial_vertical",
                     }
                 ),
             )

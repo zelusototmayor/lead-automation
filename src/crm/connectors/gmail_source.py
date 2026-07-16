@@ -58,6 +58,8 @@ class GmailSource(_EnabledSource):
                         "contact_email",
                         "domain",
                         "company_name",
+                        "sector",
+                        "commercial_vertical",
                     }
                 ),
             )

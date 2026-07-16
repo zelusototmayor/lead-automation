@@ -382,3 +382,35 @@ Ruff, format, compileall e git diff --check: passed
 ```
 
 O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, outbound, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 16–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 16
+
+### Conectores checkpointed e materialização source-first concluídos localmente
+
+A Tarefa 16 acrescenta conectores read-only, desativados por omissão e limitados por allowlist de scope, reconciliação transacional e um processor canónico:
+
+- Gmail recupera de cursor expirado por resync seguro; Calendar preserva revisão/reagendamento; notas de reunião fazem um retry transitório; Sheets continua estritamente read-only;
+- cada página persiste eventos e avança o checkpoint na mesma transação, serializada por connector/workspace/scope/stream;
+- eventos repetidos e fora de ordem são deduplicados sem recuar o high watermark;
+- o processor aplica evento, identidade, conta, contacto, lead, atividade, proposta/versão/evidência e estado do ledger numa única transação física;
+- crash antes do commit deixa zero agregados parciais e o evento retryable;
+- propostas Gmail e reuniões Calendar/Granola comerciais criam entidades sem qualquer linha de Sheet;
+- eventos pessoais/fornecedores explicitamente excluídos ficam `ignored`; matching exato ambíguo fica `review`, sem merge por nome;
+- sector e vertical comercial atravessam os três conectores comerciais para os agregados canónicos;
+- `scripts/crm_reconcile.py` e `scripts/crm_worker.py` são dry-run por omissão, falham fechados sem PostgreSQL configurado e nunca enviam mensagens nem publicam outbox.
+
+### Evidência de execução da Tarefa 16
+
+Em PostgreSQL 16 descartável local, sem dados ou credenciais reais:
+
+```text
+Task 16 focused: 19 passed
+CRM/API/security/unit/migration/persistence regression: 811 passed, 1 skipped, 4 warnings preexistentes
+Crash transacional: domínio ficou vazio, event permaneceu received/attempt_count=0 e retry aplicou com sucesso
+CLI reconcile apply #1: 1 inserted; apply #2: 0 inserted e 1 duplicate
+CLI worker apply #1: 1 processed; apply #2: 0 eligible e 0 processed
+```
+
+Nenhum connector real, Sheet, Gmail, Calendar, Granola, outbox publisher ou sistema live foi ativado. Não houve outbound, deploy, push, merge, migração de produção ou criação de sentinel. As Tarefas 17–19 continuam pendentes.

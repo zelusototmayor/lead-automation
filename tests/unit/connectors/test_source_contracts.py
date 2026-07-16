@@ -155,3 +155,65 @@ def test_meeting_notes_retries_one_transient_failure_and_returns_generic_failure
     with pytest.raises(RuntimeError, match="connector fetch failed") as exc:
         failing.fetch_page("granola:team", None)
     assert "secret" not in str(exc.value)
+
+
+def test_commercial_connectors_preserve_allowlisted_sector_identity_hints():
+    identity = {
+        "id": "source-1",
+        "occurred_at": NOW,
+        "classification": "confirmed",
+        "contact_email": "buyer@example.test",
+        "domain": "example.test",
+        "company_name": "Example",
+        "sector": "Industrial",
+        "commercial_vertical": "Manufacturing",
+    }
+    sources = (
+        GmailSource(
+            transport=FakeTransport(
+                pages=[
+                    {
+                        "items": [
+                            {
+                                **identity,
+                                "thread_id": "thread-1",
+                                "direction": "outbound",
+                            }
+                        ],
+                        "next_cursor": "gmail-next",
+                    }
+                ]
+            ),
+            enabled=True,
+            allowed_scopes={"mailbox:one"},
+        ),
+        CalendarSource(
+            transport=FakeTransport(
+                pages=[
+                    {
+                        "items": [{**identity, "updated": NOW.isoformat()}],
+                        "next_cursor": "calendar-next",
+                    }
+                ]
+            ),
+            enabled=True,
+            allowed_scopes={"mailbox:one"},
+        ),
+        MeetingNotesSource(
+            transport=FakeTransport(
+                pages=[
+                    {
+                        "items": [identity],
+                        "next_cursor": "notes-next",
+                    }
+                ]
+            ),
+            enabled=True,
+            allowed_scopes={"mailbox:one"},
+        ),
+    )
+
+    for source in sources:
+        facts = source.fetch_page("mailbox:one", None).events[0].envelope.facts
+        assert facts["sector"] == "Industrial"
+        assert facts["commercial_vertical"] == "Manufacturing"
