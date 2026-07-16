@@ -316,3 +316,33 @@ Ruff, format dos ficheiros de implementação da Tarefa 13, compileall e git dif
 ```
 
 O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, envio de mensagens, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 14–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 14
+
+### API idempotente e scoped de eventos de Agent concluída localmente
+
+A Tarefa 14 acrescenta exclusivamente `POST /api/v1/agent-events` como fronteira de ingestão server-to-server:
+
+- reutiliza exatamente o envelope estrito `schema_version: 1`, incluindo normalização de instantes equivalentes para UTC antes do hash;
+- responde `202` para um evento novo, `200` para replay idêntico com o mesmo `event_id` e estado e `duplicate: true`, e `409` quando a mesma chave representa payload normalizado diferente;
+- rejeita schema/chave inválidos com `422`, autenticação ausente, inválida, expirada ou fora da janela temporal com `401`, e permission/source scope incompatível com `403`;
+- usa um bearer de curta duração configurado apenas no servidor, ligado a uma workspace, permissão `agent-events:write` e source scopes explícitos;
+- exige timestamp fresco e `Idempotency-Key`, compara credenciais em tempo constante e não inclui segredos, payloads ou valores externos em logs ou erros;
+- limita o corpo antes de parsing/validação e devolve erros genéricos em todas as entradas de validação;
+- persiste apenas uma linha `received` no ledger/fila `ingest_events`; não cria entidades de domínio, não agenda outbound e não executa jobs;
+- mantém a transação no chamador HTTP; o repositório continua sem commit implícito e falhas fazem rollback.
+
+### Evidência de execução da Tarefa 14
+
+Em PostgreSQL 16 descartável local, migrado até `0005` (`head`), sem dados ou credenciais reais:
+
+```text
+RED observado: collection falhou por ausência de get_agent_settings
+Task 14 focused: 14 passed
+CRM/API/security/unit/migration/persistence regression: 778 passed, 1 skipped
+Ruff e format dos ficheiros alterados: passed
+```
+
+O skip e os quatro warnings de `TemplateResponse` são preexistentes. Não houve deploy, push, outbound, acesso ou mutação de sistemas live, nem criação de sentinel. As Tarefas 15–19 continuam pendentes.

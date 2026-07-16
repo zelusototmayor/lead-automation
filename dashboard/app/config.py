@@ -7,8 +7,12 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from urllib.parse import urlsplit
+from uuid import UUID
+
+from pydantic import SecretStr
 
 _LOCAL_ENVIRONMENTS = {"dev", "development", "test"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -21,6 +25,18 @@ class Settings:
     csrf_token: str | None
     allowed_write_origins: tuple[str, ...]
     environment: str
+
+
+@dataclass(frozen=True)
+class AgentSettings:
+    """One fail-closed server-side principal for the v1 agent ingress."""
+
+    bearer_token: SecretStr
+    workspace_id: UUID
+    scopes: frozenset[str]
+    source_scopes: frozenset[str]
+    token_issued_at: datetime
+    token_expires_at: datetime
 
 
 def _optional_secret(name: str) -> str | None:
@@ -52,12 +68,9 @@ def _validate_hostname(hostname: str | None, *, is_ip_literal: bool = False) -> 
         raise ValueError("invalid DNS hostname") from exc
 
     labels = ascii_hostname.split(".")
-    if (
-        len(ascii_hostname) > 253
-        or any(
-            not label or len(label) > 63 or not _DNS_LABEL.fullmatch(label)
-            for label in labels
-        )
+    if len(ascii_hostname) > 253 or any(
+        not label or len(label) > 63 or not _DNS_LABEL.fullmatch(label)
+        for label in labels
     ):
         raise ValueError("invalid DNS hostname")
 
@@ -76,7 +89,9 @@ def _parse_allowed_origins(raw: str, environment: str) -> tuple[str, ...]:
                 raise ValueError("whitespace or control character in origin")
             parsed = urlsplit(origin)
             parsed.port  # Force validation of malformed/non-numeric ports.
-            _validate_hostname(parsed.hostname, is_ip_literal=parsed.netloc.startswith("["))
+            _validate_hostname(
+                parsed.hostname, is_ip_literal=parsed.netloc.startswith("[")
+            )
         except ValueError as exc:
             raise ValueError(
                 "CRM_ALLOWED_WRITE_ORIGINS must contain bare HTTPS origins"
@@ -97,7 +112,9 @@ def _parse_allowed_origins(raw: str, environment: str) -> tuple[str, ...]:
             and parsed.password is None
         )
         if not is_bare_origin or not (is_https or is_local_dev):
-            raise ValueError("CRM_ALLOWED_WRITE_ORIGINS must contain bare HTTPS origins")
+            raise ValueError(
+                "CRM_ALLOWED_WRITE_ORIGINS must contain bare HTTPS origins"
+            )
         if origin not in origins:
             origins.append(origin)
     return tuple(origins)
@@ -114,4 +131,56 @@ def get_settings() -> Settings:
             os.getenv("CRM_ALLOWED_WRITE_ORIGINS", ""), environment
         ),
         environment=environment,
+    )
+
+
+def _required_agent_value(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise ValueError("invalid agent configuration")
+    return value.strip()
+
+
+def _agent_timestamp(name: str) -> datetime:
+    try:
+        value = datetime.fromisoformat(
+            _required_agent_value(name).replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        raise ValueError("invalid agent configuration") from None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("invalid agent configuration")
+    return value.astimezone(UTC)
+
+
+def _agent_set(name: str) -> frozenset[str]:
+    values = frozenset(item.strip() for item in _required_agent_value(name).split(","))
+    if "" in values or any(
+        len(item) > 255
+        or any(unicodedata.category(character) in {"Cc", "Cf"} for character in item)
+        for item in values
+    ):
+        raise ValueError("invalid agent configuration")
+    return values
+
+
+@lru_cache(maxsize=1)
+def get_agent_settings() -> AgentSettings:
+    """Load the scoped, short-lived agent principal without database I/O."""
+
+    try:
+        workspace_id = UUID(_required_agent_value("CRM_AGENT_WORKSPACE_ID"))
+    except (TypeError, ValueError):
+        raise ValueError("invalid agent configuration") from None
+    issued_at = _agent_timestamp("CRM_AGENT_TOKEN_ISSUED_AT")
+    expires_at = _agent_timestamp("CRM_AGENT_TOKEN_EXPIRES_AT")
+    if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=15):
+        raise ValueError("invalid agent configuration")
+    return AgentSettings(
+        bearer_token=SecretStr(_required_agent_value("CRM_AGENT_BEARER_TOKEN")),
+        workspace_id=workspace_id,
+        scopes=_agent_set("CRM_AGENT_SCOPES"),
+        source_scopes=_agent_set("CRM_AGENT_SOURCE_SCOPES"),
+        token_issued_at=issued_at,
+        token_expires_at=expires_at,
     )

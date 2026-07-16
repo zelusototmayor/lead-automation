@@ -35,6 +35,7 @@ class EventToPersist:
 class PersistedEventResult:
     event_id: UUID
     duplicate: bool
+    processing_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,10 +154,16 @@ def record_ingest_event(
     )
     inserted_id = session.execute(statement).scalar_one_or_none()
     if inserted_id is not None:
-        return PersistedEventResult(event_id=inserted_id, duplicate=False)
+        return PersistedEventResult(
+            event_id=inserted_id, duplicate=False, processing_status="received"
+        )
 
     existing = session.execute(
-        select(IngestEvent.id, IngestEvent.payload_hash).where(
+        select(
+            IngestEvent.id,
+            IngestEvent.payload_hash,
+            IngestEvent.processing_status,
+        ).where(
             IngestEvent.workspace_id == workspace_id,
             IngestEvent.source_system == envelope.source.system,
             IngestEvent.idempotency_key == idempotency_key,
@@ -166,7 +173,11 @@ def record_ingest_event(
         raise IdempotencyConflictError(
             "idempotency key already records a different event"
         )
-    return PersistedEventResult(event_id=existing.id, duplicate=True)
+    return PersistedEventResult(
+        event_id=existing.id,
+        duplicate=True,
+        processing_status=existing.processing_status,
+    )
 
 
 def persist_event_batch_and_advance_checkpoint(
