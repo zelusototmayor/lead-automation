@@ -1,0 +1,10 @@
+[
+  ["ID", "Company", "Contact Name", "Email", "Website", "Industry", "Status", "Source"],
+  ["lead-meeting", "Northwind Freight", "Alex Example", "alex@northwind.example", "https://northwind.example", "Logistics", "Meeting Booked", "Sheet fixture"],
+  ["lead-contacted", "Beta Transit", "Casey Example", "casey@beta.example", "https://beta.example", "Logistics", "Contacted", "Sheet fixture"],
+  ["duplicate-id", "Duplicate One", "", "", "https://dup-one.example", "Logistics", "Meeting Booked", "Sheet fixture"],
+  ["duplicate-id", "Duplicate Two", "", "", "https://dup-two.example", "Logistics", "Meeting Booked", "Sheet fixture"],
+  ["homonym-one", "Same Name", "One Example", "one@same-one.example", "https://same-one.example", "Logistics", "Meeting Booked", "Sheet fixture"],
+  ["homonym-two", "Same Name", "Two Example", "two@same-two.example", "https://same-two.example", "Logistics", "Meeting Booked", "Sheet fixture"],
+  ["unknown-stage", "Unknown Stage Co", "", "", "https://unknown.example", "Logistics", "Interested Maybe", "Sheet fixture"]
+]
