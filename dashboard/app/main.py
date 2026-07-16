@@ -21,6 +21,7 @@ from dashboard.app.routers.accounts import router as accounts_router
 from dashboard.app.routers.proposals import router as proposals_router
 from dashboard.app.routers.intelligence import router as intelligence_router
 from dashboard.app.routers.agent_events import router as agent_events_router
+from dashboard.app.routers.operations import router as operations_router
 from dashboard.app.security import require_write_access
 
 SPREADSHEET_ID = os.getenv(
@@ -89,7 +90,9 @@ async def add_security_headers(request: Request, call_next):
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     )
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
-    if request.url.path.startswith(("/api/", "/contas", "/propostas", "/inteligencia")):
+    if request.url.path.startswith(
+        ("/api/", "/contas", "/propostas", "/inteligencia", "/operacoes")
+    ):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -105,6 +108,7 @@ app.include_router(accounts_router)
 app.include_router(proposals_router)
 app.include_router(intelligence_router)
 app.include_router(agent_events_router)
+app.include_router(operations_router)
 
 
 @app.get("/up")

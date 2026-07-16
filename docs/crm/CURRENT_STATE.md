@@ -414,3 +414,34 @@ CLI worker apply #1: 1 processed; apply #2: 0 eligible e 0 processed
 ```
 
 Nenhum connector real, Sheet, Gmail, Calendar, Granola, outbox publisher ou sistema live foi ativado. Não houve outbound, deploy, push, merge, migração de produção ou criação de sentinel. As Tarefas 17–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 17
+
+### Observabilidade, restore de backup e runbooks concluídos localmente
+
+A Tarefa 17 acrescenta uma superfície operacional fail-closed e documentação de recuperação:
+
+- `GET /operacoes` e `GET /api/v1/operations/metrics` exigem um principal confiável com papel admin e usam exclusivamente a workspace desse principal;
+- as métricas agregadas cobrem reachability da base, lag de eventos/outbox, idade de checkpoint, dead letters, reviews de reconciliação, propostas sem valor e violações da invariante de conta;
+- páginas e API operacionais usam `Cache-Control: no-store` e não expõem payloads, scopes, identidades externas ou dados de outra workspace;
+- `scripts/crm_verify_backup.py` rejeita destinos remotos/não descartáveis, aceita apenas dumps custom-format e restaura para uma base aleatória num PostgreSQL 16 local;
+- o verifier confirma revisão Alembic, tabelas obrigatórias, órfãos e invariantes, removendo depois apenas a base que criou;
+- `RUNBOOK.md`, `MIGRATION.md`, `ROLLBACK.md` e `SECURITY.md` documentam pausa de workers/outbound, shadow migration, restore obrigatório, flags, rollback de reads/writes e blockers de exposição;
+- o limite declarado do container subiu de 256 MB/0.25 CPU para 512 MB/0.5 CPU; continua a exigir benchmark/soak antes de produção.
+
+### Evidência de execução da Tarefa 17
+
+Em PostgreSQL 16 descartável local, migrado até `0006`, sem dados ou credenciais reais:
+
+```text
+Task 17 focused: 10 passed
+CRM/API/security/unit/migration/persistence regression: 821 passed, 1 skipped, 4 warnings preexistentes
+Backup custom-format restaurado: schema=0006, 11 tabelas obrigatórias, 0 workspaces, 0 violações
+Base aleatória de restore e arquivo temporário removidos
+Alembic check: No new upgrade operations detected
+Ruff, format e git diff --check: passed
+```
+
+Esta evidência valida somente o caminho local. Não prova existência/restaurabilidade de backup de produção. Não houve deploy, acesso a dados reais, ativação de identidade, push, merge ou criação de sentinel. As Tarefas 18–19 continuam pendentes.

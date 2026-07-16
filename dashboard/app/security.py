@@ -19,6 +19,7 @@ class CRMPrincipal:
 
     workspace_id: UUID
     subject: str
+    is_admin: bool = False
 
 
 def _matches(provided: str | None, expected: str | None) -> bool:

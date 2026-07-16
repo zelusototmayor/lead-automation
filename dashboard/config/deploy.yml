@@ -9,8 +9,8 @@ servers:
     hosts:
       - 143.110.169.251
     options:
-      cpus: "0.25"
-      memory: "256m"
+      cpus: "0.5"
+      memory: "512m"
 
 proxy:
   ssl: true
