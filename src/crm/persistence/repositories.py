@@ -14,6 +14,9 @@ from src.crm.persistence.models import (
     Contact,
     IngestEvent,
     Lead,
+    Proposal,
+    ProposalItem,
+    ProposalVersion,
     SourceIdentity,
 )
 
@@ -103,6 +106,66 @@ class ActivityRepository(Repository[Activity]):
                 Activity.workspace_id == workspace_id,
                 Activity.ingest_event_id == ingest_event_id,
                 Activity.activity_type == activity_type,
+            )
+        )
+
+
+class ProposalRepository(Repository[Proposal]):
+    def __init__(self, session: Session):
+        super().__init__(session, Proposal)
+
+    def portfolio_rows(
+        self, workspace_id: UUID
+    ) -> list[tuple[Proposal, ProposalVersion | None]]:
+        statement = (
+            select(Proposal, ProposalVersion)
+            .join(
+                ProposalVersion,
+                (ProposalVersion.proposal_id == Proposal.id)
+                & (ProposalVersion.id == Proposal.selected_version_id),
+                isouter=True,
+            )
+            .where(Proposal.workspace_id == workspace_id)
+        )
+        return list(self.session.execute(statement).all())
+
+
+class ProposalVersionRepository(Repository[ProposalVersion]):
+    def __init__(self, session: Session):
+        super().__init__(session, ProposalVersion)
+
+    def for_proposal(self, proposal_id: UUID) -> list[ProposalVersion]:
+        return list(
+            self.session.scalars(
+                select(ProposalVersion)
+                .where(ProposalVersion.proposal_id == proposal_id)
+                .order_by(ProposalVersion.version_number)
+            )
+        )
+
+    def get_for_proposal(
+        self, proposal_id: UUID, version_id: UUID
+    ) -> ProposalVersion | None:
+        return self.session.scalar(
+            select(ProposalVersion).where(
+                ProposalVersion.proposal_id == proposal_id,
+                ProposalVersion.id == version_id,
+            )
+        )
+
+
+class ProposalItemRepository(Repository[ProposalItem]):
+    def __init__(self, session: Session):
+        super().__init__(session, ProposalItem)
+
+    def for_versions(self, version_ids: set[UUID]) -> list[ProposalItem]:
+        if not version_ids:
+            return []
+        return list(
+            self.session.scalars(
+                select(ProposalItem).where(
+                    ProposalItem.proposal_version_id.in_(version_ids)
+                )
             )
         )
 

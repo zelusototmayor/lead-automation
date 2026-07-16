@@ -146,3 +146,46 @@ Ruff, compileall e git diff --check: passed
 Os quatro warnings são as depreciações preexistentes de `TemplateResponse` nas rotas legadas. As páginas novas usam a assinatura atual e foram exercitadas por `TestClient` com fixtures realistas, incluindo loading, empty, error, paginação inválida e isolamento cross-workspace.
 
 Não houve deploy, alteração de Sheet, acesso a sistemas live ou ativação da autenticação de produção. As Tarefas 9–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 9
+
+### Portefólio relacional de Propostas concluído localmente
+
+A Tarefa 9 separa Propostas de Leads e preserva histórico e valores desconhecidos:
+
+- `proposals`, `proposal_versions`, `proposal_items` e `proposal_followups` são agregados relacionais distintos;
+- Account é obrigatória, Lead é opcional e ambas as ligações são tenant-safe;
+- versões são numeradas de forma monotónica sob row lock e nunca são sobrescritas;
+- a versão selecionada tem de pertencer à mesma Proposal;
+- versões substituídas permanecem no histórico como `superseded` e não duplicam o pipeline;
+- follow-ups só podem referenciar Activities da mesma workspace e Account;
+- valores monetários usam `Decimal`/`numeric(18,2)`, sem arredondamento silencioso ou overflow;
+- valor desconhecido permanece `NULL`; zero confirmado permanece `0.00`;
+- valores candidatos não entram nos totais até terem confirmação, identificador de evidência, autor e timestamp;
+- o estado `confirmed` é protegido no serviço e por constraint triggers PostgreSQL contra versões sem evidência/valor elegível;
+- o portefólio expõe contagens separadas de `missing`, `candidate` e `confirmed`, incluindo propostas sem versão selecionada;
+- todas as mutações de valor exigem `expected_version` e conflitos devolvem erro genérico;
+- totais mantêm `one_off`, `mrr` e `arr` separados e nunca somam moedas diferentes;
+- grupos de opções mutuamente exclusivas só incluem a opção selecionada;
+- o serviço não faz commit implícito: commit e rollback pertencem ao chamador/UoW.
+
+A migration `0003` adiciona checks, FKs, índices e triggers PostgreSQL para estados, evidência de envio, contexto tenant, valores não negativos, versões, opções exclusivas e follow-ups. Evidence IDs continuam UUID nullable sem FK até existir o modelo canónico da Tarefa 12.
+
+### Evidência de execução da Tarefa 9
+
+Em PostgreSQL 16 descartável, sem dados ou credenciais reais:
+
+```text
+unit + integration + security + migration + CRM evolution: 716 passed, 1 skipped, 4 warnings preexistentes
+Task 9 focused com PostgreSQL real: 112 passed
+Concorrência: de dois appends com o mesmo token, um persistiu e um teve conflito; o retry persistiu a versão 2
+Rollback/commit UoW: exercitados em PostgreSQL
+Alembic lifecycle: base -> 0001 -> 0002 -> 0003; downgrade até base e re-upgrade até 0003
+Alembic current: 0003 (head)
+Alembic check: No new upgrade operations detected
+Ruff e format nos ficheiros alterados, compileall e git diff --check: passed
+```
+
+Os quatro warnings continuam a ser as depreciações preexistentes de `TemplateResponse` nas rotas legadas. Não houve deploy, mutação de sistemas live, push, merge ou migração de produção. A migração de propostas legadas permanece para a Tarefa 10.

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
+    CHAR,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -759,6 +762,349 @@ class Activity(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+PROPOSAL_STATUSES = (
+    "draft",
+    "promised",
+    "sent",
+    "viewed",
+    "negotiation",
+    "won",
+    "lost",
+    "withdrawn",
+    "expired",
+)
+PROPOSAL_SENT_OR_LATER_STATUSES = (
+    "sent",
+    "viewed",
+    "negotiation",
+    "won",
+    "lost",
+    "withdrawn",
+    "expired",
+)
+PROPOSAL_VERSION_STATUSES = ("draft", "sent", "superseded", "accepted", "rejected")
+
+
+class Proposal(Base):
+    __tablename__ = "proposals"
+    __table_args__ = (
+        CheckConstraint(
+            _in_check("status", PROPOSAL_STATUSES), name="ck_proposals_status"
+        ),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_proposals_currency_iso"),
+        CheckConstraint(
+            "probability IS NULL OR probability BETWEEN 0 AND 100",
+            name="ck_proposals_probability",
+        ),
+        CheckConstraint(
+            "value_state IN ('missing', 'candidate', 'confirmed', 'rejected')",
+            name="ck_proposals_value_state",
+        ),
+        CheckConstraint(
+            "sent_verification_state IS NULL OR "
+            "sent_verification_state IN ('verified', 'legacy_unverified')",
+            name="ck_proposals_sent_verification_state",
+        ),
+        CheckConstraint(
+            f"(status IN ({', '.join(repr(value) for value in PROPOSAL_SENT_OR_LATER_STATUSES)}) "
+            "AND sent_at IS NOT NULL AND sent_verification_state IS NOT NULL AND "
+            "((sent_verification_state = 'verified' AND sent_evidence_id IS NOT NULL) OR "
+            "sent_verification_state = 'legacy_unverified')) "
+            f"OR (status NOT IN ({', '.join(repr(value) for value in PROPOSAL_SENT_OR_LATER_STATUSES)}) "
+            "AND sent_at IS NULL AND sent_evidence_id IS NULL "
+            "AND sent_verification_state IS NULL)",
+            name="ck_proposals_sent_evidence",
+        ),
+        CheckConstraint("length(btrim(title)) > 0", name="ck_proposals_title_nonblank"),
+        CheckConstraint(
+            "proposal_number IS NULL OR length(btrim(proposal_number)) > 0",
+            name="ck_proposals_number_nonblank",
+        ),
+        CheckConstraint(
+            "probability_source IS NULL OR length(btrim(probability_source)) > 0",
+            name="ck_proposals_probability_source_nonblank",
+        ),
+        CheckConstraint(
+            "forecast_category IS NULL OR length(btrim(forecast_category)) > 0",
+            name="ck_proposals_forecast_category_nonblank",
+        ),
+        CheckConstraint(
+            "next_action IS NULL OR length(btrim(next_action)) > 0",
+            name="ck_proposals_next_action_nonblank",
+        ),
+        CheckConstraint(
+            "next_action_due_at IS NULL OR next_action IS NOT NULL",
+            name="ck_proposals_next_action_due_requires_action",
+        ),
+        CheckConstraint(
+            "lost_reason IS NULL OR length(btrim(lost_reason)) > 0",
+            name="ck_proposals_lost_reason_nonblank",
+        ),
+        CheckConstraint(
+            "(status = 'won' AND won_at IS NOT NULL AND lost_at IS NULL AND lost_reason IS NULL) "
+            "OR (status = 'lost' AND won_at IS NULL AND lost_at IS NOT NULL AND lost_reason IS NOT NULL) "
+            "OR (status NOT IN ('won', 'lost') AND won_at IS NULL AND lost_at IS NULL AND lost_reason IS NULL)",
+            name="ck_proposals_close_state",
+        ),
+        CheckConstraint("version > 0", name="ck_proposals_version_positive"),
+        UniqueConstraint("workspace_id", "id", name="uq_proposals_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_proposals_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "lead_id"],
+            ["leads.workspace_id", "leads.account_id", "leads.id"],
+            name="fk_proposals_workspace_account_lead",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["id", "selected_version_id"],
+            ["proposal_versions.proposal_id", "proposal_versions.id"],
+            name="fk_proposals_selected_version",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        Index("ix_proposals_account_id", "account_id"),
+        Index("ix_proposals_lead_id", "lead_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    proposal_number: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'draft'")
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_evidence_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    sent_verification_state: Mapped[str | None] = mapped_column(String(32))
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    probability: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    probability_source: Mapped[str | None] = mapped_column(String(64))
+    forecast_category: Mapped[str | None] = mapped_column(String(64))
+    next_action: Mapped[str | None] = mapped_column(Text)
+    next_action_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    owner_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    won_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lost_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lost_reason: Mapped[str | None] = mapped_column(Text)
+    selected_version_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    value_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'missing'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    __mapper_args__ = {"version_id_col": version}
+
+
+class ProposalVersion(Base):
+    __tablename__ = "proposal_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "version_number > 0", name="ck_proposal_versions_version_number_positive"
+        ),
+        CheckConstraint(
+            _in_check("status", PROPOSAL_VERSION_STATUSES),
+            name="ck_proposal_versions_status",
+        ),
+        CheckConstraint(
+            "tax_inclusion IN ('exclusive', 'inclusive', 'unknown')",
+            name="ck_proposal_versions_tax_inclusion",
+        ),
+        CheckConstraint(
+            "one_off_amount IS NULL OR one_off_amount >= 0",
+            name="ck_proposal_versions_one_off_nonnegative",
+        ),
+        CheckConstraint(
+            "mrr_amount IS NULL OR mrr_amount >= 0",
+            name="ck_proposal_versions_mrr_nonnegative",
+        ),
+        CheckConstraint(
+            "arr_amount IS NULL OR arr_amount >= 0",
+            name="ck_proposal_versions_arr_nonnegative",
+        ),
+        CheckConstraint(
+            "extraction_confidence IS NULL OR extraction_confidence BETWEEN 0 AND 1",
+            name="ck_proposal_versions_extraction_confidence",
+        ),
+        CheckConstraint(
+            "(confirmed_by IS NULL) = (confirmed_at IS NULL)",
+            name="ck_proposal_versions_confirmation_pair",
+        ),
+        CheckConstraint(
+            "confirmed_by IS NULL OR source_document_evidence_id IS NOT NULL",
+            name="ck_proposal_versions_confirmation_evidence",
+        ),
+        CheckConstraint(
+            "confirmed_by IS NULL OR one_off_amount IS NOT NULL "
+            "OR mrr_amount IS NOT NULL OR arr_amount IS NOT NULL",
+            name="ck_proposal_versions_confirmation_value",
+        ),
+        CheckConstraint(
+            "status <> 'sent' OR sent_at IS NOT NULL",
+            name="ck_proposal_versions_sent_at",
+        ),
+        CheckConstraint(
+            "valid_until IS NULL OR valid_until >= created_at::date",
+            name="ck_proposal_versions_valid_interval",
+        ),
+        UniqueConstraint(
+            "proposal_id",
+            "version_number",
+            name="uq_proposal_versions_proposal_version_number",
+        ),
+        UniqueConstraint("proposal_id", "id", name="uq_proposal_versions_proposal_id"),
+        Index("ix_proposal_versions_proposal_id", "proposal_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    proposal_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("proposals.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'draft'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    one_off_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    mrr_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    arr_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    tax_inclusion: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'unknown'")
+    )
+    source_document_evidence_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True)
+    )
+    extraction_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
+    confirmed_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProposalItem(Base):
+    __tablename__ = "proposal_items"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(description)) > 0",
+            name="ck_proposal_items_description_nonblank",
+        ),
+        CheckConstraint(
+            "quantity IS NULL OR quantity > 0",
+            name="ck_proposal_items_quantity_positive",
+        ),
+        CheckConstraint(
+            "unit_price IS NULL OR unit_price >= 0",
+            name="ck_proposal_items_unit_price_nonnegative",
+        ),
+        CheckConstraint(
+            "amount IS NULL OR amount >= 0", name="ck_proposal_items_amount_nonnegative"
+        ),
+        CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'", name="ck_proposal_items_currency_iso"
+        ),
+        CheckConstraint(
+            "billing_period IS NULL OR billing_period IN ('mrr', 'arr')",
+            name="ck_proposal_items_billing_period",
+        ),
+        CheckConstraint(
+            "option_group IS NULL OR length(btrim(option_group)) > 0",
+            name="ck_proposal_items_option_group_nonblank",
+        ),
+        Index("ix_proposal_items_proposal_version_id", "proposal_version_id"),
+        Index(
+            "uq_proposal_items_selected_option",
+            "proposal_version_id",
+            "option_group",
+            unique=True,
+            postgresql_where=text("is_selected AND option_group IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    proposal_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("proposal_versions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    billing_period: Mapped[str | None] = mapped_column(String(32))
+    option_group: Mapped[str | None] = mapped_column(Text)
+    is_selected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+
+
+class ProposalFollowup(Base):
+    __tablename__ = "proposal_followups"
+    __table_args__ = (
+        CheckConstraint(
+            "sequence_number > 0", name="ck_proposal_followups_sequence_positive"
+        ),
+        CheckConstraint(
+            "length(btrim(channel)) > 0",
+            name="ck_proposal_followups_channel_nonblank",
+        ),
+        UniqueConstraint("activity_id", name="uq_proposal_followups_activity"),
+        UniqueConstraint(
+            "proposal_id", "sequence_number", name="uq_proposal_followups_sequence"
+        ),
+        Index("ix_proposal_followups_proposal_id", "proposal_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    proposal_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("proposals.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    activity_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("activities.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 def _reject_activity_mutation(*_args: object, **_kwargs: object) -> None:

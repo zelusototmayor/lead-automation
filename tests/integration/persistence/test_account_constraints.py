@@ -1880,7 +1880,7 @@ def test_concurrent_domain_name_with_distinct_sources_converges_and_both_succeed
         } == {results[0].account_id}
 
 
-def test_task6_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_path):
+def test_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_path):
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
     command = [sys.executable, "-m", "alembic", "-c", str(CONFIG)]
 
@@ -1893,7 +1893,7 @@ def test_task6_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_pa
         return result
 
     try:
-        assert "0002 (head)" in run("current").stdout
+        assert "0003 (head)" in run("current").stdout
         run("downgrade", "0001")
         inspector = inspect(engine)
         assert {
@@ -1905,6 +1905,12 @@ def test_task6_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_pa
         assert not {"accounts", "contacts", "leads", "activities"}.intersection(
             inspector.get_table_names()
         )
+        assert not {
+            "proposals",
+            "proposal_versions",
+            "proposal_items",
+            "proposal_followups",
+        }.intersection(inspector.get_table_names())
         assert "uq_source_identities_workspace_id" not in {
             row["name"] for row in inspector.get_unique_constraints("source_identities")
         }
@@ -1920,6 +1926,12 @@ def test_task6_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_pa
         assert {"accounts", "contacts", "leads", "activities"} <= set(
             inspector.get_table_names()
         )
+        assert {
+            "proposals",
+            "proposal_versions",
+            "proposal_items",
+            "proposal_followups",
+        } <= set(inspector.get_table_names())
         assert "uq_source_identities_workspace_id" in {
             row["name"] for row in inspector.get_unique_constraints("source_identities")
         }

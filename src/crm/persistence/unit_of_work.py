@@ -10,13 +10,23 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.crm.persistence.models import Account, Activity, Contact, Lead
+from src.crm.persistence.models import (
+    Account,
+    Activity,
+    Contact,
+    Lead,
+    Proposal,
+    ProposalVersion,
+)
 from src.crm.persistence.repositories import (
     AccountRepository,
     ActivityRepository,
     ContactRepository,
     IngestEventRepository,
     LeadRepository,
+    ProposalItemRepository,
+    ProposalRepository,
+    ProposalVersionRepository,
     SourceIdentityRepository,
 )
 
@@ -36,6 +46,9 @@ class SqlAlchemyUnitOfWork:
         self.contacts = ContactRepository(self.session)
         self.leads = LeadRepository(self.session)
         self.activities = ActivityRepository(self.session)
+        self.proposals = ProposalRepository(self.session)
+        self.proposal_versions = ProposalVersionRepository(self.session)
+        self.proposal_items = ProposalItemRepository(self.session)
         self.source_identities = SourceIdentityRepository(self.session)
         self.ingest_events = IngestEventRepository(self.session)
         return self
@@ -120,6 +133,11 @@ class SqlAlchemyUnitOfWork:
         self, workspace_id: UUID, ingest_event_id: UUID, activity_type: str
     ) -> Activity | None:
         return self.activities.replay(workspace_id, ingest_event_id, activity_type)
+
+    def portfolio_rows(
+        self, workspace_id: UUID
+    ) -> list[tuple[Proposal, ProposalVersion | None]]:
+        return self.proposals.portfolio_rows(workspace_id)
 
     def account_candidates(self, workspace_id: UUID, hints: Any) -> list[Account]:
         from src.crm.services.account_service import (
