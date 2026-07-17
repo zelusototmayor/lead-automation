@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from dashboard.app import main as dashboard_main
 from dashboard.app.config import get_agent_settings
+from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.routers.agent_events import get_agent_event_session
 from src.crm.persistence.models import Account, IngestEvent, Workspace
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
@@ -27,6 +28,8 @@ def agent_api(monkeypatch: pytest.MonkeyPatch):
             Workspace(id=workspace_id, slug=f"agent-{workspace_id}", name="Agent")
         )
 
+    monkeypatch.setenv("CRM_DB_ENABLED", "true")
+    monkeypatch.setenv("CRM_AGENT_EVENTS_ENABLED", "true")
     monkeypatch.setenv("CRM_AGENT_BEARER_TOKEN", "test-agent-secret")
     monkeypatch.setenv("CRM_AGENT_WORKSPACE_ID", str(workspace_id))
     monkeypatch.setenv("CRM_AGENT_SCOPES", "agent-events:write")
@@ -38,6 +41,7 @@ def agent_api(monkeypatch: pytest.MonkeyPatch):
         "CRM_AGENT_TOKEN_EXPIRES_AT", (now + timedelta(minutes=10)).isoformat()
     )
     get_agent_settings.cache_clear()
+    get_feature_flags.cache_clear()
 
     def session_override():
         with Session(engine) as session:
@@ -49,6 +53,7 @@ def agent_api(monkeypatch: pytest.MonkeyPatch):
     finally:
         dashboard_main.app.dependency_overrides.pop(get_agent_event_session, None)
         get_agent_settings.cache_clear()
+        get_feature_flags.cache_clear()
         cleanup_workspace(engine, workspace_id)
         engine.dispose()
 

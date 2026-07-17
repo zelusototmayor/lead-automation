@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from dashboard.app.config import AgentSettings, get_agent_settings
 from dashboard.app.db import create_database_engine, create_session_factory
+from dashboard.app.feature_flags import require_agent_events_enabled
 from src.crm.ingestion.checkpoints import (
     IdempotencyConflictError,
     InvalidIngestionInputError,
@@ -105,7 +106,10 @@ async def _bounded_json(request: Request) -> object:
         raise ValueError("invalid request") from None
 
 
-@router.post("/api/v1/agent-events")
+@router.post(
+    "/api/v1/agent-events",
+    dependencies=[Depends(require_agent_events_enabled)],
+)
 async def create_agent_event(
     request: Request,
     session: Annotated[Session, Depends(get_agent_event_session)],

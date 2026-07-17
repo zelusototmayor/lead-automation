@@ -13,6 +13,7 @@ from sqlalchemy import Engine, func, literal, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
+from dashboard.app.feature_flags import require_accounts_postgres_reads
 from dashboard.app.schemas.accounts import (
     AccountDetail,
     AccountPage,
@@ -40,8 +41,9 @@ def _account_engine() -> Engine:
 def get_account_request_context(
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
 ):
-    """Open a read session only after a trusted principal has resolved."""
+    """Open a read session only after identity and cutover gates pass."""
 
+    require_accounts_postgres_reads()
     try:
         engine = _account_engine()
     except (TypeError, ValueError):

@@ -16,6 +16,7 @@ from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
+from dashboard.app.feature_flags import require_proposals_postgres_reads
 from dashboard.app.schemas.proposals import (
     DimensionTotals,
     ProposalDetail,
@@ -57,8 +58,9 @@ def _proposal_engine() -> Engine:
 def get_proposal_request_context(
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
 ):
-    """Open the database only after server-side identity resolution succeeds."""
+    """Open the database only after identity and cutover gates pass."""
 
+    require_proposals_postgres_reads()
     try:
         engine = _proposal_engine()
     except (TypeError, ValueError):

@@ -445,3 +445,43 @@ Ruff, format e git diff --check: passed
 ```
 
 Esta evidência valida somente o caminho local. Não prova existência/restaurabilidade de backup de produção. Não houve deploy, acesso a dados reais, ativação de identidade, push, merge ou criação de sentinel. As Tarefas 18–19 continuam pendentes.
+
+---
+
+## Estado da implementação até à Tarefa 18
+
+### Cutover guardado concluído localmente
+
+A Tarefa 18 acrescenta controlos de ativação estritos, import-safe e fail-closed:
+
+- as seis flags de cutover têm defaults que preservam reads legados e deixam PostgreSQL, agent ingress, projeção e conectores consequentes desligados;
+- booleanos e enums aceitam apenas os literais documentados, sem coerção de casing, espaços ou valores truthy;
+- combinações que ativem funcionalidades de base sem `CRM_DB_ENABLED=true`, ou projeção Sheets sem writer PostgreSQL, impedem o startup;
+- Contas e Propostas só abrem uma sessão PostgreSQL para tráfego quando o respetivo read model é exatamente `postgres`; `shadow` permanece comparação offline e não altera respostas;
+- Inteligência e Operações também rejeitam pedidos antes de abrir PostgreSQL quando a base canónica está desligada;
+- agent events desativados ficam ocultos por `404` antes de autenticação, parsing ou acesso à base;
+- `CRM_COMMAND_WRITER=postgres` bloqueia todas as mutações legadas antes de chamar o adapter Sheets, impedindo dual-write acidental;
+- `.env.example`, Kamal e `MIGRATION.md` documentam o baseline seguro e a progressão de uma dimensão de cada vez.
+
+Durante a regressão final foi reproduzida uma corrida preexistente do backfill: uma transação antiga podia atualizar `last_seen_at` com `now()` anterior ao `first_seen_at` persistido por uma concorrente. O commit `25db7a5` usa o wall clock PostgreSQL e preserva explicitamente o lower bound. O teste concorrente passou dez execuções consecutivas e o módulo de backfill passou integralmente.
+
+### Evidência de execução da Tarefa 18
+
+Em PostgreSQL 16 descartável local, sem dados ou credenciais reais:
+
+```text
+Task 18 focused: 25 passed
+Cutover/API/security focused: 174 passed, 3 warnings preexistentes
+CRM unit + integration + security + migration + regressão: 847 passed, 4 warnings preexistentes
+Source-identity concurrency regression: 10 execuções consecutivas passaram
+Account backfill module: 12 passed
+Alembic lifecycle: 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas obrigatórias, 0 workspaces, 0 violações
+Ruff, compileall e git diff --check: passed nos ficheiros da Tarefa 18; main.py mantém formatação legada fora das linhas alteradas
+```
+
+A suite global não-CRM continua a ter os blockers históricos documentados anteriormente; a suite completa relevante para o CRM passou. O ambiente live observado continua na imagem/commit `7622a2b`, sem PostgreSQL. Não existe staging observável nem adapter de identidade de produção neste branch. Não foram executados backfill real, validação humana de amostra, soak, deploy ou cutover.
+
+A Tarefa 19 permanece bloqueada pelo próprio gate do plano: exige dois releases sem rollback, telemetria que prove ausência de consumidores v0, export Sheet disponível e aprovação de stakeholders. Remover o legado antes dessa evidência violaria a estratégia aditiva e o rollback. O sentinel não pode ser criado enquanto esses gates, staging e verificação de produção não existirem.

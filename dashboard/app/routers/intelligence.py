@@ -13,6 +13,7 @@ from sqlalchemy import Engine, case, func, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
+from dashboard.app.feature_flags import require_database_enabled
 from dashboard.app.schemas.intelligence import RecommendationPage, RecommendationSummary
 from dashboard.app.security import CRMPrincipal, require_crm_principal
 from src.crm.persistence.models import Account, Recommendation
@@ -36,6 +37,7 @@ def _intelligence_engine() -> Engine:
 def get_intelligence_request_context(
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
 ):
+    require_database_enabled(detail="Intelligence unavailable")
     try:
         engine = _intelligence_engine()
     except (TypeError, ValueError):

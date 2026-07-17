@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.crm.pt_logistics_sheet import PTLogisticsCRM
+from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.routers.accounts import router as accounts_router
 from dashboard.app.routers.proposals import router as proposals_router
 from dashboard.app.routers.intelligence import router as intelligence_router
@@ -42,6 +43,7 @@ def today_local() -> date:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global crm
+    get_feature_flags()
     try:
         crm = PTLogisticsCRM(
             credentials_file=CREDENTIALS_FILE,

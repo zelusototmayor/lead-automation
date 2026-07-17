@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
+from dashboard.app.feature_flags import require_database_enabled
 from dashboard.app.security import CRMPrincipal, require_crm_principal
 from src.crm.persistence.models import (
     Account,
@@ -42,6 +43,7 @@ def get_operations_request_context(
 ):
     if principal.is_admin is not True:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    require_database_enabled(detail="Operations unavailable")
     try:
         engine = _operations_engine()
     except (TypeError, ValueError):

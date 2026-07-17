@@ -57,6 +57,10 @@ async def require_write_access(request: Request) -> None:
     if not (valid_bearer and valid_csrf and valid_origin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
 
+    from .feature_flags import require_legacy_sheet_writer
+
+    require_legacy_sheet_writer()
+
 
 async def require_crm_principal() -> CRMPrincipal:
     """Deny until deployment supplies a trusted authentication adapter."""

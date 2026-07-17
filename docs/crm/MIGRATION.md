@@ -36,16 +36,30 @@ A missing gate blocks activation. Local passing tests do not substitute for real
 
 ## Required cutover flags
 
-The implementation uses validated flags documented by Task 18:
+`dashboard.app.feature_flags` parses the six controls without database or network I/O. Only the literal boolean strings `true` and `false` are accepted. Unknown values and inconsistent combinations stop application startup; request-level gates return a generic unavailable/not-found response without opening PostgreSQL or parsing an agent payload.
 
-- `CRM_DB_ENABLED`
-- `CRM_ACCOUNTS_READ_MODEL=legacy|shadow|postgres`
-- `CRM_PROPOSALS_READ_MODEL=legacy|shadow|postgres`
-- `CRM_COMMAND_WRITER=sheet|postgres`
-- `CRM_SHEETS_PROJECTION_ENABLED`
-- `CRM_AGENT_EVENTS_ENABLED`
+Safe deployment baseline:
 
-Unknown or inconsistent combinations must fail closed. Staging starts with DB/connectors/agent events/writes disabled and legacy reads selected.
+```text
+CRM_DB_ENABLED=false
+CRM_ACCOUNTS_READ_MODEL=legacy
+CRM_PROPOSALS_READ_MODEL=legacy
+CRM_COMMAND_WRITER=sheet
+CRM_SHEETS_PROJECTION_ENABLED=false
+CRM_AGENT_EVENTS_ENABLED=false
+```
+
+Activation invariants:
+
+- `shadow` and `postgres` read models require `CRM_DB_ENABLED=true`;
+- `shadow` is comparison-only and does not serve PostgreSQL records to user traffic;
+- `/contas` and `/propostas` use PostgreSQL only when their read model is exactly `postgres`;
+- `CRM_COMMAND_WRITER=postgres` disables every legacy Sheet mutation before the Sheet adapter is called;
+- Sheets projection requires both PostgreSQL enabled and `CRM_COMMAND_WRITER=postgres`;
+- agent ingress requires both PostgreSQL and `CRM_AGENT_EVENTS_ENABLED=true`; when disabled it is hidden as `404` before auth, body parsing or session creation;
+- any invalid combination fails closed rather than silently reverting one flag.
+
+Progression is one dimension at a time: enable DB, select one area as `shadow`, obtain stable compare evidence, switch that area to `postgres`, then repeat for the next area. Writer and agent flags remain off until their independent gates pass.
 
 ## Verification record
 
@@ -64,4 +78,4 @@ For each environment, record without secrets or PII:
 
 ## Current status
 
-As of 2026-07-16, migrations through `0006`, backfills, connectors and restore tooling have been exercised only against disposable local PostgreSQL. No production/staging database, real connector, real-data sample, live identity adapter, deployment or cutover has been verified from this branch.
+As of 2026-07-17, migrations through `0006`, backfills, connectors, restore tooling and guarded cutover flags have been exercised against disposable local PostgreSQL. The relevant CRM suite passes locally. The observed live dashboard still runs commit/image `7622a2b` without PostgreSQL; no staging environment, real connector/backfill, owner-approved sample, identity adapter, soak or production cutover has been verified from this branch. These are blocking gates, not optional follow-up work.

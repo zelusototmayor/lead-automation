@@ -36,6 +36,12 @@ env:
     CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
     CRM_ENV: "production"
     CRM_ALLOWED_WRITE_ORIGINS: "https://leads.zelusottomayor.com"
+    CRM_DB_ENABLED: "false"
+    CRM_ACCOUNTS_READ_MODEL: "legacy"
+    CRM_PROPOSALS_READ_MODEL: "legacy"
+    CRM_COMMAND_WRITER: "sheet"
+    CRM_SHEETS_PROJECTION_ENABLED: "false"
+    CRM_AGENT_EVENTS_ENABLED: "false"
   secret:
     - CRM_WRITE_TOKEN
     - CRM_CSRF_TOKEN
