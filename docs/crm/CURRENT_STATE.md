@@ -697,3 +697,17 @@ Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 evento
 A credencial temporária, snapshot e base shadow foram removidas. Não houve write na Sheet nem outbound. A telemetria JSON do proxy nas últimas 48 horas continua a provar consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26. Produção continua saudável no commit `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, sem as rotas novas.
 
 Os gates externos permanecem fechados e não podem ser substituídos por automação local: adapter de identidade e mapping server-side, políticas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore do ficheiro real, resolução/revisão humana dos conflitos e da amostra, soak/cutover e dois releases estáveis sem consumidores v0 antes da Tarefa 19. O host observado tem 3,2 GiB livres e filesystem a 87%, sem base CRM ou backup automático; improvisar staging/produção nesse host violaria os gates de capacidade e isolamento. O sentinel continua corretamente ausente.
+
+---
+
+## Fecho verificável da retoma em 2026-07-17T19:14:06Z
+
+A alteração preservada acima foi congelada com digest staged `2af1c6b0da3ae22715de6fa868cc4a1c1257501fb374387340b69db2831678b`, commitada como `e3583fa4d1b9367995991939b46dbafdee7d7b7c` (`fix: isolate malformed Sheet identities`) e publicada em `origin/feat/crm-accounts-proposals-v1`. A regressão pós-commit passou com `33 passed`; Ruff e `git diff --check` passaram.
+
+Num PostgreSQL 16 descartável novo, explicitamente marcado para testes, a suite segura completa passou com `867 passed, 1 skipped` e `DeprecationWarning` tratado como erro. O lifecycle Alembic `0006 -> base -> 0006`, `alembic current`, `alembic check`, a suite de migration (`63 passed`) e o restore de um dump custom-format passaram. O restore confirmou schema `0006`, 11 tabelas obrigatórias, zero workspaces e zero violações. Ruff no delta, compileall, scan estático de linhas adicionadas e Gitleaks no histórico e staged diff passaram sem findings.
+
+A imagem local do candidato foi reconstruída com digest `sha256:dd81c39308ec6809996c31a05fa183683f5a6bfeadd07ff8ef780b072a6da013`. O smoke real confirmou `/up=200`, `/contas=403`, `/propostas=403`, `/inteligencia=403`, `/operacoes=403` e `POST /api/v1/agent-events=404`, sem erros no log do arranque.
+
+Os gates externos foram novamente consultados sem mutações. O PR `#1` permanece draft, mergeable e sem checks/reviews; a API GitHub continua sem environments e os nomes de staging continuam sem DNS. Produção responde `/up=200` e `404` nas novas páginas/APIs, coerente com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host continua com filesystem a 87%, 3,2 GiB livres, sem base ou backup CRM. A telemetria agregada das últimas 48 horas continua a provar consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26.
+
+Consequentemente, merge, staging, produção, cutover e Tarefa 19 continuam tecnicamente bloqueados pelos gates explícitos do plano: não há identidade/RBAC/workspace mapping de produção, políticas aprovadas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore real, resolução e validação humana da amostra shadow, soak, nem dois releases estáveis sem consumidores v0. Não foi criado `.hermes/crm-revamp-complete.json`.
