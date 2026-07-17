@@ -485,3 +485,15 @@ Ruff, compileall e git diff --check: passed nos ficheiros da Tarefa 18; main.py 
 A suite global não-CRM continua a ter os blockers históricos documentados anteriormente; a suite completa relevante para o CRM passou. O ambiente live observado continua na imagem/commit `7622a2b`, sem PostgreSQL. Não existe staging observável nem adapter de identidade de produção neste branch. Não foram executados backfill real, validação humana de amostra, soak, deploy ou cutover.
 
 A Tarefa 19 permanece bloqueada pelo próprio gate do plano: exige dois releases sem rollback, telemetria que prove ausência de consumidores v0, export Sheet disponível e aprovação de stakeholders. Remover o legado antes dessa evidência violaria a estratégia aditiva e o rollback. O sentinel não pode ser criado enquanto esses gates, staging e verificação de produção não existirem.
+
+---
+
+## Handoff verificável após a Tarefa 18
+
+A implementação da Tarefa 18 foi commitada em `06ed08b70b0c5f0f97a483cecc7af41362a74562` (`feat: add guarded CRM read and write cutover`) e publicada no branch remoto `origin/feat/crm-accounts-proposals-v1`. O pull request draft é `https://github.com/zelusototmayor/lead-automation/pull/1`; não tem checks CI configurados e permanece draft para impedir merge/cutover antes dos gates.
+
+A verificação pós-commit repetiu 39 testes focados com PostgreSQL 16 descartável. A suite CRM completa observada nesta retoma passou com 847 testes e 4 warnings preexistentes. O lifecycle Alembic `0006 -> base -> 0006`, `alembic check`, Ruff, compileall, diff check, secret scan e restore de backup custom-format passaram. O PostgreSQL descartável criado nesta retoma foi removido e a porta local ficou livre.
+
+A coleção global do repositório continua a terminar com exit code 3 porque `tests/test_linkedin_system.py` executa 47 checks com sucesso e chama `sys.exit(0)` durante collection. Este ficheiro é exterior ao âmbito CRM e não foi alterado.
+
+Não existe evidência disponível de staging, adapter de identidade de produção, PostgreSQL/backup live, amostra real validada pelo owner, soak ou dois releases estáveis. Por isso não houve merge, deploy, migração/backfill live, ativação de conectores, cutover nem criação de `.hermes/crm-revamp-complete.json`.
