@@ -142,6 +142,37 @@ def test_fallback_identity_canonicalizes_declared_email_and_phone_semantics():
     assert phone_left.rows[0].external_id == phone_right.rows[0].external_id
 
 
+def test_malformed_fallback_identity_marks_only_that_row_for_review():
+    snapshot = _snapshot(
+        [
+            ["ID", "Company", "Contact", "Email", "Phone", "Website", "Stage"],
+            [
+                "",
+                "Bad Email",
+                "Ana",
+                "not-an-email",
+                "",
+                "example.com",
+                "Meeting Booked",
+            ],
+            [
+                "",
+                "Bad Phone",
+                "Bruno",
+                "",
+                "extension 123",
+                "example.org",
+                "Meeting Booked",
+            ],
+            ["", "Valid", "Carla", "valid@example.net", "", "", "Meeting Booked"],
+        ]
+    )
+
+    assert len(snapshot.rows) == 1
+    assert snapshot.rows[0].locator == 4
+    assert snapshot.missing_id_rows == (2, 3)
+
+
 def test_fallback_identity_rejects_company_name_only_policy():
     with pytest.raises(ValueError, match="invalid sheet snapshot input"):
         snapshot_sheet(

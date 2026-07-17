@@ -207,17 +207,6 @@ def snapshot_sheet(
             ]
             cells.extend([""] * (len(headers) - len(cells)))
             mapped = dict(zip(headers, cells, strict=True))
-            external_id = mapped[stable_id_column]
-            if not external_id and fallback_groups:
-                external_id = (
-                    _fallback_identity(
-                        mapped,
-                        fallback_groups,
-                        (spreadsheet_id, sheet_name, stable_id_column),
-                    )
-                    or ""
-                )
-                mapped[stable_id_column] = external_id
             captured_bytes += (
                 len(
                     json.dumps(
@@ -228,6 +217,20 @@ def snapshot_sheet(
             )
             if captured_bytes > MAX_SNAPSHOT_BYTES:
                 raise _invalid_input()
+            external_id = mapped[stable_id_column]
+            if not external_id and fallback_groups:
+                try:
+                    external_id = (
+                        _fallback_identity(
+                            mapped,
+                            fallback_groups,
+                            (spreadsheet_id, sheet_name, stable_id_column),
+                        )
+                        or ""
+                    )
+                except ValueError:
+                    external_id = ""
+                mapped[stable_id_column] = external_id
             if not external_id:
                 missing.append(row_number)
                 continue

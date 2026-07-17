@@ -673,3 +673,27 @@ A imagem Docker foi reconstruída a partir do `HEAD`. O smoke real do container 
 A descoberta live permaneceu read-only. Produção continua na imagem `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, com `/up=200` e as novas páginas/APIs em `404`. A telemetria agregada das últimas 48 horas confirmou consumidores v0 ativos (`/api/stats`: 65, `/api/portfolio`: 29, `/api/recommendations`: 29). O PR `#1` permanece draft, mergeable, sem reviews ou checks; não existem GitHub environments nem DNS de staging. O host continua sem base CRM dedicada, com o filesystem a 87% e apenas 3,2 GiB livres, tornando inseguro improvisar PostgreSQL/staging/backup no mesmo host.
 
 A primeira tarefa genuinamente incompleta continua a ser a Tarefa 19, mas o seu gate está materialmente fechado: há consumidores v0 ativos e não existem dois releases estáveis, telemetria de ausência de consumidores, export aprovado nem aceitação de stakeholders. Os gates anteriores de cutover também continuam por satisfazer: identidade/RBAC/workspace mapping server-side, políticas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore real, resolução dos conflitos da shadow migration, validação humana da amostra, smoke browser/security e soak. Por isso não houve merge, deploy, migração/backfill live, cutover, remoção do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma e compatibilidade de identidade em 2026-07-17T18:54:41Z
+
+A retoma começou no `HEAD` limpo e sincronizado `f315372e7f311ce918e5f5ada703ca4a705511e2`. A suite segura completa foi repetida num PostgreSQL 16 descartável: `866 passed, 1 skipped`; o lifecycle `0006 -> base -> 0006`, `alembic current`, `alembic check`, restore custom-format, Ruff, compileall, diff check, Gitleaks e build/smoke da imagem passaram. O smoke confirmou `/up=200`, as páginas ricas deny-only em `403` e agent ingress desativado em `404`.
+
+Uma nova captura read-only da Sheet real revelou um caso de compatibilidade não coberto: valores de email/telefone não canónicos faziam a captura inteira falhar em vez de isolar apenas as linhas sem identidade segura. Foi observado RED num teste focado (`1 failed`), corrigido para contabilizar o payload antes da validação e encaminhar apenas a linha malformada para review, sem usar o fallback mais fraco nem expor o valor. A regressão focada passou (`43 passed`) e a suite completa posterior passou com `867 passed, 1 skipped`; o lifecycle Alembic e `alembic check` voltaram a passar. A formatação posterior do teste foi seguida por nova execução focada verde.
+
+A shadow migration atual, num PostgreSQL 16 descartável e com snapshot temporária mode `0600`, produziu somente agregados seguros:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 accounts criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 eventos failed/dead-letter
+```
+
+A credencial temporária, snapshot e base shadow foram removidas. Não houve write na Sheet nem outbound. A telemetria JSON do proxy nas últimas 48 horas continua a provar consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26. Produção continua saudável no commit `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, sem as rotas novas.
+
+Os gates externos permanecem fechados e não podem ser substituídos por automação local: adapter de identidade e mapping server-side, políticas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore do ficheiro real, resolução/revisão humana dos conflitos e da amostra, soak/cutover e dois releases estáveis sem consumidores v0 antes da Tarefa 19. O host observado tem 3,2 GiB livres e filesystem a 87%, sem base CRM ou backup automático; improvisar staging/produção nesse host violaria os gates de capacidade e isolamento. O sentinel continua corretamente ausente.
