@@ -598,3 +598,9 @@ O probe live read-only confirmou `/up=200` e `404` para as novas páginas e APIs
 O host de produção tem apenas cerca de 1 GiB de memória disponível, 3,2 GiB de disco livre e filesystem a 87%, além de vários workloads existentes. Não existe base CRM dedicada observável. Provisionar nesse host, por omissão, PostgreSQL CRM, staging e backups violaria os gates de capacidade, isolamento e restore do plano; a infraestrutura existente não foi reutilizada nem alterada.
 
 Continuam indisponíveis os artefactos externos obrigatórios: adapter de identidade server-side e mapping de utilizadores/papéis/workspace; retenção, scopes e prova oficial de `Won`; staging isolado; PostgreSQL CRM com backup automático; cópia real para dois backfills/reconciliations idempotentes; validação humana da amostra; browser/security smoke e soak em staging; cutover verificado; e os dois releases estáveis exigidos antes da Tarefa 19. O deploy e o sentinel continuam bloqueados pelos gates técnicos, não por uma pausa de aprovação.
+
+### Fecho desta retoma em 2026-07-17T14:15:04Z
+
+A verificação repetida confirmou 848 testes com `DeprecationWarning` tratado como erro, lifecycle Alembic `0006 -> base -> 0006`, `alembic check`, restore de backup custom-format, Ruff, compileall, diff check, Gitleaks, build/smoke da imagem e dry-run do backfill. Nenhum worker CRM, reconciler ou job de outreach estava ativo durante a migração/testes. O PostgreSQL e a imagem descartáveis foram removidos e a porta 55432 ficou livre.
+
+Os seis commits locais encontrados e o commit de evidência `911a1abf3486007956321900b90b052d4ba76889` foram publicados em `origin/feat/crm-accounts-proposals-v1`; o PR permanece draft e sem checks porque staging e os gates externos continuam ausentes. O branch não foi merged nem deployed. A Tarefa 19 e o sentinel permanecem corretamente bloqueados.
