@@ -527,3 +527,43 @@ A imagem de dashboard foi construída localmente a partir deste `HEAD`. O smoke 
 O dashboard live continua saudável na imagem/commit `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host tem um PostgreSQL 17 nativo pertencente à infraestrutura existente, mas não apresenta qualquer base com nome CRM/leads, backup CRM ou staging observável; este PostgreSQL não foi usado nem alterado. O container live também não tem as flags/segredos do novo CRM, e as rotas novas devolvem `404` porque essa imagem é anterior ao revamp. O PR `#1` permanece draft, mergeable, sem reviews e sem checks CI configurados.
 
 Consequentemente, os gates externos continuam por satisfazer: identidade/sessão e RBAC de produção, política de retenção e scopes, PostgreSQL com backup automático e restore do arquivo real, staging, migrations/backfill/reconcile idempotentes sobre cópia real, amostra validada pelo owner comercial, browser/security smoke, soak, cutover verificado e dois releases estáveis antes da Tarefa 19. Fazer deploy, merge, remoção do legado ou criar o sentinel sem esta evidência violaria os gates técnicos explícitos do plano.
+
+---
+
+## Retoma e verificação final local em 2026-07-17T13:15:18Z
+
+A retoma preservou as quatro alterações locais encontradas sobre `3d56b6d` e fechou-as em três commits atómicos:
+
+- `0964f35` atualiza a chamada legada de `TemplateResponse` para a assinatura atual;
+- `73a115a` torna os 47 checks LinkedIn compatíveis com pytest e mantém o modo standalone; `pytest.ini` limita a descoberta automática a `tests/`, excluindo os scripts live/outbound indevidamente nomeados `test_*.py` na raiz;
+- `a27ff25` corrige o exemplo do restore verifier para usar uma base local de teste existente.
+
+O documento de decisão de segurança foi reconciliado com o código e com o gate atual: apenas a superfície legada read-only mantém a exposição histórica; as novas rotas PostgreSQL de Contas, Propostas, Inteligência e Operações permanecem deny-only até existir um principal server-side com papel e workspace verificados.
+
+### Evidência local repetida
+
+Num PostgreSQL 16 descartável, sem dados ou credenciais reais:
+
+```text
+Suite automatizada segura completa: 848 passed em 97.91s
+Suite completa com DeprecationWarning tratado como erro: 848 passed em 101.65s
+Security + APIs ricas focadas: 123 passed
+LinkedIn standalone: 47/47 checks, exit 0
+Alembic lifecycle: base -> 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python origin/main...HEAD: passed
+compileall e git diff --check: passed
+Gitleaks no intervalo 106485b..HEAD: 25 commits, cerca de 991 KB, 0 leaks
+```
+
+A imagem Docker foi reconstruída a partir do candidato local. O smoke com flags seguras confirmou `/up=200`, `/contas=403`, `/propostas=403`, `/inteligencia=403` e `POST /api/v1/agent-events=404`. O dry-run da fixture de contas devolveu 4 imports potenciais, 3 contas criadas/associadas, 1 duplicado e 1 fase não mapeada, sem writes.
+
+### Estado externo e blockers reais
+
+O probe live read-only repetido confirmou `/up=200`; `/contas`, `/propostas`, `/inteligencia`, `/api/v1/accounts` e `/api/v1/proposals` continuam `404`, coerentes com a imagem de produção pré-revamp. O PR `#1` continua draft, mergeable e sem CI/reviews configurados. Não existe environment de staging configurado no GitHub nem staging observável no repositório/infraestrutura inspecionada.
+
+Continuam ausentes os pré-requisitos que não podem ser fabricados por testes locais: adapter de identidade e mapping de utilizadores/papéis/workspace; política de retenção, scopes e prova de `Won`; PostgreSQL CRM staging/produção com backup automático e restore do arquivo real; cópia real para backfill/reconcile idempotente; validação da amostra pelo owner comercial; smoke browser/security em staging; soak; cutover verificado; e, para a Tarefa 19, dois releases estáveis, telemetria v0, export Sheet e aceitação de stakeholders.
+
+Por isso não houve merge, deploy, migração/backfill live, ativação de workers/connectors/outbox, cutover ou remoção do legado. Os containers PostgreSQL descartáveis serão removidos após a verificação final. O sentinel `.hermes/crm-revamp-complete.json` continua corretamente ausente.

@@ -2,17 +2,19 @@
 
 ## Decision
 
-The user rejected login/SSO and role-based access control in order to keep browser read access simple. The user explicitly accepts the risk that the dashboard and its rich CRM read APIs are public. Public payloads may include names, email addresses, contacts, meeting notes, proposal values, proposal history, and evidence references.
+Public, read-only access is retained only for the existing legacy dashboard surface. The new PostgreSQL-backed rich routes for Contas, Propostas, Inteligência and Operações are not covered by that legacy exposure decision: they require a trusted server-side identity, role and workspace mapping and remain deny-only until that adapter is configured and verified.
 
-That acceptance is narrow: it does **not** authorize public writes, agent endpoints, deployment, or broader disclosure. No deployment is authorized by this decision.
+This boundary does **not** authorize public writes, agent endpoints, deployment or broader disclosure. No deployment is authorized by this historical decision; deployment authorization is separate from the technical identity, data and rollback gates.
 
 ## Public/private boundary
 
 Public, unauthenticated access is intentionally retained for:
 
 - `GET /up`, returning only `{ "status": "ok" }`;
-- the browser dashboard and redirects;
-- existing `GET` dashboard, CRM data, and intelligence APIs.
+- the existing legacy browser dashboard and redirects;
+- existing legacy `GET` dashboard APIs only while they remain within the previously accepted surface.
+
+Protected rich reads include `/contas`, `/propostas`, `/inteligencia`, `/operacoes` and their `/api/v1/*` APIs. They derive workspace only from a trusted server-side principal and fail closed while the production identity adapter is absent.
 
 The public browser interface is read-only. Every existing human write endpoint is private:
 
@@ -28,7 +30,7 @@ Each private write requires both a server-managed bearer token (`CRM_WRITE_TOKEN
 
 ## Threats and limitations
 
-- Anyone who can reach the service can read the approved rich CRM data and may copy, index, correlate, or redistribute it. Security response headers and `Cache-Control: no-store` reduce some browser risks but do not make public data confidential or prevent screenshots and downstream storage.
+- Anyone who can reach the service can read the approved legacy CRM surface and may copy, index, correlate, or redistribute it. Security response headers and `Cache-Control: no-store` reduce some browser risks but do not make public data confidential or prevent screenshots and downstream storage.
 - The write gate protects the listed human `POST` routes only. It is not SSO, user identity, authorization roles, audit attribution, rate limiting, or agent authentication.
 - Both write credentials are shared secrets. Compromise of both permits writes; rotate both and review activity after suspected exposure.
 - Origin validation is defense in depth, not authentication. Non-browser clients may omit `Origin` but still require both secrets.
@@ -37,7 +39,7 @@ Each private write requires both a server-managed bearer token (`CRM_WRITE_TOKEN
 
 ## Rejected alternatives
 
-The user explicitly rejected login/SSO and RBAC roles for this scope. They must not be silently introduced as a substitute for the approved public-read/private-write boundary. Public agent endpoints and public writes were not approved.
+Login/SSO and RBAC were rejected for the legacy public dashboard scope. That does not authorize the new rich routes to bypass their trusted-principal boundary, and no identity implementation may be selected or enabled without a concrete production mapping. Public agent endpoints and public writes were not approved.
 
 ## Rollback and incident response
 
@@ -59,4 +61,4 @@ Task 1 was exercised locally with `.venv311/bin/python`; no production or live s
 
 ## Required revisit
 
-Before production adds any further sensitive payload, bulk export/download, attachment, evidence body, or new endpoint, revisit this explicit risk acceptance and the protection model. A separate authorization decision is required for agent endpoints and for any deployment. Do not place real PII or credentials in this document.
+Before production enables any new rich route, sensitive payload, bulk export/download, attachment, evidence body or connector, implement and verify the trusted identity/role/workspace mapping and revisit the protection model. Agent endpoints retain their separate scoped authentication gate. Do not place real PII or credentials in this document.
