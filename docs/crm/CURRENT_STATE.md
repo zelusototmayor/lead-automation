@@ -497,3 +497,33 @@ A verificação pós-commit repetiu 39 testes focados com PostgreSQL 16 descart�
 A coleção global do repositório continua a terminar com exit code 3 porque `tests/test_linkedin_system.py` executa 47 checks com sucesso e chama `sys.exit(0)` durante collection. Este ficheiro é exterior ao âmbito CRM e não foi alterado.
 
 Não existe evidência disponível de staging, adapter de identidade de produção, PostgreSQL/backup live, amostra real validada pelo owner, soak ou dois releases estáveis. Por isso não houve merge, deploy, migração/backfill live, ativação de conectores, cutover nem criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma verificada em 2026-07-17
+
+A retoma partiu do `HEAD` limpo `2e222e8bc6c0531384ce68c32eb4a3068b61f100`, já sincronizado com `origin/feat/crm-accounts-proposals-v1`. O delta de produção `7622a2b` para o alias de outreach já está presente no branch por patch equivalente (`61113a0`), portanto não há hotfix live conhecido por incorporar.
+
+### Gates locais repetidos
+
+Num PostgreSQL 16 descartável novo, removido no fim da execução:
+
+```text
+CRM unit + integration + security + migration + regressão: 846 passed, 1 skipped, 4 warnings preexistentes
+Alembic lifecycle: base -> 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas obrigatórias, 0 workspaces, 0 violações
+Ruff no delta origin/main...HEAD, compileall e git diff --check: passed
+Gitleaks: 28 commits e cerca de 1,02 MB analisados, sem leaks
+```
+
+O Ruff global continua a encontrar uma variável não usada preexistente em `src/crm/local_services_sheet.py`, fora do delta deste branch. A coleção global continua a terminar com exit code 3 porque `tests/test_linkedin_system.py` executa 47 checks com sucesso e chama `sys.exit(0)` durante collection. Nenhum destes ficheiros foi alterado.
+
+A imagem de dashboard foi construída localmente a partir deste `HEAD`. O smoke test da imagem confirmou `/up=200`, rotas ricas em modo deny-only com `403` e agent ingress desativado com `404` usando as flags seguras.
+
+### Descoberta operacional live, sem mutações
+
+O dashboard live continua saudável na imagem/commit `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host tem um PostgreSQL 17 nativo pertencente à infraestrutura existente, mas não apresenta qualquer base com nome CRM/leads, backup CRM ou staging observável; este PostgreSQL não foi usado nem alterado. O container live também não tem as flags/segredos do novo CRM, e as rotas novas devolvem `404` porque essa imagem é anterior ao revamp. O PR `#1` permanece draft, mergeable, sem reviews e sem checks CI configurados.
+
+Consequentemente, os gates externos continuam por satisfazer: identidade/sessão e RBAC de produção, política de retenção e scopes, PostgreSQL com backup automático e restore do arquivo real, staging, migrations/backfill/reconcile idempotentes sobre cópia real, amostra validada pelo owner comercial, browser/security smoke, soak, cutover verificado e dois releases estáveis antes da Tarefa 19. Fazer deploy, merge, remoção do legado ou criar o sentinel sem esta evidência violaria os gates técnicos explícitos do plano.
