@@ -43,6 +43,10 @@ def test(name):
     return decorator
 
 
+# This is a legacy decorator, not a pytest test function.
+setattr(test, "__test__", False)
+
+
 # ============================================================
 # 1. CONFIG MODULE TESTS
 # ============================================================
@@ -914,4 +918,11 @@ if _results["errors"]:
         print(f"  ✗ {name}")
         print(f"    {err}")
 
-sys.exit(0 if _results["failed"] == 0 else 1)
+if __name__ == "__main__":
+    sys.exit(0 if _results["failed"] == 0 else 1)
+
+
+def test_linkedin_outbound_checks():
+    """Expose the legacy in-module checks as one pytest result."""
+
+    assert _results["failed"] == 0, _results["errors"]
