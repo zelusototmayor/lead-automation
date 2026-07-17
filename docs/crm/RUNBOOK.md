@@ -47,7 +47,9 @@ Example with secrets supplied only through environment variables:
 
 ```bash
 export CRM_DISPOSABLE_TEST_DATABASE=1
-export CRM_RESTORE_TEST_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/crm_restore_test'
+# The URL must name an existing local test database on the disposable server;
+# the verifier uses it only to create and remove a random restore database.
+export CRM_RESTORE_TEST_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/crm_test'
 .venv311/bin/python scripts/crm_verify_backup.py \
   --backup /secure/path/crm.dump \
   --target-url-env CRM_RESTORE_TEST_URL
