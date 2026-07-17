@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+from uuid import UUID
+
+import pytest
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+from dashboard.app import main as dashboard_main
+from dashboard.app.config import get_principal_settings
+from dashboard.app.security import CRMPrincipal, require_crm_principal
+
+
+WORKSPACE_ID = UUID("11111111-2222-4333-8444-555555555555")
+USERNAME = "crm-reviewer"
+PASSWORD = "correct horse battery staple"
+PRINCIPAL_ENV_NAMES = (
+    "CRM_PRINCIPAL_USERNAME",
+    "CRM_PRINCIPAL_PASSWORD",
+    "CRM_PRINCIPAL_WORKSPACE_ID",
+    "CRM_PRINCIPAL_IS_ADMIN",
+)
+RICH_PATHS = (
+    "/contas",
+    "/propostas",
+    "/inteligencia",
+    "/operacoes",
+    "/api/v1/accounts",
+    "/api/v1/proposals",
+    "/api/v1/intelligence/recommendations",
+    "/api/v1/operations/metrics",
+)
+
+
+IDENTITY_APP = FastAPI()
+
+
+@IDENTITY_APP.get("/protected")
+async def protected(
+    principal: CRMPrincipal = Depends(require_crm_principal),
+) -> dict[str, str | bool]:
+    return {
+        "workspace_id": str(principal.workspace_id),
+        "subject": principal.subject,
+        "is_admin": principal.is_admin,
+    }
+
+
+@pytest.fixture(autouse=True)
+def reset_principal_settings(monkeypatch):
+    for name in PRINCIPAL_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    get_principal_settings.cache_clear()
+    yield
+    get_principal_settings.cache_clear()
+
+
+def _configured_identity(monkeypatch, *, is_admin: str = "false") -> None:
+    monkeypatch.setenv("CRM_PRINCIPAL_USERNAME", USERNAME)
+    monkeypatch.setenv("CRM_PRINCIPAL_PASSWORD", PASSWORD)
+    monkeypatch.setenv("CRM_PRINCIPAL_WORKSPACE_ID", str(WORKSPACE_ID))
+    monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", is_admin)
+    get_principal_settings.cache_clear()
+
+
+def _raw_asgi_get(headers: list[tuple[bytes, bytes]]) -> tuple[int, dict, dict[str, str]]:
+    messages: list[dict] = []
+    request_messages = iter(
+        (
+            {"type": "http.request", "body": b"", "more_body": False},
+            {"type": "http.disconnect"},
+        )
+    )
+
+    async def receive():
+        return next(request_messages)
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/protected",
+        "raw_path": b"/protected",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"testserver"), *headers],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+    }
+    asyncio.run(IDENTITY_APP(scope, receive, send))
+
+    start = next(message for message in messages if message["type"] == "http.response.start")
+    body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    response_headers = {
+        key.decode("latin-1").lower(): value.decode("latin-1")
+        for key, value in start["headers"]
+    }
+    return start["status"], json.loads(body), response_headers
+
+
+def test_valid_basic_credentials_return_server_configured_principal(monkeypatch):
+    _configured_identity(monkeypatch, is_admin="true")
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "workspace_id": str(WORKSPACE_ID),
+        "subject": USERNAME,
+        "is_admin": True,
+    }
+
+
+@pytest.mark.parametrize("is_admin", ("false", "true"))
+def test_admin_role_is_derived_exactly_from_server_configuration(monkeypatch, is_admin):
+    _configured_identity(monkeypatch, is_admin=is_admin)
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 200
+    assert response.json()["is_admin"] is (is_admin == "true")
+
+
+@pytest.mark.parametrize("value", ("TRUE", "False", "1", "yes", " true", "false "))
+def test_non_exact_admin_boolean_configuration_fails_closed(monkeypatch, value):
+    _configured_identity(monkeypatch, is_admin=value)
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+    assert "www-authenticate" not in response.headers
+
+
+@pytest.mark.parametrize("missing_name", PRINCIPAL_ENV_NAMES)
+def test_every_missing_server_identity_value_fails_closed_without_challenge(
+    monkeypatch, missing_name
+):
+    _configured_identity(monkeypatch)
+    monkeypatch.delenv(missing_name)
+    get_principal_settings.cache_clear()
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+    assert "www-authenticate" not in response.headers
+    assert USERNAME not in response.text
+    assert PASSWORD not in response.text
+    assert str(WORKSPACE_ID) not in response.text
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    (
+        ("CRM_PRINCIPAL_USERNAME", ""),
+        ("CRM_PRINCIPAL_USERNAME", "   "),
+        ("CRM_PRINCIPAL_USERNAME", "invalid:name"),
+        ("CRM_PRINCIPAL_USERNAME", "caf\N{LATIN SMALL LETTER E WITH ACUTE}"),
+        ("CRM_PRINCIPAL_USERNAME", "line\nbreak"),
+        ("CRM_PRINCIPAL_PASSWORD", ""),
+        ("CRM_PRINCIPAL_PASSWORD", "   "),
+        ("CRM_PRINCIPAL_PASSWORD", "p\N{LATIN SMALL LETTER A WITH DIAERESIS}ssword"),
+        ("CRM_PRINCIPAL_PASSWORD", "line\nbreak"),
+        ("CRM_PRINCIPAL_WORKSPACE_ID", "not-a-uuid"),
+        ("CRM_PRINCIPAL_IS_ADMIN", ""),
+    ),
+)
+def test_invalid_server_identity_configuration_fails_closed_generically(
+    monkeypatch, name, value
+):
+    _configured_identity(monkeypatch)
+    monkeypatch.setenv(name, value)
+    get_principal_settings.cache_clear()
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+    assert "www-authenticate" not in response.headers
+    assert value not in response.text or value == ""
+
+
+@pytest.mark.parametrize(
+    "auth",
+    (
+        None,
+        ("wrong-user", PASSWORD),
+        (USERNAME, "wrong-password"),
+    ),
+)
+def test_missing_or_wrong_credentials_receive_basic_challenge(monkeypatch, auth):
+    _configured_identity(monkeypatch)
+
+    response = TestClient(IDENTITY_APP).get("/protected", auth=auth)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Unauthorized"}
+    assert response.headers["www-authenticate"] == "Basic"
+    assert PASSWORD not in response.text
+
+
+def test_cookie_and_request_tenant_role_inputs_cannot_authenticate(monkeypatch):
+    _configured_identity(monkeypatch)
+
+    response = TestClient(IDENTITY_APP).get(
+        "/protected",
+        params={"workspace_id": str(UUID(int=0)), "is_admin": "true"},
+        headers={
+            "X-Workspace-ID": str(UUID(int=0)),
+            "X-CRM-Role": "admin",
+            "Cookie": f"authorization={PASSWORD}; is_admin=true",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Basic"
+
+
+def test_authenticated_request_cannot_override_server_workspace_or_role(monkeypatch):
+    _configured_identity(monkeypatch, is_admin="false")
+
+    client = TestClient(IDENTITY_APP)
+    client.cookies.update({"workspace_id": str(UUID(int=0)), "is_admin": "true"})
+    response = client.get(
+        "/protected",
+        auth=(USERNAME, PASSWORD),
+        params={"workspace_id": str(UUID(int=0)), "is_admin": "true"},
+        headers={"X-Workspace-ID": str(UUID(int=0)), "X-CRM-Role": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "workspace_id": str(WORKSPACE_ID),
+        "subject": USERNAME,
+        "is_admin": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    (
+        b"Basic !!!not-base64!!!",
+        b"Basic " + base64.b64encode(b"\xff:" + PASSWORD.encode("ascii")),
+        b"Basic \xff",
+        b"Bearer browser-token",
+    ),
+)
+def test_malformed_non_ascii_or_wrong_scheme_credentials_challenge_without_crashing(
+    monkeypatch, authorization
+):
+    _configured_identity(monkeypatch)
+
+    status_code, body, headers = _raw_asgi_get([(b"authorization", authorization)])
+
+    assert status_code == 401
+    assert body == {"detail": "Unauthorized"}
+    assert headers["www-authenticate"] == "Basic"
+
+
+def test_all_rich_routes_challenge_before_feature_or_database_access(monkeypatch):
+    _configured_identity(monkeypatch)
+    client = TestClient(dashboard_main.app)
+
+    for path in RICH_PATHS:
+        response = client.get(path)
+        assert response.status_code == 401, path
+        assert response.json() == {"detail": "Unauthorized"}, path
+        assert response.headers["www-authenticate"] == "Basic", path
+
+
+def test_missing_rich_route_config_forbids_without_browser_challenge(monkeypatch):
+    client = TestClient(dashboard_main.app)
+
+    response = client.get("/contas", auth=(USERNAME, PASSWORD))
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Forbidden"}
+    assert "www-authenticate" not in response.headers
+
+
+def test_public_health_and_legacy_surface_do_not_gain_basic_auth(monkeypatch):
+    _configured_identity(monkeypatch)
+    client = TestClient(dashboard_main.app)
+
+    health = client.get("/up")
+    legacy = client.get("/")
+
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+    assert legacy.status_code == 200
+    assert "www-authenticate" not in health.headers
+    assert "www-authenticate" not in legacy.headers
+    assert USERNAME not in legacy.text
+    assert PASSWORD not in legacy.text

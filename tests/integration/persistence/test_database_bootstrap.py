@@ -30,8 +30,16 @@ def test_deployment_secret_template_covers_all_required_secrets() -> None:
     }
 
     assert {"CRM_WRITE_TOKEN", "CRM_CSRF_TOKEN", "DATABASE_URL"} <= required_secrets
+    assert "CRM_PRINCIPAL_PASSWORD" in required_secrets
     assert required_secrets <= assignments.keys()
     assert assignments["DATABASE_URL"].startswith("postgresql+psycopg://")
+    clear_environment = deploy_config["env"]["clear"]
+    assert {
+        "CRM_PRINCIPAL_USERNAME",
+        "CRM_PRINCIPAL_WORKSPACE_ID",
+        "CRM_PRINCIPAL_IS_ADMIN",
+    } <= clear_environment.keys()
+    assert "CRM_PRINCIPAL_PASSWORD" not in clear_environment
 
 
 def test_unnamed_check_constraint_gets_a_deterministic_name() -> None:

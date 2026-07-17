@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException, Request, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from .config import get_settings
+from .config import get_principal_settings, get_settings
 
 _FORBIDDEN = "Forbidden"
+_basic = HTTPBasic(auto_error=False)
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,38 @@ async def require_write_access(request: Request) -> None:
     require_legacy_sheet_writer()
 
 
-async def require_crm_principal() -> CRMPrincipal:
-    """Deny until deployment supplies a trusted authentication adapter."""
+def _unauthorized() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unauthorized",
+        headers={"WWW-Authenticate": "Basic"},
+    )
 
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
+
+async def require_crm_principal(request: Request) -> CRMPrincipal:
+    """Authenticate the single server-configured rich-route browser principal."""
+
+    try:
+        settings = get_principal_settings()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN
+        ) from None
+
+    try:
+        credentials: HTTPBasicCredentials | None = await _basic(request)
+    except HTTPException:
+        raise _unauthorized() from None
+    if credentials is None:
+        raise _unauthorized()
+    valid_username = _matches(credentials.username, settings.username)
+    valid_password = _matches(
+        credentials.password, settings.password.get_secret_value()
+    )
+    if not (valid_username and valid_password):
+        raise _unauthorized()
+    return CRMPrincipal(
+        workspace_id=settings.workspace_id,
+        subject=settings.username,
+        is_admin=settings.is_admin,
+    )

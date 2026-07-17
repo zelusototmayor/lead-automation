@@ -39,6 +39,16 @@ class AgentSettings:
     token_expires_at: datetime
 
 
+@dataclass(frozen=True)
+class PrincipalSettings:
+    """One server-configured browser principal for protected rich CRM routes."""
+
+    username: str
+    password: SecretStr
+    workspace_id: UUID
+    is_admin: bool
+
+
 def _optional_secret(name: str) -> str | None:
     value = os.getenv(name)
     if value is None:
@@ -131,6 +141,50 @@ def get_settings() -> Settings:
             os.getenv("CRM_ALLOWED_WRITE_ORIGINS", ""), environment
         ),
         environment=environment,
+    )
+
+
+def _required_principal_value(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise ValueError("invalid principal configuration")
+    return value
+
+
+def _required_basic_value(name: str) -> str:
+    value = _required_principal_value(name)
+    try:
+        value.encode("ascii")
+    except UnicodeEncodeError:
+        raise ValueError("invalid principal configuration") from None
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("invalid principal configuration")
+    return value
+
+
+def _principal_username() -> str:
+    username = _required_basic_value("CRM_PRINCIPAL_USERNAME")
+    if ":" in username:
+        raise ValueError("invalid principal configuration")
+    return username
+
+
+@lru_cache(maxsize=1)
+def get_principal_settings() -> PrincipalSettings:
+    """Load the rich-route principal mapping without database or network I/O."""
+
+    try:
+        workspace_id = UUID(_required_principal_value("CRM_PRINCIPAL_WORKSPACE_ID"))
+    except (TypeError, ValueError):
+        raise ValueError("invalid principal configuration") from None
+    raw_is_admin = _required_principal_value("CRM_PRINCIPAL_IS_ADMIN")
+    if raw_is_admin not in {"true", "false"}:
+        raise ValueError("invalid principal configuration")
+    return PrincipalSettings(
+        username=_principal_username(),
+        password=SecretStr(_required_basic_value("CRM_PRINCIPAL_PASSWORD")),
+        workspace_id=workspace_id,
+        is_admin=raw_is_admin == "true",
     )
 
 

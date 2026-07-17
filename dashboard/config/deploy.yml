@@ -42,9 +42,15 @@ env:
     CRM_COMMAND_WRITER: "sheet"
     CRM_SHEETS_PROJECTION_ENABLED: "false"
     CRM_AGENT_EVENTS_ENABLED: "false"
+    # Intentionally incomplete placeholders keep rich routes fail-closed until
+    # deployment supplies the approved non-secret principal mapping.
+    CRM_PRINCIPAL_USERNAME: ""
+    CRM_PRINCIPAL_WORKSPACE_ID: ""
+    CRM_PRINCIPAL_IS_ADMIN: "false"
   secret:
     - CRM_WRITE_TOKEN
     - CRM_CSRF_TOKEN
+    - CRM_PRINCIPAL_PASSWORD
     - DATABASE_URL
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
