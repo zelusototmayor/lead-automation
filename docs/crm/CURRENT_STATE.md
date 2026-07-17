@@ -555,7 +555,7 @@ Alembic check: No new upgrade operations detected, exit 0
 Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
 Ruff no delta Python origin/main...HEAD: passed
 compileall e git diff --check: passed
-Gitleaks no intervalo 106485b..HEAD: 25 commits, cerca de 991 KB, 0 leaks
+Gitleaks no intervalo `106485b..HEAD`: 0 leaks
 ```
 
 A imagem Docker foi reconstruída a partir do candidato local. O smoke com flags seguras confirmou `/up=200`, `/contas=403`, `/propostas=403`, `/inteligencia=403` e `POST /api/v1/agent-events=404`. O dry-run da fixture de contas devolveu 4 imports potenciais, 3 contas criadas/associadas, 1 duplicado e 1 fase não mapeada, sem writes.
