@@ -567,3 +567,34 @@ O probe live read-only repetido confirmou `/up=200`; `/contas`, `/propostas`, `/
 Continuam ausentes os pré-requisitos que não podem ser fabricados por testes locais: adapter de identidade e mapping de utilizadores/papéis/workspace; política de retenção, scopes e prova de `Won`; PostgreSQL CRM staging/produção com backup automático e restore do arquivo real; cópia real para backfill/reconcile idempotente; validação da amostra pelo owner comercial; smoke browser/security em staging; soak; cutover verificado; e, para a Tarefa 19, dois releases estáveis, telemetria v0, export Sheet e aceitação de stakeholders.
 
 Por isso não houve merge, deploy, migração/backfill live, ativação de workers/connectors/outbox, cutover ou remoção do legado. Os containers PostgreSQL descartáveis serão removidos após a verificação final. O sentinel `.hermes/crm-revamp-complete.json` continua corretamente ausente.
+
+---
+
+## Retoma autónoma em 2026-07-17T13:40:48Z
+
+A retoma começou no `HEAD` limpo `8b63dd5e02e1e7cbc5f8d4f670385de76d566625`, seis commits à frente de `origin/feat/crm-accounts-proposals-v1`. O plano canónico, o histórico de commits e este documento foram reconciliados antes de qualquer execução. Não foi encontrada alteração staged, unstaged ou untracked a preservar.
+
+### Verificação local repetida
+
+Foi criado um PostgreSQL 16 descartável em `127.0.0.1:55432`, sem dados ou credenciais reais. Uma primeira execução da suite contra a base vazia confirmou a pré-condição operacional: os testes de API que usam fixtures relacionais não executam migrations automaticamente e falharam por ausência de `workspaces`. Depois de `alembic upgrade head`, a execução canónica passou:
+
+```text
+Suite automatizada segura completa, com DeprecationWarning como erro: 848 passed em 95.69s
+Alembic lifecycle: 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python origin/main...HEAD: passed
+compileall e git diff --check: passed
+Gitleaks no intervalo 106485b..HEAD: 31 commits, cerca de 997 KB, 0 leaks
+```
+
+A imagem Docker do candidato foi reconstruída localmente. O smoke com os defaults seguros confirmou `/up=200`, `/contas=403`, `/propostas=403`, `/inteligencia=403` e `POST /api/v1/agent-events=404`.
+
+### Gates externos revalidados
+
+O probe live read-only confirmou `/up=200` e `404` para as novas páginas e APIs, coerente com a imagem de produção pré-revamp. O PR `#1` continua draft, mergeable e sem CI ou reviews configurados. A API GitHub não devolveu environments configurados e os nomes de staging inspecionados não têm registo DNS.
+
+O host de produção tem apenas cerca de 1 GiB de memória disponível, 3,2 GiB de disco livre e filesystem a 87%, além de vários workloads existentes. Não existe base CRM dedicada observável. Provisionar nesse host, por omissão, PostgreSQL CRM, staging e backups violaria os gates de capacidade, isolamento e restore do plano; a infraestrutura existente não foi reutilizada nem alterada.
+
+Continuam indisponíveis os artefactos externos obrigatórios: adapter de identidade server-side e mapping de utilizadores/papéis/workspace; retenção, scopes e prova oficial de `Won`; staging isolado; PostgreSQL CRM com backup automático; cópia real para dois backfills/reconciliations idempotentes; validação humana da amostra; browser/security smoke e soak em staging; cutover verificado; e os dois releases estáveis exigidos antes da Tarefa 19. O deploy e o sentinel continuam bloqueados pelos gates técnicos, não por uma pausa de aprovação.
