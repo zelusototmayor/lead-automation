@@ -101,6 +101,17 @@ def test_snapshot_json_round_trip_preserves_canonical_identity(tmp_path):
     assert load_snapshot(path) == snapshot
 
 
+def test_snapshot_canonicalizes_multiline_sheet_cells():
+    snapshot = snapshot_sheet(
+        ReadOnlySource([["ID", "Notes"], ["lead-1", "line one\r\nline two\titem"]]),
+        "spreadsheet-1",
+        "Leads",
+        stable_id_column="ID",
+    )
+
+    assert snapshot.rows[0].values["Notes"] == "line one\nline two\titem"
+
+
 def test_empty_sheet_is_a_valid_zero_row_snapshot():
     snapshot = snapshot_sheet(
         ReadOnlySource([]), "spreadsheet-1", "Leads", stable_id_column="ID"

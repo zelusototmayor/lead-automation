@@ -65,7 +65,13 @@ def _invalid_file() -> ValueError:
     return ValueError("invalid snapshot file")
 
 
-def _safe_text(value: object, *, max_length: int, nonblank: bool = False) -> str:
+def _safe_text(
+    value: object,
+    *,
+    max_length: int,
+    nonblank: bool = False,
+    allow_layout_controls: bool = False,
+) -> str:
     if value is None:
         text = ""
     elif type(value) in {str, int, bool}:
@@ -74,9 +80,15 @@ def _safe_text(value: object, *, max_length: int, nonblank: bool = False) -> str
         text = str(value).strip()
     else:
         raise _invalid_input()
+    if allow_layout_controls:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
     if len(text) > max_length or (nonblank and not text):
         raise _invalid_input()
-    if any(unicodedata.category(character) in {"Cc", "Cf"} for character in text):
+    if any(
+        unicodedata.category(character) in {"Cc", "Cf"}
+        and not (allow_layout_controls and character in {"\n", "\t"})
+        for character in text
+    ):
         raise _invalid_input()
     return text
 
@@ -126,7 +138,14 @@ def snapshot_sheet(
         for row_number, raw in enumerate(values[1:], start=2):
             if type(raw) not in {list, tuple} or len(raw) > len(headers):
                 raise _invalid_input()
-            cells = [_safe_text(value, max_length=MAX_CELL_LENGTH) for value in raw]
+            cells = [
+                _safe_text(
+                    value,
+                    max_length=MAX_CELL_LENGTH,
+                    allow_layout_controls=True,
+                )
+                for value in raw
+            ]
             cells.extend([""] * (len(headers) - len(cells)))
             mapped = dict(zip(headers, cells, strict=True))
             captured_bytes += (
@@ -268,7 +287,11 @@ def _validate_snapshot(snapshot: object) -> SheetSnapshot:
                 header = _safe_text(key, max_length=255, nonblank=True)
                 if header in values or type(value) is not str:
                     raise _invalid_file()
-                values[header] = _safe_text(value, max_length=MAX_CELL_LENGTH)
+                values[header] = _safe_text(
+                    value,
+                    max_length=MAX_CELL_LENGTH,
+                    allow_layout_controls=True,
+                )
             if values.get(stable_id_column) != external_id:
                 raise _invalid_file()
             seen_ids.add(external_id)
