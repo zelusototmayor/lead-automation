@@ -7,10 +7,9 @@ Run:  python tests/test_linkedin_system.py
 """
 
 import sys
-import os
 from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 # Ensure project root is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -55,7 +54,7 @@ print("\n" + "=" * 60)
 print("1. CONFIG MODULE")
 print("=" * 60)
 
-from src.linkedin.config import (
+from src.linkedin.config import (  # noqa: E402
     LINKEDIN_CRM_HEADERS,
     LCOL,
     SELECTION_CRITERIA,
@@ -63,8 +62,7 @@ from src.linkedin.config import (
     DM_TEMPLATES,
     DM1_VARIANTS,
     DM1_VARIANT_KEYS,
-    SKIP_TITLE_KEYWORDS,
-    SKIP_INDICATORS,
+
     get_tier,
     get_next_dm1_variant,
     get_dm1_template,
@@ -219,7 +217,7 @@ print("\n" + "=" * 60)
 print("2. PROSPECT FINDER")
 print("=" * 60)
 
-from src.linkedin.prospect_finder import (
+from src.linkedin.prospect_finder import (  # noqa: E402
     should_skip_prospect,
     get_search_titles,
     get_browser_instructions as pf_browser_instructions,
@@ -290,7 +288,7 @@ print("\n" + "=" * 60)
 print("3. CONNECTION REQUESTER")
 print("=" * 60)
 
-from src.linkedin.connection_requester import (
+from src.linkedin.connection_requester import (  # noqa: E402
     check_safety_limits,
     get_browser_instructions as cr_browser_instructions,
 )
@@ -604,7 +602,7 @@ print("\n" + "=" * 60)
 print("5. DM SENDER")
 print("=" * 60)
 
-from src.linkedin.dm_sender import (
+from src.linkedin.dm_sender import (  # noqa: E402
     personalize_dm,
     get_browser_instructions as dm_browser_instructions,
 )
@@ -738,7 +736,7 @@ print("\n" + "=" * 60)
 print("6. ACCEPTANCE MONITOR")
 print("=" * 60)
 
-from src.linkedin.acceptance_monitor import (
+from src.linkedin.acceptance_monitor import (  # noqa: E402
     check_manual_toggles,
     get_browser_instructions as am_browser_instructions,
 )
@@ -784,7 +782,7 @@ print("\n" + "=" * 60)
 print("7. REPLY MONITOR")
 print("=" * 60)
 
-from src.linkedin.reply_monitor import (
+from src.linkedin.reply_monitor import (  # noqa: E402
     send_ntfy_notification,
     handle_reply,
     get_browser_instructions as rm_browser_instructions,
