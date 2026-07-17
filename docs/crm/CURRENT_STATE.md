@@ -711,3 +711,41 @@ A imagem local do candidato foi reconstruída com digest `sha256:dd81c39308ec680
 Os gates externos foram novamente consultados sem mutações. O PR `#1` permanece draft, mergeable e sem checks/reviews; a API GitHub continua sem environments e os nomes de staging continuam sem DNS. Produção responde `/up=200` e `404` nas novas páginas/APIs, coerente com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host continua com filesystem a 87%, 3,2 GiB livres, sem base ou backup CRM. A telemetria agregada das últimas 48 horas continua a provar consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26.
 
 Consequentemente, merge, staging, produção, cutover e Tarefa 19 continuam tecnicamente bloqueados pelos gates explícitos do plano: não há identidade/RBAC/workspace mapping de produção, políticas aprovadas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore real, resolução e validação humana da amostra shadow, soak, nem dois releases estáveis sem consumidores v0. Não foi criado `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma e adapter de identidade em 2026-07-17T20:28:28Z
+
+A retoma preservou integralmente o candidato staged encontrado sobre `a2d910b` e fechou o blocker técnico do adapter de identidade das rotas ricas no commit `4280bc8531832bc88c0c4e904bff0d6c0e6ce450` (`security: add protected CRM principal adapter`), publicado em `origin/feat/crm-accounts-proposals-v1`.
+
+O adapter HTTP Basic está limitado às páginas e APIs ricas já protegidas por `require_crm_principal`. Username, password, workspace UUID e papel admin vêm exclusivamente da configuração server-side; configuração ausente, incompleta, não ASCII ou malformada falha com `403` sem challenge, e credenciais browser ausentes/malformadas/incorretas recebem `401` genérico. O workspace e papel não podem ser substituídos por query, headers ou cookies. O health check, superfície legada pública read-only, writes humanos e bearer de Agent conservam contratos separados. Os placeholders Kamal continuam deliberadamente incompletos, portanto o deploy atual permanece fail-closed.
+
+### Evidência local repetida
+
+Num PostgreSQL 16 descartável novo, sem dados reais ou credenciais live:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 904 passed em 101.03s, exit 0
+Security/bootstrap pós-commit: 92 passed, 1 skipped
+Persistence + migration: 291 passed
+Alembic lifecycle: 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff check e Gitleaks: passed
+Imagem candidata: build local concluído
+Smoke com defaults: /up=200; rotas ricas=403; agent ingress=404
+Smoke autenticado com DB/read models PostgreSQL: páginas e APIs de Contas, Propostas, Inteligência e Operações=200; request sem credenciais=401; agent ingress desativado=404
+```
+
+O PostgreSQL descartável e a imagem local foram usados apenas para testes e removidos no fim; as portas `55432`, `58000` e `58001` ficaram livres. O ficheiro local temporário de secrets Kamal foi igualmente removido. Nenhum worker CRM, reconciler, outbox publisher ou job outbound estava ativo. Nenhum email ou write em Sheet foi executado.
+
+### Gates externos revalidados
+
+Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200` e as novas páginas/APIs continuam `404`. O PR `#1` permanece draft e mergeable, sem checks/reviews; a API GitHub não apresenta environments e os nomes de staging verificados não têm DNS. O token GitHub disponível também não possui scope `workflow`, pelo que um workflow de candidato validado localmente não pôde ser publicado; o respetivo patch foi preservado fora do repositório em `/Users/max/.hermes/plans/crm-candidate-ci.patch`.
+
+O host live tem 24 GiB de filesystem, 20 GiB usados, 3,2 GiB livres, 3,8 GiB RAM total, cerca de 1,5 GiB disponível e 1,2 GiB de swap em uso. Não existe base CRM dedicada nem staging isolado. Criar ambos no mesmo host sem margem de restore e sem limpeza aprovada de workloads não relacionados violaria os gates de capacidade e isolamento. Não foi executado prune nem alterado qualquer workload externo.
+
+A telemetria agregada das últimas 48 horas continua a provar consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26. Continuam também sem evidência os gates que não podem ser fabricados localmente: políticas/owner decisions de retenção, scopes e prova oficial de `Won`; staging isolado; PostgreSQL CRM com backup automático e restore do ficheiro real; resolução e validação humana dos conflitos/amostra shadow; browser/security smoke externo; soak/cutover; e dois releases estáveis sem consumidores v0 antes da Tarefa 19.
+
+Por isso não houve merge, deploy, migração/backfill live, ativação de conectores/workers/outbox, cutover, remoção do legado ou criação de `.hermes/crm-revamp-complete.json`.
