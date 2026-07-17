@@ -178,6 +178,44 @@ def test_snapshot_cli_saves_only_with_explicit_save(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["saved"] is True
 
 
+def test_snapshot_cli_uses_only_explicit_fallback_identity_groups(tmp_path, capsys):
+    output_path = tmp_path / "snapshot.json"
+
+    class Source:
+        def read_values(self, spreadsheet_id, sheet_name):
+            return [
+                ["ID", "Company", "Contact", "Email"],
+                ["", "Acme", "Ana", "ana@example.com"],
+            ]
+
+    result = crm_snapshot_sheets.main(
+        [
+            "--credentials-file",
+            "unused.json",
+            "--spreadsheet-id",
+            "sheet-1",
+            "--sheet-name",
+            "Leads",
+            "--stable-id-column",
+            "ID",
+            "--fallback-identity",
+            "Email",
+            "--fallback-identity",
+            "Company,Contact",
+            "--output",
+            str(output_path),
+            "--save",
+        ],
+        source_factory=lambda _: Source(),
+    )
+
+    assert result == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["snapshot_rows"] == 1
+    payload = json.loads(output_path.read_text())
+    assert payload["rows"][0]["external_id"].startswith("derived:")
+
+
 def test_snapshot_cli_redacts_unexpected_source_failures(tmp_path, capsys):
     secret = "private-person@example.test"  # pragma: allowlist secret
 

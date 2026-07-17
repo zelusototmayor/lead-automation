@@ -604,3 +604,48 @@ Continuam indisponíveis os artefactos externos obrigatórios: adapter de identi
 A verificação repetida confirmou 848 testes com `DeprecationWarning` tratado como erro, lifecycle Alembic `0006 -> base -> 0006`, `alembic check`, restore de backup custom-format, Ruff, compileall, diff check, Gitleaks, build/smoke da imagem e dry-run do backfill. Nenhum worker CRM, reconciler ou job de outreach estava ativo durante a migração/testes. O PostgreSQL e a imagem descartáveis foram removidos e a porta 55432 ficou livre.
 
 Os seis commits locais encontrados e o commit de evidência `911a1abf3486007956321900b90b052d4ba76889` foram publicados em `origin/feat/crm-accounts-proposals-v1`; o PR permanece draft e sem checks porque staging e os gates externos continuam ausentes. O branch não foi merged nem deployed. A Tarefa 19 e o sentinel permanecem corretamente bloqueados.
+
+---
+
+## Validação shadow com a Sheet real em 2026-07-17T15:46:23Z
+
+Foi criada uma snapshot local temporária, mode `0600`, através do scope Google Sheets read-only. A credencial foi copiada para um ficheiro temporário, nunca impressa, e removida imediatamente após a captura. A snapshot também foi removida depois da validação.
+
+O schema real confirmou 1.247 linhas, `ID` vazio em todas as linhas, headers `Stage` e `Contact`, datas de proposta no formato `YYYY/MM/DD`, 13 identidades duplicadas, 5 linhas sem identidade fallback completa e 1.216 linhas elegíveis para snapshot. O adaptador agora exige grupos fallback explícitos e source-scoped; não usa row number nem company-only identity.
+
+Num PostgreSQL 16 descartável separado, migrado até `0006`, o mesmo input foi aplicado duas vezes:
+
+```text
+Accounts apply #1: 68 imports, 46 accounts criadas/associadas, 27 conflitos
+Accounts apply #2: 0 imports, 68 replay no-op, 0 duplicados novos
+Proposals apply #1: 44 imports, 6 unmatched accounts, 50 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op, 0 duplicados novos
+Compare: parity=false, 3 leads/accounts em falta, 0 stage/account/source-field mismatches
+Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 Won conflado com Meeting Booked, 0 eventos failed/dead-letter
+Backup custom-format do shadow restaurado e verificado: schema 0006, 11 tabelas, 1 workspace, 0 violações
+```
+
+Os resultados provam idempotência do input aplicável e preservação das invariantes, mas não satisfazem o gate de dados: 3 conflitos de identidade bloqueiam paridade, 6 propostas continuam sem account correspondente, 19 terminais exigem histórico/revisão e 1.126 linhas têm fase vazia ou não mapeada. Estes casos não foram auto-fundidos nem convertidos em aliases. A base shadow, backup e snapshot descartáveis foram removidos. Não houve write na Sheet, envio outbound, merge, deploy, migração live, cutover ou criação do sentinel.
+
+---
+
+## Fecho do candidato local em 2026-07-17T17:11:37Z
+
+As regressões descobertas pela compatibilidade com a Sheet real foram fechadas sem relaxar o matching: identidades fallback normalizam email IDN, telefone e texto NFKC, `Company` isolado é rejeitado, todos os IDs duplicados e linhas sem identidade entram em conflito, datas de proposta inválidas não promovem a fase e colunas `Status`/`Stage` contraditórias entram em review. Aliases canónicos equivalentes nas duas colunas são aceites. A configuração Alembic também deixou de emitir o aviso de `prepend_sys_path`.
+
+Evidência repetida no PostgreSQL 16 descartável local:
+
+```text
+Compatibilidade real Sheet + CLI + bootstrap: 82 passed, 1 skipped
+Suite migration: 62 passed
+Suite automatizada segura completa com DeprecationWarning como erro: 866 passed, 1 skipped em 99.83s
+Alembic lifecycle: 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
+Ruff, format check e git diff --check: passed nos ficheiros alterados
+```
+
+O gate da Tarefa 19 continua materialmente fechado. A telemetria agregada das últimas 48 horas no proxy de produção mostrou consumidores ativos dos endpoints v0: `/api/stats` 13 pedidos, `/api/portfolio` 4, `/api/recommendations` 4, `/api/outreach-followups` 14, `/api/email-followups` 11 e `/api/proposal-followups` 12. Remover esses contratos quebraria consumidores observados.
+
+O host live continua sem base CRM dedicada e com apenas 3,2 GiB livres no filesystem, já a 87%, além de múltiplos workloads. Não existe staging isolado, adapter de identidade, backup automático CRM, amostra humana aprovada, soak ou dois releases estáveis. Estes gates técnicos impedem merge, deploy, cutover, remoção do legado e criação do sentinel; não são substituídos pela autorização YOLO nem pelos testes locais.

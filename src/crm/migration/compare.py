@@ -94,7 +94,7 @@ def compare_legacy(
     if type(workspace_id) is not UUID:
         raise ValueError("compare requires an explicit workspace UUID")
 
-    mapped, unmapped = _classified_rows(snapshot)
+    mapped, unmapped, classification_reasons = _classified_rows(snapshot)
     rows_by_external_id = {row.external_id: (row, stage) for row, stage in mapped}
     matched_leads = matched_accounts = 0
     missing_leads = missing_accounts = 0
@@ -197,7 +197,11 @@ def compare_legacy(
     finally:
         engine.dispose()
 
-    conflicts = len(snapshot.missing_id_rows) + history_conflicts
+    conflicts = (
+        len(snapshot.missing_id_rows)
+        + history_conflicts
+        + sum(classification_reasons.values())
+    )
     parity = (
         missing_leads == 0
         and missing_accounts == 0

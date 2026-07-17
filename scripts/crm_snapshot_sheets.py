@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--spreadsheet-id", required=True)
     parser.add_argument("--sheet-name", required=True)
     parser.add_argument("--stable-id-column", required=True)
+    parser.add_argument(
+        "--fallback-identity",
+        action="append",
+        default=[],
+        metavar="COLUMN[,COLUMN...]",
+        help="Explicit ordered identity fallback group; repeat for lower-priority groups",
+    )
     parser.add_argument("--output", required=True, help="Local JSON snapshot path")
     parser.add_argument(
         "--save", action="store_true", help="Write the local snapshot file"
@@ -38,11 +45,16 @@ def main(
     args = build_parser().parse_args(argv)
     try:
         source = source_factory(args.credentials_file)
+        fallback_groups = tuple(
+            tuple(column.strip() for column in group.split(","))
+            for group in args.fallback_identity
+        )
         snapshot = snapshot_sheet(
             source,  # type: ignore[arg-type]
             args.spreadsheet_id,
             args.sheet_name,
             stable_id_column=args.stable_id_column,
+            fallback_identity_columns=fallback_groups,
         )
         if args.save:
             save_snapshot(snapshot, args.output)

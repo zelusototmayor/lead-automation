@@ -13,7 +13,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from src.crm.migration.backfill import _scope
+from src.crm.domain.stage_policy import UnknownStageError, resolve_stage
+from src.crm.migration.backfill import _duplicate_identity_conflicts, _scope
 from src.crm.migration.sheets_snapshot import (
     SheetSnapshot,
     SnapshotRow,
@@ -81,7 +82,7 @@ def _sent_at(value: str) -> datetime | None:
     raw = value.strip()
     if not raw:
         return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
             return datetime.combine(datetime.strptime(raw, fmt).date(), time(), UTC)
         except ValueError:
@@ -112,9 +113,22 @@ def _currency(row: SnapshotRow) -> str:
 
 
 def _status(row: SnapshotRow) -> str:
+    stages = [
+        row.values.get(name, "").strip()
+        for name in ("Status", "Stage")
+        if row.values.get(name, "").strip()
+    ]
+    try:
+        resolved_stages = {resolve_stage(stage).value for stage in stages}
+    except UnknownStageError:
+        if len({stage.casefold() for stage in stages}) > 1:
+            raise _ReviewRequired("conflicting stage columns") from None
+        resolved_stages = set()
+    if len(resolved_stages) > 1:
+        raise _ReviewRequired("conflicting stage columns")
     raw = row.values.get("Proposal Status", "").strip()
     if not raw:
-        stage = row.values.get("Status", "").strip().lower()
+        stage = next(iter(resolved_stages), "")
         raw = "Won" if stage == "won" else "Lost" if stage == "lost" else "Sent"
     status = _STATUS_MAP.get(raw.lower())
     if status is None:
@@ -302,7 +316,7 @@ def backfill_proposals(
     workspace_id: object | None = None,
 ) -> ProposalBackfillReport:
     snapshot = validate_snapshot(snapshot)
-    conflicts = 0
+    conflicts = _duplicate_identity_conflicts(snapshot) + len(snapshot.missing_id_rows)
     rows = []
     for row in snapshot.rows:
         if not _is_proposal(row):

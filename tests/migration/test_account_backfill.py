@@ -57,7 +57,8 @@ def test_dry_run_reports_duplicates_unmapped_and_homonyms_without_writes():
     assert report.unmapped_stages == {"unmapped": 1}
     assert report.imported == 4
     assert report.accounts_created_or_linked == 3
-    assert report.conflicts == 0
+    assert report.conflicts == 1
+    assert report.review_reasons == {"duplicate_stable_id": 1}
     assert report.replay_noop == 0
     assert report.applied is False
 

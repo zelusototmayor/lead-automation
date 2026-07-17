@@ -78,15 +78,77 @@ class _ReviewRequired(RuntimeError):
         super().__init__("row requires review")
 
 
+def _supplied_stages(row: SnapshotRow) -> list[str]:
+    return [
+        row.values.get(name, "").strip()
+        for name in ("Status", "Stage")
+        if row.values.get(name, "").strip()
+    ]
+
+
+def _raw_stage(row: SnapshotRow) -> str:
+    supplied = _supplied_stages(row)
+    if not supplied:
+        return ""
+    try:
+        resolved = {resolve_stage(value).value for value in supplied}
+    except UnknownStageError:
+        if len({value.casefold() for value in supplied}) > 1:
+            raise _ReviewRequired("conflicting_columns") from None
+        raise
+    if len(resolved) != 1:
+        raise _ReviewRequired("conflicting_columns")
+    return supplied[0]
+
+
+def _source_stage_raw(row: SnapshotRow) -> str | None:
+    supplied = _supplied_stages(row)
+    return supplied[0] if supplied else None
+
+
+def _valid_date(value: str, fmt: str) -> bool:
+    try:
+        datetime.strptime(value, fmt)
+    except ValueError:
+        return False
+    return True
+
+
+def _effective_stage(row: SnapshotRow) -> str:
+    proposal_sent = row.values.get("Proposal Sent", "").strip()
+    has_legacy_proposal = bool(proposal_sent)
+    if has_legacy_proposal and not any(
+        _valid_date(proposal_sent, fmt)
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y")
+    ):
+        raise _ReviewRequired("invalid_proposal_artifact")
+    try:
+        stage = resolve_stage(_raw_stage(row)).value
+    except UnknownStageError:
+        if has_legacy_proposal:
+            return "proposal_sent"
+        raise
+    if has_legacy_proposal and stage_rank(stage) < stage_rank("proposal_sent"):
+        return "proposal_sent"
+    return stage
+
+
 def _classified_rows(snapshot: SheetSnapshot):
     mapped = []
     unmapped_count = 0
+    review_reasons: dict[str, int] = {}
     for row in snapshot.rows:
         try:
-            mapped.append((row, resolve_stage(row.values.get("Status", "")).value))
+            mapped.append((row, _effective_stage(row)))
+        except _ReviewRequired as exc:
+            review_reasons[exc.reason] = review_reasons.get(exc.reason, 0) + 1
         except UnknownStageError:
             unmapped_count += 1
-    return mapped, ({"unmapped": unmapped_count} if unmapped_count else {})
+    return (
+        mapped,
+        ({"unmapped": unmapped_count} if unmapped_count else {}),
+        review_reasons,
+    )
 
 
 def _scope(snapshot: SheetSnapshot) -> str:
@@ -434,7 +496,11 @@ def _apply_row(
                 contact = Contact(
                     workspace_id=workspace_id,
                     account_id=account.id,
-                    full_name=row.values.get("Contact Name", "").strip() or None,
+                    full_name=(
+                        row.values.get("Contact Name", "").strip()
+                        or row.values.get("Contact", "").strip()
+                        or None
+                    ),
                     primary_email=email,
                 )
                 session.add(contact)
@@ -445,7 +511,7 @@ def _apply_row(
             workspace_id=workspace_id,
             account_id=account.id if account else None,
             contact_id=contact.id if contact else None,
-            source_stage_raw=row.values.get("Status", "").strip() or None,
+            source_stage_raw=_source_stage_raw(row),
             stage=stage,
             highest_stage_rank=stage_rank(stage),
             sector=row.values.get("Industry", "").strip() or None,
@@ -458,7 +524,7 @@ def _apply_row(
     else:
         lead.account_id = account.id if account else lead.account_id
         lead.contact_id = contact.id if contact else lead.contact_id
-        lead.source_stage_raw = row.values.get("Status", "").strip() or None
+        lead.source_stage_raw = _source_stage_raw(row)
         lead.stage = stage
         lead.highest_stage_rank = max(lead.highest_stage_rank, stage_rank(stage))
         lead.sector = row.values.get("Industry", "").strip() or None
@@ -524,6 +590,10 @@ def _advance_checkpoint(
     )
 
 
+def _duplicate_identity_conflicts(snapshot: SheetSnapshot) -> int:
+    return len(snapshot.duplicate_ids)
+
+
 def backfill_accounts(
     snapshot: SheetSnapshot,
     *,
@@ -533,7 +603,8 @@ def backfill_accounts(
     failure_injector: Callable[[str, int], None] | None = None,
 ) -> BackfillReport:
     snapshot = validate_snapshot(snapshot)
-    mapped, unmapped = _classified_rows(snapshot)
+    duplicate_conflicts = _duplicate_identity_conflicts(snapshot)
+    mapped, unmapped, classification_reasons = _classified_rows(snapshot)
     history_required = 0
     account_candidates = 0
     dry_imports = 0
@@ -543,10 +614,17 @@ def backfill_accounts(
             dry_imports += 1
         except AccountRequirementReviewRequired:
             history_required += 1
-    base_conflicts = len(snapshot.missing_id_rows) + history_required
-    base_reasons: dict[str, int] = {}
+    base_conflicts = (
+        len(snapshot.missing_id_rows)
+        + duplicate_conflicts
+        + history_required
+        + sum(classification_reasons.values())
+    )
+    base_reasons: dict[str, int] = dict(classification_reasons)
     if snapshot.missing_id_rows:
         base_reasons["missing_stable_id"] = len(snapshot.missing_id_rows)
+    if duplicate_conflicts:
+        base_reasons["duplicate_stable_id"] = duplicate_conflicts
     if history_required:
         base_reasons["history_required"] = history_required
     if not apply:
@@ -566,12 +644,16 @@ def backfill_accounts(
         raise ValueError("apply requires an explicit workspace UUID")
 
     imported = accounts = replay = 0
-    conflicts = len(snapshot.missing_id_rows)
-    review_reasons = (
-        {"missing_stable_id": len(snapshot.missing_id_rows)}
-        if snapshot.missing_id_rows
-        else {}
+    conflicts = (
+        len(snapshot.missing_id_rows)
+        + duplicate_conflicts
+        + sum(classification_reasons.values())
     )
+    review_reasons = dict(classification_reasons)
+    if snapshot.missing_id_rows:
+        review_reasons["missing_stable_id"] = len(snapshot.missing_id_rows)
+    if duplicate_conflicts:
+        review_reasons["duplicate_stable_id"] = duplicate_conflicts
     scope = _scope(snapshot)
     engine = create_engine(database_url)
     try:

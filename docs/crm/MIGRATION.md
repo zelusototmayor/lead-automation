@@ -18,6 +18,22 @@ Before any staging or production activation, record all of the following with re
 
 A missing gate blocks activation. Local passing tests do not substitute for real-data owner validation.
 
+## Legacy Sheet identity and schema adapter
+
+The observed `PT Logistics` tab has a declared `ID` column but all 1,247 values were blank. The snapshot command therefore remains strict by default and supports an explicit, ordered fallback only when the operator supplies `--fallback-identity` groups. The observed safe shadow command uses:
+
+```text
+--stable-id-column ID \
+--fallback-identity Email \
+--fallback-identity Phone \
+--fallback-identity Website,Company \
+--fallback-identity Company,Contact
+```
+
+Derived IDs are source-scoped SHA-256 identifiers. They survive row movement and unrelated note edits; ambiguous duplicate evidence and rows without a complete fallback group remain conflicts and are never guessed from row number or company name alone. Snapshot files contain commercial data and must remain mode `0600`, outside the repository, with deletion after the migration evidence has been retained.
+
+The real tab uses `Stage` and `Contact`; the migration adapter accepts them as explicit legacy column names for `Status` and `Contact Name`. Unknown stage values remain review items. `YYYY/MM/DD` is accepted for the observed `Proposal Sent` dates. A nonblank legacy proposal date elevates the effective account-backfill stage to at least `proposal_sent`, while preserving the raw stage and keeping the proposal `legacy_unverified` with `NULL/missing` value until evidence review.
+
 ## Shadow migration sequence
 
 1. Back up the live database, if one exists, and restore-test that exact archive.
@@ -78,4 +94,4 @@ For each environment, record without secrets or PII:
 
 ## Current status
 
-As of 2026-07-17, migrations through `0006`, backfills, connectors, restore tooling and guarded cutover flags have been exercised against disposable local PostgreSQL. The relevant CRM suite passes locally. The observed live dashboard still runs commit/image `7622a2b` without PostgreSQL; no staging environment, real connector/backfill, owner-approved sample, identity adapter, soak or production cutover has been verified from this branch. These are blocking gates, not optional follow-up work.
+As of 2026-07-17, migrations through `0006`, backfills, connectors, restore tooling and guarded cutover flags have been exercised against disposable local PostgreSQL. The relevant CRM suite passes locally. A read-only real-Sheet shadow run proved replay idempotency for applicable rows but still has unresolved identity/account conflicts. The observed live dashboard still runs commit/image `7622a2b` without PostgreSQL; no staging environment, owner-approved sample, identity adapter, soak or production cutover has been verified from this branch. Aggregate proxy telemetry also shows active v0 API consumers, so Task 19 retirement is blocked independently of the cutover gates. These are blocking gates, not optional follow-up work.

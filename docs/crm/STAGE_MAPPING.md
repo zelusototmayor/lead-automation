@@ -1,6 +1,6 @@
 # Semântica inicial de estágios do CRM
 
-> **Status:** o catálogo canônico e a política descritos neste documento estão implementados como contrato de domínio. A inclusão de qualquer alias além dos três documentados continua condicionada a inventário somente leitura e confirmação humana. Este documento e a implementação não resultam de consulta ao Google Sheets.
+> **Status:** o catálogo canónico e a política descritos neste documento estão implementados como contrato de domínio. O inventário read-only de 2026-07-17 está registado no fim do documento. Valores desconhecidos continuam em revisão e não foram promovidos a aliases por inferência.
 
 ## Princípios
 
@@ -92,3 +92,26 @@ Antes de ampliar o conjunto documentado de aliases:
 2. comparar valores e frequências com este catálogo, sem alterar a fonte;
 3. encaminhar desconhecidos e possíveis aliases para revisão;
 4. obter confirmação humana antes de modificar o contrato.
+
+## Inventário read-only observado em 2026-07-17
+
+Uma leitura sem writes da tab `PT Logistics` encontrou 1.247 linhas e o seguinte inventário agregado do campo real `Stage`:
+
+| Valor observado | Contagem | Tratamento atual |
+|---|---:|---|
+| vazio | 993 | revisão/unmapped, salvo quando existe data de proposta legada |
+| `Email Sent` | 96 | revisão/unmapped, salvo quando existe data de proposta legada |
+| `No Answer` | 44 | revisão/unmapped |
+| `Call Back` | 28 | revisão/unmapped |
+| `Not a Fit` | 28 | terminal; sem histórico pré-terminal continua em revisão |
+| `Lost` | 20 | terminal; sem histórico pré-terminal continua em revisão |
+| `New` | 20 | `new` pelo nome canónico |
+| `Proposal Sent` | 10 | `proposal_sent` pelo alias aprovado |
+| `Contacted` | 4 | `contacted` pelo nome canónico |
+| `Meeting Booked` | 2 | `meeting_booked` pelo alias aprovado |
+| `Send Email` | 1 | revisão/unmapped |
+| `Warm` | 1 | revisão/unmapped |
+
+O adaptador de migração aceita explicitamente `Stage` como nome legado alternativo de `Status`, sem transformar os valores desconhecidos em aliases. Se ambos os campos existirem e resolverem para fases diferentes, a linha entra em revisão por conflito.
+
+Uma data não vazia em `Proposal Sent` é tratada como evidência legada suficiente para criar a associação de conta em shadow mode e elevar a fase efetiva para pelo menos `proposal_sent`. A proposta continua marcada `legacy_unverified`, o valor vazio continua `NULL/missing` e o valor original de `Stage` permanece em `source_stage_raw`. Esta regra não converte `Email Sent`, `No Answer`, `Call Back`, `Send Email` ou `Warm` em aliases globais.

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import re
 from types import MappingProxyType
 from typing import Mapping, Protocol, Sequence
 import unicodedata
+
+from src.crm.services.account_service import normalize_email
 
 MAX_COLUMNS = 128
 MAX_ROWS = 100_000
@@ -97,17 +101,70 @@ def _identity_text(value: object) -> str:
     return _safe_text(value, max_length=MAX_IDENTITY_LENGTH, nonblank=True)
 
 
+def _fallback_identity(
+    mapped: dict[str, str],
+    groups: tuple[tuple[str, ...], ...],
+    namespace: tuple[str, str, str],
+) -> str | None:
+    def canonical_value(column: str, value: str) -> str:
+        if column.casefold() == "email":
+            return normalize_email(value)
+        if column.casefold() == "phone":
+            phone = re.sub(r"[\s().-]+", "", unicodedata.normalize("NFKC", value))
+            if re.fullmatch(r"\+?[0-9]+", phone) is None:
+                raise _invalid_input()
+            return phone
+        return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
+
+    for group in groups:
+        values = [mapped[column] for column in group]
+        if not all(values):
+            continue
+        canonical = json.dumps(
+            [
+                list(namespace),
+                list(group),
+                [
+                    canonical_value(column, value)
+                    for column, value in zip(group, values, strict=True)
+                ],
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return "derived:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return None
+
+
 def snapshot_sheet(
     source: SheetValuesSource,
     spreadsheet_id: str,
     sheet_name: str,
     *,
     stable_id_column: str,
+    fallback_identity_columns: tuple[tuple[str, ...], ...] = (),
 ) -> SheetSnapshot:
     try:
         spreadsheet_id = _identity_text(spreadsheet_id)
         sheet_name = _identity_text(sheet_name)
         stable_id_column = _identity_text(stable_id_column)
+        if type(fallback_identity_columns) is not tuple:
+            raise _invalid_input()
+        fallback_groups = tuple(
+            tuple(_safe_text(column, max_length=255, nonblank=True) for column in group)
+            for group in fallback_identity_columns
+            if type(group) is tuple and group
+        )
+        if len(fallback_groups) != len(fallback_identity_columns) or any(
+            len(set(group)) != len(group) or stable_id_column in group
+            for group in fallback_groups
+        ):
+            raise _invalid_input()
+        if any(
+            len(group) == 1 and group[0].casefold() == "company"
+            for group in fallback_groups
+        ):
+            raise _invalid_input()
         values = list(source.read_values(spreadsheet_id, sheet_name))
         if len(values) > MAX_ROWS + 1:
             raise _invalid_input()
@@ -125,6 +182,8 @@ def snapshot_sheet(
             _safe_text(value, max_length=255, nonblank=True) for value in header_row
         )
         if len(set(headers)) != len(headers) or headers.count(stable_id_column) != 1:
+            raise _invalid_input()
+        if any(column not in headers for group in fallback_groups for column in group):
             raise _invalid_input()
 
         candidates: list[SnapshotRow] = []
@@ -148,6 +207,17 @@ def snapshot_sheet(
             ]
             cells.extend([""] * (len(headers) - len(cells)))
             mapped = dict(zip(headers, cells, strict=True))
+            external_id = mapped[stable_id_column]
+            if not external_id and fallback_groups:
+                external_id = (
+                    _fallback_identity(
+                        mapped,
+                        fallback_groups,
+                        (spreadsheet_id, sheet_name, stable_id_column),
+                    )
+                    or ""
+                )
+                mapped[stable_id_column] = external_id
             captured_bytes += (
                 len(
                     json.dumps(
@@ -158,7 +228,6 @@ def snapshot_sheet(
             )
             if captured_bytes > MAX_SNAPSHOT_BYTES:
                 raise _invalid_input()
-            external_id = mapped[stable_id_column]
             if not external_id:
                 missing.append(row_number)
                 continue
