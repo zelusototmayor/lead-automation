@@ -649,3 +649,13 @@ Ruff, format check e git diff --check: passed nos ficheiros alterados
 O gate da Tarefa 19 continua materialmente fechado. A telemetria agregada das últimas 48 horas no proxy de produção mostrou consumidores ativos dos endpoints v0: `/api/stats` 13 pedidos, `/api/portfolio` 4, `/api/recommendations` 4, `/api/outreach-followups` 14, `/api/email-followups` 11 e `/api/proposal-followups` 12. Remover esses contratos quebraria consumidores observados.
 
 O host live continua sem base CRM dedicada e com apenas 3,2 GiB livres no filesystem, já a 87%, além de múltiplos workloads. Não existe staging isolado, adapter de identidade, backup automático CRM, amostra humana aprovada, soak ou dois releases estáveis. Estes gates técnicos impedem merge, deploy, cutover, remoção do legado e criação do sentinel; não são substituídos pela autorização YOLO nem pelos testes locais.
+
+---
+
+## Handoff pós-commit em 2026-07-17T17:21:47Z
+
+O candidato de compatibilidade com a Sheet real foi congelado com digest staged `59377815773f74bfea46417f83a27a2cbc22f4214d3ead1fffd728950fcc5736`, commitado como `132959993d10f77077344bfe288d05392e9f1d07` (`fix: harden real Sheet migration compatibility`) e publicado em `origin/feat/crm-accounts-proposals-v1`. A worktree ficou limpa e o PR `#1` continuou draft, sem checks CI configurados.
+
+A verificação final desse candidato registou 866 testes passados e 1 skip, lifecycle Alembic `0006 -> base -> 0006`, `alembic check`, restore de backup custom-format, Ruff, format check, compileall, diff check, Gitleaks staged e build/smoke da imagem com defaults fail-closed. O PostgreSQL descartável foi removido e a porta local usada na verificação ficou livre.
+
+Os gates externos foram revalidados sem mutações: as novas rotas live continuam `404`; não existem environments GitHub nem DNS de staging; o container live não tem configuração CRM/identidade; não existe base CRM dedicada no host; e a telemetria das últimas 48 horas continua a mostrar consumidores v0 ativos. Sem staging isolado, identidade server-side, PostgreSQL CRM com backup real restaurado, resolução dos conflitos de dados, validação humana da amostra, soak e dois releases estáveis, a sequência de cutover do plano não pode começar com segurança. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, remoção do legado ou criação do sentinel.
