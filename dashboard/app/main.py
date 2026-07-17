@@ -121,6 +121,7 @@ async def health_check():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
+        request,
         "logistics.html",
         {
             "request": request,
