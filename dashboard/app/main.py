@@ -26,7 +26,7 @@ from dashboard.app.routers.proposals import router as proposals_router
 from dashboard.app.routers.intelligence import router as intelligence_router
 from dashboard.app.routers.agent_events import router as agent_events_router
 from dashboard.app.routers.operations import router as operations_router
-from dashboard.app.security import require_write_access
+from dashboard.app.security import require_crm_principal, require_write_access
 
 SPREADSHEET_ID = os.getenv(
     "SPREADSHEET_ID",
@@ -98,6 +98,9 @@ app = FastAPI(
     title="PT Logistics Dashboard",
     description="Call and follow-up dashboard for the PT Logistics CRM",
     lifespan=lifespan,
+    openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
 )
 
 # Temporary compatibility debt: the current Jinja/Alpine UI uses inline assets,
@@ -140,7 +143,17 @@ templates = Jinja2Templates(directory=str(templates_dir))
 
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    static_files = StaticFiles(directory=str(static_dir))
+
+    @app.get(
+        "/static/{path:path}",
+        name="static",
+        dependencies=[Depends(require_crm_principal)],
+        include_in_schema=False,
+    )
+    async def protected_static(request: Request, path: str):
+        return await static_files.get_response(path, request.scope)
+
 
 app.include_router(accounts_router)
 app.include_router(proposals_router)
@@ -167,7 +180,7 @@ def _postgres_is_ready() -> bool:
             engine.dispose()
 
 
-@app.get("/ready")
+@app.get("/ready", dependencies=[Depends(require_crm_principal)])
 async def readiness_check():
     try:
         flags = get_feature_flags()
@@ -202,7 +215,11 @@ async def readiness_check():
     )
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_crm_principal)],
+)
 async def dashboard(request: Request):
     return templates.TemplateResponse(
         request,
@@ -215,17 +232,17 @@ async def dashboard(request: Request):
     )
 
 
-@app.get("/dashboard")
+@app.get("/dashboard", dependencies=[Depends(require_crm_principal)])
 async def dashboard_redirect():
     return RedirectResponse("/")
 
 
-@app.get("/cold-calling")
+@app.get("/cold-calling", dependencies=[Depends(require_crm_principal)])
 async def cold_calling_redirect():
     return RedirectResponse("/")
 
 
-@app.get("/campaign/{slug}")
+@app.get("/campaign/{slug}", dependencies=[Depends(require_crm_principal)])
 async def campaign_redirect(slug: str):
     return RedirectResponse("/")
 
@@ -234,7 +251,7 @@ def _require_crm() -> PTLogisticsCRM | None:
     return crm
 
 
-@app.get("/api/stats")
+@app.get("/api/stats", dependencies=[Depends(require_crm_principal)])
 async def api_stats():
     sheet = _require_crm()
     if not sheet:
@@ -247,7 +264,7 @@ async def api_stats():
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/leads")
+@app.get("/api/leads", dependencies=[Depends(require_crm_principal)])
 async def api_leads(
     view: str = "today", q: str = "", priority: str = "", stage: str = ""
 ):
@@ -271,7 +288,7 @@ async def api_leads(
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/email-followups")
+@app.get("/api/email-followups", dependencies=[Depends(require_crm_principal)])
 async def api_email_followups(
     view: str = "today",
     q: str = "",
@@ -297,7 +314,7 @@ async def api_email_followups(
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/outreach-followups")
+@app.get("/api/outreach-followups", dependencies=[Depends(require_crm_principal)])
 async def api_outreach_followups(
     view: str = "today",
     q: str = "",
@@ -314,7 +331,7 @@ async def api_outreach_followups(
     )
 
 
-@app.get("/api/proposal-followups")
+@app.get("/api/proposal-followups", dependencies=[Depends(require_crm_principal)])
 async def api_proposal_followups(
     view: str = "today",
     q: str = "",
@@ -340,7 +357,7 @@ async def api_proposal_followups(
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/proposals")
+@app.get("/api/proposals", dependencies=[Depends(require_crm_principal)])
 async def api_proposals(
     view: str = "open", q: str = "", priority: str = "", stage: str = ""
 ):
@@ -363,7 +380,7 @@ async def api_proposals(
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/impacted-leads")
+@app.get("/api/impacted-leads", dependencies=[Depends(require_crm_principal)])
 async def api_impacted_leads(q: str = "", priority: str = "", stage: str = ""):
     sheet = _require_crm()
     if not sheet:
@@ -378,7 +395,7 @@ async def api_impacted_leads(q: str = "", priority: str = "", stage: str = ""):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/history")
+@app.get("/api/history", dependencies=[Depends(require_crm_principal)])
 async def api_history(days: int = 30):
     sheet = _require_crm()
     if not sheet:
@@ -391,7 +408,7 @@ async def api_history(days: int = 30):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/account-profiles")
+@app.get("/api/account-profiles", dependencies=[Depends(require_crm_principal)])
 async def api_account_profiles(stage: str = "Meeting Booked"):
     sheet = _require_crm()
     if not sheet:
@@ -409,7 +426,7 @@ async def api_account_profiles(stage: str = "Meeting Booked"):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/portfolio")
+@app.get("/api/portfolio", dependencies=[Depends(require_crm_principal)])
 async def api_portfolio():
     sheet = _require_crm()
     if not sheet:
@@ -422,7 +439,7 @@ async def api_portfolio():
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/recommendations")
+@app.get("/api/recommendations", dependencies=[Depends(require_crm_principal)])
 async def api_recommendations():
     sheet = _require_crm()
     if not sheet:
@@ -437,7 +454,7 @@ async def api_recommendations():
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/stage-timing")
+@app.get("/api/stage-timing", dependencies=[Depends(require_crm_principal)])
 async def api_stage_timing(days: int = 120):
     sheet = _require_crm()
     if not sheet:

@@ -2,23 +2,21 @@
 
 ## Decision
 
-Public, read-only access is retained only for the existing legacy dashboard surface. The new PostgreSQL-backed rich routes for Contas, Propostas, Inteligência and Operações are not covered by that legacy exposure decision. They use a scoped HTTP Basic adapter whose username, password, workspace UUID and admin role come exclusively from server configuration. The routes remain fail-closed until all four values are configured and verified.
+Only `GET /up` remains public, returning the minimal health payload. The legacy dashboard and legacy GET APIs expose company, contact, email, proposal or meeting context and therefore now share the same scoped HTTP Basic boundary as the PostgreSQL-backed Contas, Propostas, Inteligência and Operações routes. Username, password, workspace UUID and admin role come exclusively from server configuration. Every protected read remains fail-closed until all four values are configured and verified, and authorization runs before Sheet or PostgreSQL access.
 
-This boundary does **not** authorize public writes, agent endpoints, deployment or broader disclosure. No deployment is authorized by this historical decision; deployment authorization is separate from the technical identity, data and rollback gates.
+This boundary does **not** authorize public writes or agent endpoints. Human writes keep bearer + CSRF protection and agent ingress keeps its scoped short-lived credential; browser Basic authentication is not a substitute for either contract.
 
 ## Public/private boundary
 
-Public, unauthenticated access is intentionally retained for:
+Public, unauthenticated access is limited to:
 
-- `GET /up`, returning only `{ "status": "ok" }`;
-- the existing legacy browser dashboard and redirects;
-- existing legacy `GET` dashboard APIs only while they remain within the previously accepted surface.
+- `GET /up`, returning only `{ "status": "ok" }`.
 
-Protected rich reads include `/contas`, `/propostas`, `/inteligencia`, `/operacoes` and their `/api/v1/*` APIs. They derive workspace and role only from the trusted server-side principal. Missing or malformed server configuration returns a generic `403` without an authentication challenge. Once configuration is valid, missing, malformed or wrong browser credentials return a generic `401` with `WWW-Authenticate: Basic`; valid credentials produce a principal with the configured workspace UUID, configured username as subject, and configured admin flag. Query parameters, headers, cookies and request bodies cannot select workspace or role.
+Protected browser reads include the legacy dashboard and redirects, every legacy GET API, `/ready`, same-origin `/static/*` assets, `/contas`, `/propostas`, `/inteligencia`, `/operacoes` and their `/api/v1/*` APIs. They derive workspace and role only from the trusted server-side principal. Missing or malformed server configuration returns a generic `403` without an authentication challenge. Once configuration is valid, missing, malformed or wrong browser credentials return a generic `401` with `WWW-Authenticate: Basic`; valid credentials produce a principal with the configured workspace UUID, configured username as subject, and configured admin flag. Query parameters, headers, cookies and request bodies cannot select workspace or role. FastAPI's generated OpenAPI schema and documentation routes are disabled rather than left as an unlisted public surface.
 
 The required variables are `CRM_PRINCIPAL_USERNAME`, `CRM_PRINCIPAL_PASSWORD`, `CRM_PRINCIPAL_WORKSPACE_ID` and `CRM_PRINCIPAL_IS_ADMIN`. The admin value accepts exactly `true` or `false`. Only the password belongs in the deployment secret list; the username, workspace mapping and role are non-secret deployment configuration. The checked-in deployment values are intentionally incomplete placeholders, so they do not enable rich routes.
 
-The public browser interface is read-only. Every existing human write endpoint is private:
+The protected browser interface is read-only. Every existing human write endpoint is private:
 
 - `POST /api/log-call`
 - `POST /api/update-lead`
@@ -32,9 +30,9 @@ Each private write requires both a server-managed bearer token (`CRM_WRITE_TOKEN
 
 ## Threats and limitations
 
-- Anyone who can reach the service can read the approved legacy CRM surface and may copy, index, correlate, or redistribute it. Security response headers and `Cache-Control: no-store` reduce some browser risks but do not make public data confidential or prevent screenshots and downstream storage.
-- The write gate protects the listed human `POST` routes only. It is not SSO, user identity, authorization roles, audit attribution, rate limiting, or agent authentication.
-- The rich-route adapter represents one deployment-configured human principal. HTTP Basic is transport authentication, not SSO or multi-user RBAC; TLS at the proxy is mandatory, credential sharing weakens attribution, and browser logout semantics are limited. Operations still requires the mapped admin flag to be exactly true.
+- HTTP Basic protects confidentiality only when the proxy terminates valid TLS. Anyone with the shared browser credential can read the protected CRM surface and may copy or redistribute it; rotate it after suspected disclosure.
+- The write gate protects the listed human `POST` routes separately. Browser authentication does not grant write or agent authority and does not replace audit attribution, rate limiting or multi-user RBAC.
+- The browser adapter represents one deployment-configured human principal. HTTP Basic is transport authentication, not SSO or multi-user RBAC; credential sharing weakens attribution, and browser logout semantics are limited. Operations still requires the mapped admin flag to be exactly true.
 - Both write credentials are shared secrets. Compromise of both permits writes; rotate both and review activity after suspected exposure.
 - Origin validation is defense in depth, not authentication. Non-browser clients may omit `Origin` but still require both secrets.
 - No permissive CORS policy is enabled.
@@ -42,11 +40,11 @@ Each private write requires both a server-managed bearer token (`CRM_WRITE_TOKEN
 
 ## Rejected alternatives
 
-Login/SSO and multi-user RBAC were rejected for the legacy public dashboard scope. The minimal Basic adapter is approved only for the protected rich-route boundary and does not broaden legacy, write or agent authentication. Public agent endpoints and public writes were not approved.
+Leaving the legacy dashboard or its GET APIs public was rejected because those responses include company, contact, email, proposal and meeting context rather than a strictly approved aggregate. SSO and multi-user RBAC remain desirable future upgrades; the single-principal Basic adapter is the smallest fail-closed boundary that can cover all browser reads now. Public agent endpoints and public writes remain prohibited.
 
 ## Rollback and incident response
 
-`get_settings()` and `get_principal_settings()` are process-cached. Revoking, unsetting, remapping or rotating a secret-store value does **not** change the policy in an already-running process until a controlled restart/redeploy reloads settings (tests may explicitly clear the caches). For rich-route credential rotation, update the password and any approved mapping changes, restart every running instance, verify the old credentials receive `401`, verify the new credentials map to the intended workspace and role, and verify malformed/incomplete configuration receives generic `403` without a challenge. For suspected write-secret exposure, rotate/update **both** `CRM_WRITE_TOKEN` and `CRM_CSRF_TOKEN` as applicable, restart every running instance, then verify that the old credentials receive a generic 403. To withdraw public-read acceptance, restrict network/proxy access or add an approved authentication design before serving the dashboard again. Reverting this change is not a safe rollback while public write routes remain reachable. No restart, deploy, or production secret operation was performed for this task.
+`get_settings()` and `get_principal_settings()` are process-cached. Revoking, unsetting, remapping or rotating a secret-store value does **not** change the policy in an already-running process until a controlled restart/redeploy reloads settings (tests may explicitly clear the caches). For browser-read credential rotation, update the password and any approved mapping changes, restart every running instance, verify the old credentials receive `401`, verify the new credentials map to the intended workspace and role, and verify malformed/incomplete configuration receives generic `403` without a challenge. For suspected write-secret exposure, rotate/update **both** `CRM_WRITE_TOKEN` and `CRM_CSRF_TOKEN` as applicable, restart every running instance, then verify that the old credentials receive a generic 403. If the browser principal cannot be trusted or rotated safely, withdraw service access at the proxy until the mapping is repaired; do not restore unauthenticated legacy reads as a rollback. No restart, deploy, or production secret operation was performed for this task.
 
 ## Implementation verification
 

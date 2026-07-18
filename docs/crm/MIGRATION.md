@@ -6,7 +6,7 @@ The migration is additive, shadow-first and reversible. Google Sheets remains un
 
 ## Pre-flight gates
 
-Before any staging or production activation, record all of the following with real evidence:
+Before any staging or production activation, record all of the following with real evidence. `DECISIONS.md` is the canonical status record for approved boundaries, fail-closed defaults and unresolved activation decisions:
 
 - trusted server-side identity/session adapter for rich pages and APIs;
 - approved users/roles and workspace mapping;
@@ -94,4 +94,4 @@ For each environment, record without secrets or PII:
 
 ## Current status
 
-As of 2026-07-18, migrations through `0007`, backfills, connectors, restore tooling, guarded cutover flags and the scoped rich-route identity adapter have been exercised against disposable local PostgreSQL. Migration `0007` adds canonical email, meeting, task and reconciliation records; account reads now derive communication and meeting metrics from those canonical facts, and runtime-mode/retry tests cover auth-before-I/O, legacy dependency isolation and recoverable ingestion failures. The relevant CRM suite passes locally. A read-only real-Sheet shadow run proved replay idempotency for applicable rows but still has unresolved identity/account conflicts. The observed live dashboard still serves the pre-revamp build without the new routes; no staging environment, production CRM database/backup, owner-approved sample, soak or production cutover has been verified from this branch. Aggregate proxy telemetry previously showed active v0 API consumers, so Task 19 retirement remains blocked independently of the cutover gates. These are blocking gates, not optional follow-up work.
+As of 2026-07-18, migrations through `0007`, backfills, connectors, restore tooling, guarded cutover flags and the scoped browser-read identity adapter have been exercised against disposable local PostgreSQL. Migration `0007` adds canonical email, meeting, task and reconciliation records; account reads now derive communication and meeting metrics from those canonical facts, and runtime-mode/retry tests cover auth-before-I/O, legacy dependency isolation and recoverable ingestion failures. The relevant CRM suite passes locally. A read-only real-Sheet shadow run proved replay idempotency for applicable rows but still has unresolved identity/account conflicts. The observed live dashboard still serves the pre-revamp build without the new routes; no staging environment, production CRM database/backup, owner-approved sample, soak or production cutover has been verified from this branch. Aggregate proxy telemetry previously showed active v0 API consumers, so Task 19 retirement remains blocked independently of the cutover gates. These are blocking gates, not optional follow-up work.

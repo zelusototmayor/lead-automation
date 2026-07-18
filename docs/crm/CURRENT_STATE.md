@@ -840,3 +840,60 @@ Smoke com defaults seguros: /up=200; rotas ricas=403; agent ingress=404; 0 erros
 A descoberta externa permaneceu read-only: o PR `#1` está draft, mergeable e sem checks/reviews; a API GitHub não apresenta environments; produção responde `/up=200` e `404` nas novas rotas, coerente com o build pré-revamp. Não existe staging configurado no repositório/GitHub.
 
 Os gates externos continuam materialmente fechados: PostgreSQL CRM com backup automático e restore do arquivo real, staging isolado, mapping live de principal/papel/workspace, decisões de retenção/scopes/prova oficial de `Won`, resolução e validação humana da amostra shadow, browser/security smoke externo, soak/cutover e dois releases estáveis com ausência comprovada de consumidores v0 antes da Tarefa 19. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, remoção do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-18T09:49:15Z
+
+A retoma começou no `HEAD` sincronizado `9d071db317a6b7d4ac24b1a74ad0a2b057db1b8f` e preservou a alteração unstaged em `docs/crm/MIGRATION.md` e o novo `docs/crm/DECISIONS.md`. O plano canónico, commits, testes, migrations, processos e estado externo foram reinspecionados antes de editar. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos.
+
+### Evidência local repetida
+
+Num PostgreSQL 16 descartável em loopback, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 947 passed, 1 skipped, exit 0
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Fixture de contas apply #1: 4 imports, 3 contas criadas/associadas, 1 conflito
+Fixture de contas apply #2: 0 imports, 4 replay no-op, 0 novos registos
+Ruff no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 46 commits
+Imagem local construída: manifest list sha256:b76359c422825ea122c92760c0e1bda41ca8c56d9b8e958749914493ef657d46
+Smoke HTTP com defaults: /up=200; rotas ricas=403; agent ingress=404; 0 erros no log
+Smoke HTTP autenticado com PostgreSQL: 401 sem credenciais; páginas/APIs ricas=200; agent ingress=404
+```
+
+A navegação browser local carregou a página protegida de Contas, mas a automação utilizada não propagou a credencial Basic ao `fetch` da API; por isso esta execução não é registada como browser smoke aprovado. O gate exige repetição num staging real com o adapter e o proxy finais.
+
+### Gates externos revalidados
+
+Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200` e as novas páginas/APIs permanecem em `404`. O PR `#1` está draft, mergeable, sem reviews ou checks; a API GitHub não apresenta environments e os três nomes de staging inspecionados não têm DNS.
+
+O host live continua sem base ou backup CRM identificável, com filesystem a 87%, 3,25 GB livres, 3,9 GB de RAM total, cerca de 1,1 GB disponível e 1,19 GB de swap em uso. A telemetria agregada do proxy nas últimas 48 horas ainda contém pedidos aos seis contratos v0 acompanhados (`/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`: 1 cada). Não existe evidência de dois releases sem consumidores.
+
+A primeira tarefa genuinamente incompleta permanece a Tarefa 19, mas o seu gate proíbe retirar contratos com consumidores observados e exige dois releases estáveis, export disponível e aceitação de stakeholders. Os gates anteriores também permanecem fechados: não há staging isolado, PostgreSQL CRM com backup automático e restore real, mapping live de principal/papel/workspace, decisão oficial de `Won`, políticas de retenção/scopes, resolução e validação humana da amostra shadow, browser/security smoke externo, soak ou cutover. Improvisar staging e PostgreSQL no host live sem capacidade/isolamento violaria os gates técnicos. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, remoção do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Fecho local da política de exposição em 2026-07-18T11:09:36Z
+
+O candidato preservado nesta retoma fecha a lacuna entre a política privada por omissão do plano e a superfície legada: apenas `GET /up` permanece público e mínimo. Dashboard, redirects, `/ready`, APIs GET legadas, assets same-origin em `/static/*`, Contas, Propostas, Inteligência e Operações exigem o mesmo principal browser configurado no servidor antes de qualquer acesso a Sheet, ficheiro da aplicação ou PostgreSQL. OpenAPI e as páginas de documentação do framework estão desativados. Writes humanos e Agent ingress conservam fronteiras de autorização separadas.
+
+Uma auditoria da tabela real de rotas encontrou `/static/*` ainda público no primeiro candidato. O teste focado falhou com `200` em vez de `401`, a fronteira foi movida para uma rota dependente de `require_crm_principal`, e uma regressão de fixtures que não propagavam o principal aos assets foi observada e corrigida antes da verificação final.
+
+Num PostgreSQL 16 descartável novo, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 109.56s, exit 0
+Security/runtime/legacy focused: 109 passed, exit 0
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff nos ficheiros Python alterados, compileall e git diff --check: passed
+Scan estático de linhas adicionadas: um único match classificado como password fake de fixture; zero findings em código de produção
+```
+
+O container de verificação foi removido e a porta `55450` ficou livre. Os outros containers PostgreSQL preexistentes foram tratados como trabalho desconhecido e não foram alterados. Não existiam processos locais de worker CRM, reconciler ou outbox publisher. Esta verificação local não satisfaz staging, backup real, validação humana, soak/cutover nem o gate de retirada do legado; o sentinel continua proibido enquanto esses gates permanecerem abertos.

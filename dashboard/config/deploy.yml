@@ -42,8 +42,8 @@ env:
     CRM_COMMAND_WRITER: "sheet"
     CRM_SHEETS_PROJECTION_ENABLED: "false"
     CRM_AGENT_EVENTS_ENABLED: "false"
-    # Intentionally incomplete placeholders keep rich routes fail-closed until
-    # deployment supplies the approved non-secret principal mapping.
+    # Intentionally incomplete placeholders keep every CRM browser read fail-closed
+    # until deployment supplies the approved non-secret principal mapping.
     CRM_PRINCIPAL_USERNAME: ""
     CRM_PRINCIPAL_WORKSPACE_ID: ""
     CRM_PRINCIPAL_IS_ADMIN: "false"

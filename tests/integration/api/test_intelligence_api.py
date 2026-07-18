@@ -12,7 +12,7 @@ from dashboard.app.routers.intelligence import (
     IntelligenceRequestContext,
     get_intelligence_request_context,
 )
-from dashboard.app.security import CRMPrincipal
+from dashboard.app.security import CRMPrincipal, require_crm_principal
 from src.crm.persistence.models import Account, Recommendation, Workspace
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
@@ -89,6 +89,9 @@ def intelligence_api_fixture():
             )
 
     dashboard_main.app.dependency_overrides[get_intelligence_request_context] = override
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+        CRMPrincipal(subject="tester", workspace_id=workspace_id)
+    )
     try:
         yield (
             TestClient(dashboard_main.app),

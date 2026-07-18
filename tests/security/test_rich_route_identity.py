@@ -33,6 +33,25 @@ RICH_PATHS = (
     "/api/v1/intelligence/recommendations",
     "/api/v1/operations/metrics",
 )
+LEGACY_READ_PATHS = (
+    "/",
+    "/dashboard",
+    "/cold-calling",
+    "/campaign/logistics",
+    "/ready",
+    "/api/stats",
+    "/api/leads",
+    "/api/email-followups",
+    "/api/outreach-followups",
+    "/api/proposal-followups",
+    "/api/proposals",
+    "/api/impacted-leads",
+    "/api/history",
+    "/api/account-profiles",
+    "/api/portfolio",
+    "/api/recommendations",
+    "/api/stage-timing",
+)
 
 
 IDENTITY_APP = FastAPI()
@@ -66,7 +85,9 @@ def _configured_identity(monkeypatch, *, is_admin: str = "false") -> None:
     get_principal_settings.cache_clear()
 
 
-def _raw_asgi_get(headers: list[tuple[bytes, bytes]]) -> tuple[int, dict, dict[str, str]]:
+def _raw_asgi_get(
+    headers: list[tuple[bytes, bytes]],
+) -> tuple[int, dict, dict[str, str]]:
     messages: list[dict] = []
     request_messages = iter(
         (
@@ -97,7 +118,9 @@ def _raw_asgi_get(headers: list[tuple[bytes, bytes]]) -> tuple[int, dict, dict[s
     }
     asyncio.run(IDENTITY_APP(scope, receive, send))
 
-    start = next(message for message in messages if message["type"] == "http.response.start")
+    start = next(
+        message for message in messages if message["type"] == "http.response.start"
+    )
     body = b"".join(
         message.get("body", b"")
         for message in messages
@@ -291,17 +314,65 @@ def test_missing_rich_route_config_forbids_without_browser_challenge(monkeypatch
     assert "www-authenticate" not in response.headers
 
 
-def test_public_health_and_legacy_surface_do_not_gain_basic_auth(monkeypatch):
+def test_only_health_remains_public_while_legacy_surface_requires_basic(monkeypatch):
     _configured_identity(monkeypatch)
     client = TestClient(dashboard_main.app)
 
     health = client.get("/up")
     legacy = client.get("/")
+    authenticated_legacy = client.get("/", auth=(USERNAME, PASSWORD))
 
     assert health.status_code == 200
     assert health.json() == {"status": "ok"}
-    assert legacy.status_code == 200
+    assert legacy.status_code == 401
+    assert legacy.json() == {"detail": "Unauthorized"}
+    assert legacy.headers["www-authenticate"] == "Basic"
+    assert authenticated_legacy.status_code == 200
     assert "www-authenticate" not in health.headers
-    assert "www-authenticate" not in legacy.headers
-    assert USERNAME not in legacy.text
-    assert PASSWORD not in legacy.text
+    assert USERNAME not in authenticated_legacy.text
+    assert PASSWORD not in authenticated_legacy.text
+
+
+def test_framework_schema_and_documentation_routes_are_not_public(monkeypatch):
+    _configured_identity(monkeypatch)
+    client = TestClient(dashboard_main.app)
+
+    for path in ("/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"):
+        response = client.get(path)
+        assert response.status_code == 404, path
+
+
+def test_static_assets_require_the_browser_principal(monkeypatch):
+    _configured_identity(monkeypatch)
+    client = TestClient(dashboard_main.app)
+
+    unauthenticated = client.get("/static/accounts.js")
+    authenticated = client.get("/static/accounts.js", auth=(USERNAME, PASSWORD))
+
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json() == {"detail": "Unauthorized"}
+    assert unauthenticated.headers["www-authenticate"] == "Basic"
+    assert authenticated.status_code == 200
+    assert "fetch(" in authenticated.text
+
+
+def test_every_legacy_read_challenges_before_sheet_or_database_access(monkeypatch):
+    _configured_identity(monkeypatch)
+
+    class ExplodingCRM:
+        def __getattr__(self, name):
+            raise AssertionError(f"legacy CRM was accessed via {name}")
+
+    monkeypatch.setattr(dashboard_main, "crm", ExplodingCRM())
+    monkeypatch.setattr(
+        dashboard_main,
+        "create_database_engine",
+        lambda: (_ for _ in ()).throw(AssertionError("database engine was created")),
+    )
+    client = TestClient(dashboard_main.app)
+
+    for path in LEGACY_READ_PATHS:
+        response = client.get(path)
+        assert response.status_code == 401, path
+        assert response.json() == {"detail": "Unauthorized"}, path
+        assert response.headers["www-authenticate"] == "Basic", path

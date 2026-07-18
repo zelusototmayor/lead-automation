@@ -8,11 +8,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
-from dashboard.app.config import get_settings
+from dashboard.app.config import get_principal_settings, get_settings
 
 
 WRITE_TOKEN = "write-token-for-tests"
 CSRF_TOKEN = "csrf-token-for-tests"
+PRINCIPAL_USERNAME = "crm-reviewer"
+PRINCIPAL_PASSWORD = "correct horse battery staple"
+PRINCIPAL_WORKSPACE_ID = "11111111-2222-4333-8444-555555555555"
 WRITE_PATHS = (
     "/api/log-call",
     "/api/update-lead",
@@ -24,7 +27,9 @@ WRITE_PATHS = (
 )
 
 
-def _raw_asgi_post(path: str, headers: list[tuple[bytes, bytes]]) -> tuple[int, dict, dict]:
+def _raw_asgi_post(
+    path: str, headers: list[tuple[bytes, bytes]]
+) -> tuple[int, dict, dict]:
     """Send raw header bytes through the full ASGI app, bypassing client encoding."""
     messages: list[dict] = []
     request_messages = iter(
@@ -50,18 +55,27 @@ def _raw_asgi_post(path: str, headers: list[tuple[bytes, bytes]]) -> tuple[int, 
         "raw_path": path.encode("ascii"),
         "query_string": b"",
         "root_path": "",
-        "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"), *headers],
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            *headers,
+        ],
         "client": ("testclient", 50000),
         "server": ("testserver", 80),
     }
     asyncio.run(dashboard_main.app(scope, receive, send))
 
-    start = next(message for message in messages if message["type"] == "http.response.start")
+    start = next(
+        message for message in messages if message["type"] == "http.response.start"
+    )
     body = b"".join(
-        message.get("body", b"") for message in messages if message["type"] == "http.response.body"
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
     )
     response_headers = {
-        key.decode("latin-1").lower(): value.decode("latin-1") for key, value in start["headers"]
+        key.decode("latin-1").lower(): value.decode("latin-1")
+        for key, value in start["headers"]
     }
     return start["status"], json.loads(body), response_headers
 
@@ -106,9 +120,15 @@ def configured_security(monkeypatch):
     monkeypatch.setenv("CRM_CSRF_TOKEN", CSRF_TOKEN)
     monkeypatch.setenv("CRM_ALLOWED_WRITE_ORIGINS", "https://crm.example.test")
     monkeypatch.setenv("CRM_ENV", "test")
+    monkeypatch.setenv("CRM_PRINCIPAL_USERNAME", PRINCIPAL_USERNAME)
+    monkeypatch.setenv("CRM_PRINCIPAL_PASSWORD", PRINCIPAL_PASSWORD)
+    monkeypatch.setenv("CRM_PRINCIPAL_WORKSPACE_ID", PRINCIPAL_WORKSPACE_ID)
+    monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", "true")
     get_settings.cache_clear()
+    get_principal_settings.cache_clear()
     yield
     get_settings.cache_clear()
+    get_principal_settings.cache_clear()
 
 
 @pytest.mark.parametrize("path", WRITE_PATHS)
@@ -138,11 +158,19 @@ def test_every_human_write_fails_closed_before_crm_access(monkeypatch, path, hea
 @pytest.mark.parametrize(
     "headers",
     (
-        [(b"authorization", b"Bearer \xff"), (b"x-csrf-token", CSRF_TOKEN.encode("ascii"))],
-        [(b"authorization", f"Bearer {WRITE_TOKEN}".encode("ascii")), (b"x-csrf-token", b"\xff")],
+        [
+            (b"authorization", b"Bearer \xff"),
+            (b"x-csrf-token", CSRF_TOKEN.encode("ascii")),
+        ],
+        [
+            (b"authorization", f"Bearer {WRITE_TOKEN}".encode("ascii")),
+            (b"x-csrf-token", b"\xff"),
+        ],
     ),
 )
-def test_non_ascii_credential_bytes_return_generic_forbidden_with_security_headers(headers):
+def test_non_ascii_credential_bytes_return_generic_forbidden_with_security_headers(
+    headers,
+):
     status_code, body, response_headers = _raw_asgi_post("/api/refresh", headers)
 
     assert status_code == 403
@@ -156,17 +184,39 @@ def test_non_ascii_credential_bytes_return_generic_forbidden_with_security_heade
 @pytest.mark.parametrize(
     ("path", "body", "expected_call"),
     (
-        ("/api/log-call", {"lead_id": "lead-1", "call_status": "Connected"}, "log_call"),
-        ("/api/update-lead", {"lead_id": "lead-1", "updates": {"stage": "Called"}}, "update_lead"),
-        ("/api/mark-email-followup", {"lead_id": "lead-1", "task_type": "Follow-up"}, "mark_email_followup_sent"),
-        ("/api/mark-proposal-followup", {"lead_id": "lead-1", "task_type": "Proposal"}, "mark_proposal_followup_sent"),
-        ("/api/update-proposal", {"lead_id": "lead-1", "status": "Sent"}, "update_proposal"),
+        (
+            "/api/log-call",
+            {"lead_id": "lead-1", "call_status": "Connected"},
+            "log_call",
+        ),
+        (
+            "/api/update-lead",
+            {"lead_id": "lead-1", "updates": {"stage": "Called"}},
+            "update_lead",
+        ),
+        (
+            "/api/mark-email-followup",
+            {"lead_id": "lead-1", "task_type": "Follow-up"},
+            "mark_email_followup_sent",
+        ),
+        (
+            "/api/mark-proposal-followup",
+            {"lead_id": "lead-1", "task_type": "Proposal"},
+            "mark_proposal_followup_sent",
+        ),
+        (
+            "/api/update-proposal",
+            {"lead_id": "lead-1", "status": "Sent"},
+            "update_proposal",
+        ),
         ("/api/mark-email-sent", {"lead_id": "lead-1"}, "mark_manual_email_sent"),
         ("/api/refresh", {}, "refresh"),
     ),
 )
 @pytest.mark.parametrize("origin", (None, "https://crm.example.test"))
-def test_valid_server_credentials_reach_each_write_route(monkeypatch, path, body, expected_call, origin):
+def test_valid_server_credentials_reach_each_write_route(
+    monkeypatch, path, body, expected_call, origin
+):
     fake = FakeCRM()
     monkeypatch.setattr(dashboard_main, "crm", fake)
     headers = {
@@ -182,13 +232,18 @@ def test_valid_server_credentials_reach_each_write_route(monkeypatch, path, body
     assert expected_call in fake.calls
 
 
-def test_rich_get_api_remains_public_without_auth_challenge(monkeypatch):
-    monkeypatch.setattr(dashboard_main, "crm", None)
+def test_legacy_get_api_requires_identity_before_crm_access(monkeypatch):
+    class ExplodingCRM:
+        def __getattr__(self, name):
+            raise AssertionError(f"CRM was accessed via {name}")
+
+    monkeypatch.setattr(dashboard_main, "crm", ExplodingCRM())
 
     response = TestClient(dashboard_main.app).get("/api/account-profiles")
 
-    assert response.status_code == 503
-    assert "www-authenticate" not in response.headers
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Unauthorized"}
+    assert response.headers["www-authenticate"] == "Basic"
     assert response.headers["cache-control"] == "no-store"
 
 
@@ -213,18 +268,22 @@ def test_responses_include_browser_security_headers():
     assert "'unsafe-inline'" in csp
 
 
-def test_dashboard_warns_that_public_ui_is_read_only_without_exposing_tokens():
-    response = TestClient(dashboard_main.app).get("/")
+def test_dashboard_warns_that_protected_legacy_ui_is_read_only_without_exposing_tokens():
+    response = TestClient(dashboard_main.app).get(
+        "/", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+    )
 
     assert response.status_code == 200
-    assert "interface pública é apenas de leitura" in response.text.lower()
+    assert "interface protegida é apenas de leitura" in response.text.lower()
     assert "canal autenticado no servidor" in response.text.lower()
     assert WRITE_TOKEN not in response.text
     assert CSRF_TOKEN not in response.text
 
 
-def test_public_dashboard_disables_every_write_trigger():
-    response = TestClient(dashboard_main.app).get("/")
+def test_protected_dashboard_disables_every_write_trigger():
+    response = TestClient(dashboard_main.app).get(
+        "/", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+    )
 
     assert response.status_code == 200
     assert "publicReadOnly: true" in response.text
@@ -240,11 +299,15 @@ def test_public_dashboard_disables_every_write_trigger():
             rf'<button[^>]*@click="{re.escape(action)}"[^>]*>', response.text
         )
         assert buttons, f"missing write control for {action}"
-        assert all("publicReadOnly" in button and ":disabled=" in button for button in buttons)
+        assert all(
+            "publicReadOnly" in button and ":disabled=" in button for button in buttons
+        )
 
 
-def test_public_dashboard_reload_is_get_only_for_manual_and_hourly_refresh():
-    response = TestClient(dashboard_main.app).get("/")
+def test_protected_dashboard_reload_is_get_only_for_manual_and_hourly_refresh():
+    response = TestClient(dashboard_main.app).get(
+        "/", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+    )
 
     assert response.status_code == 200
     assert '@click="reloadView()"' in response.text

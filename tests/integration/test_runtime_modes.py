@@ -2,11 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
 from dashboard.app.feature_flags import get_feature_flags
+from dashboard.app.security import CRMPrincipal, require_crm_principal
+
+
+@pytest.fixture(autouse=True)
+def authenticated_browser_reads():
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+        CRMPrincipal(
+            workspace_id=UUID("11111111-2222-4333-8444-555555555555"),
+            subject="runtime-test",
+            is_admin=True,
+        )
+    )
+    yield
+    dashboard_main.app.dependency_overrides.pop(require_crm_principal, None)
 
 
 _FLAG_NAMES = (
