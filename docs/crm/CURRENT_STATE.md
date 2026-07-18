@@ -780,3 +780,32 @@ A descoberta externa foi read-only. Produção continua saudável na imagem `762
 O host live continua sem base CRM dedicada, com filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM e 1,5 GiB de swap em uso. Improvisar staging, PostgreSQL CRM e backups no mesmo host violaria os gates de capacidade, isolamento e restore. A telemetria agregada das últimas 48 horas prova consumidores v0 ativos: `/api/stats` 24, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 30, `/api/email-followups` 25 e `/api/proposal-followups` 26.
 
 A primeira tarefa genuinamente incompleta continua a ser a Tarefa 19, cujo próprio gate exige dois releases sem rollback, ausência comprovada de consumidores v0, export Sheet e aceitação de stakeholders. Permanecem também fechados os gates de cutover anteriores: mapping real de principal/papel/workspace, políticas de retenção/scopes/prova de `Won`, staging isolado, PostgreSQL CRM com backup automático e restore do arquivo real, resolução e validação humana da amostra shadow, smoke browser/security externo e soak. A autorização YOLO remove pausas de aprovação, mas não cria estes artefactos nem permite falsear gates. Não houve merge, deploy, migração/backfill live, cutover, remoção do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-18T03:41:51Z
+
+A retoma começou no `HEAD` limpo e sincronizado `72c4025299c7ef367a574d6d8e57d41036ea2ed8`. O plano canónico, este documento, o histórico, os testes, o PR, os processos locais e o ambiente live foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked, nem worker CRM, reconciler, outbox publisher ou job outbound ativo.
+
+### Evidência local repetida
+
+Num PostgreSQL 16 descartável novo, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Suite segura completa com PostgreSQL e DeprecationWarning como erro: 903 passed, 1 skipped em 101.34s, exit 0
+Alembic lifecycle: 0006 -> base -> 0006
+Alembic current: 0006 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0006, 11 tabelas, 0 workspaces, 0 violações
+Ruff lint no delta, compileall, git diff --check e Gitleaks: passed; 0 leaks em 42 commits
+```
+
+A imagem candidata foi reconstruída localmente com digest `sha256:14554035cd45562c72eabd36dfd444250c2edf158e199bbdf873b4833942beb3`. O smoke com defaults seguros confirmou `/up=200`, páginas ricas em `403` e agent ingress desativado em `404`. O smoke com PostgreSQL e principal Basic de teste confirmou `401` sem credenciais e `200` autenticado nas páginas/APIs de Contas, Propostas, Inteligência e Operações. Os containers, a base e a imagem descartáveis foram removidos; as portas `55436`, `58002` e `58003` ficaram livres.
+
+### Gates externos revalidados
+
+Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200` e as novas páginas/APIs continuam `404`. O PR `#1` permanece draft e mergeable, sem checks ou reviews, e a API GitHub continua sem environments configurados.
+
+O host live continua sem base CRM dedicada, com filesystem a 87%, apenas 3,2 GiB livres, 3,8 GiB de RAM e 1,3 GiB de swap em uso. A telemetria agregada das últimas 48 horas prova consumidores v0 ativos: `/api/stats` 66, `/api/portfolio` 29, `/api/recommendations` 29, `/api/outreach-followups` 79, `/api/email-followups` 67 e `/api/proposal-followups` 69.
+
+A primeira tarefa genuinamente incompleta permanece a Tarefa 19, mas remover os contratos legados agora quebraria consumidores observados e violaria o gate de dois releases estáveis. Também continuam ausentes staging isolado, PostgreSQL CRM com backup automático e restore real, mapping live de principal/papel/workspace, decisões de retenção/scopes/prova de `Won`, resolução e validação humana da amostra shadow, smoke browser/security externo e soak. Não houve merge, deploy, migração/backfill live, cutover, remoção do legado ou criação de `.hermes/crm-revamp-complete.json`.
