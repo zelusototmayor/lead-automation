@@ -11,7 +11,7 @@ import time
 from typing import Annotated, Mapping
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -36,15 +36,6 @@ _rate_limit_lock = Lock()
 _UNAUTHORIZED = {"detail": "Unauthorized"}
 _FORBIDDEN = {"detail": "Forbidden"}
 _INVALID = {"detail": "Invalid request"}
-_TOO_MANY_REQUESTS = {"detail": "Too many requests"}
-
-
-def get_agent_event_session():
-    """Yield an uncommitted session; request handling owns its transaction."""
-
-    factory = create_session_factory(create_database_engine())
-    with factory() as session:
-        yield session
 
 
 def _response(
@@ -118,6 +109,33 @@ def _authenticate(request: Request) -> AgentSettings | JSONResponse:
     return settings
 
 
+def require_agent_event_principal(request: Request) -> AgentSettings:
+    """Authenticate and authorize ingress before any database dependency runs."""
+
+    principal = _authenticate(request)
+    if isinstance(principal, JSONResponse):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if "agent-events:write" not in principal.scopes:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not _consume_rate_limit(principal.workspace_id, request.url.path):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests",
+            headers={"Retry-After": str(int(_RATE_LIMIT_WINDOW_SECONDS))},
+        )
+    return principal
+
+
+def get_agent_event_session(
+    _principal: Annotated[AgentSettings, Depends(require_agent_event_principal)],
+):
+    """Yield an uncommitted session after agent authorization succeeds."""
+
+    factory = create_session_factory(create_database_engine())
+    with factory() as session:
+        yield session
+
+
 async def _bounded_json(request: Request) -> object:
     content_length = request.headers.get("content-length")
     try:
@@ -146,20 +164,9 @@ async def _bounded_json(request: Request) -> object:
 )
 async def create_agent_event(
     request: Request,
+    principal: Annotated[AgentSettings, Depends(require_agent_event_principal)],
     session: Annotated[Session, Depends(get_agent_event_session)],
 ) -> JSONResponse:
-    principal = _authenticate(request)
-    if isinstance(principal, JSONResponse):
-        return principal
-    if "agent-events:write" not in principal.scopes:
-        return _response(403, _FORBIDDEN)
-    if not _consume_rate_limit(principal.workspace_id, request.url.path):
-        return _response(
-            429,
-            _TOO_MANY_REQUESTS,
-            headers={"Retry-After": str(int(_RATE_LIMIT_WINDOW_SECONDS))},
-        )
-
     try:
         raw_payload = await _bounded_json(request)
         envelope = EventEnvelope.model_validate(raw_payload)

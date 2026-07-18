@@ -150,6 +150,31 @@ def test_disabled_agent_event_route_does_not_resolve_auth_or_database(monkeypatc
     assert response.json() == {"detail": "Not found"}
 
 
+def test_unauthorized_agent_event_route_rejects_before_database(monkeypatch):
+    from dashboard.app import main as dashboard_main
+    from dashboard.app.feature_flags import get_feature_flags
+    from dashboard.app.routers import agent_events
+
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("CRM_DB_ENABLED", "true")
+    monkeypatch.setenv("CRM_AGENT_EVENTS_ENABLED", "true")
+    get_feature_flags.cache_clear()
+
+    def forbidden_engine():
+        raise AssertionError("unauthorized ingress must not open PostgreSQL")
+
+    monkeypatch.setattr(agent_events, "create_database_engine", forbidden_engine)
+    try:
+        response = TestClient(dashboard_main.app).post(
+            "/api/v1/agent-events", json={"private": "must-not-reach-database"}
+        )
+    finally:
+        get_feature_flags.cache_clear()
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Unauthorized"}
+
+
 def test_shadow_account_route_executes_comparison_without_serving_postgres(monkeypatch):
     from dashboard.app import main as dashboard_main
     from dashboard.app.feature_flags import get_feature_flags
