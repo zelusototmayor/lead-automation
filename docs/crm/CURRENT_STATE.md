@@ -897,3 +897,13 @@ Scan estático de linhas adicionadas: um único match classificado como password
 ```
 
 O container de verificação foi removido e a porta `55450` ficou livre. Os outros containers PostgreSQL preexistentes foram tratados como trabalho desconhecido e não foram alterados. Não existiam processos locais de worker CRM, reconciler ou outbox publisher. Esta verificação local não satisfaz staging, backup real, validação humana, soak/cutover nem o gate de retirada do legado; o sentinel continua proibido enquanto esses gates permanecerem abertos.
+
+---
+
+## Commit e revalidação externa em 2026-07-18T13:21:38Z
+
+O candidato congelado no digest staged `699a6bd07179d434d8c887f3abf7f5eeec29219c86694bfd46903330815cf469` foi verificado localmente e commitado atomicamente como `aa91f02eb6f560872e9d441152b51deff80bb46e` (`security: protect CRM browser reads`). Tentativas adicionais de revisão independente foram despachadas e também repetidas através de Codex CLI, Claude Code e Gemini CLI; os revisores delegados não devolveram resultado dentro da execução e os três CLIs externos estavam indisponíveis por autenticação/configuração. Nenhum desses bloqueios alterou o candidato.
+
+A revalidação externa read-only confirmou que o PR `#1` ainda aponta para o commit remoto anterior, está draft e sem checks/reviews; não existem GitHub environments nem DNS para os três nomes de staging inspecionados. Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, com `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host live mantém 87% de disco usado, 3,1 GiB livres, PostgreSQL 17 sem base CRM/leads e swap sob pressão, portanto não oferece o isolamento, PostgreSQL 16, capacidade de restore e rollback exigidos pelo plano.
+
+A telemetria exata do proxy nas últimas 48 horas encontrou um pedido `2xx` em cada um dos seis contratos v0 acompanhados. Consequentemente, a Tarefa 19 permanece bloqueada pelos gates de consumidores ativos, dois releases estáveis, export e aceitação. Continuam também em falta staging, mapping live de identidade/workspace/papel, backup automático e restore do arquivo real, resolução e validação humana dos conflitos shadow, decisões oficiais de `Won`/retenção/scopes, smoke externo, soak e cutover. Não houve merge, deploy, migração/backfill live, ativação outbound, retirada do legado ou criação do sentinel.
