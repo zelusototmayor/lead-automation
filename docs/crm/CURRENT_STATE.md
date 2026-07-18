@@ -907,3 +907,34 @@ O candidato congelado no digest staged `699a6bd07179d434d8c887f3abf7f5eeec29219c
 A revalidação externa read-only confirmou que o PR `#1` ainda aponta para o commit remoto anterior, está draft e sem checks/reviews; não existem GitHub environments nem DNS para os três nomes de staging inspecionados. Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, com `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host live mantém 87% de disco usado, 3,1 GiB livres, PostgreSQL 17 sem base CRM/leads e swap sob pressão, portanto não oferece o isolamento, PostgreSQL 16, capacidade de restore e rollback exigidos pelo plano.
 
 A telemetria exata do proxy nas últimas 48 horas encontrou um pedido `2xx` em cada um dos seis contratos v0 acompanhados. Consequentemente, a Tarefa 19 permanece bloqueada pelos gates de consumidores ativos, dois releases estáveis, export e aceitação. Continuam também em falta staging, mapping live de identidade/workspace/papel, backup automático e restore do arquivo real, resolução e validação humana dos conflitos shadow, decisões oficiais de `Won`/retenção/scopes, smoke externo, soak e cutover. Não houve merge, deploy, migração/backfill live, ativação outbound, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-18T13:41:21Z
+
+A retoma começou no `HEAD` limpo e sincronizado `5be7dec8426d06fcb0c66afae517d9130daa8125`. O plano canónico, este documento, o histórico, a suite, as migrations, o PR, o host live e os processos foram reinspecionados antes de agir. Não existia trabalho staged, unstaged ou untracked. Não existiam processos locais de worker CRM, reconciler ou outbox publisher. Os containers descartáveis preexistentes foram tratados como trabalho desconhecido e não foram alterados.
+
+### Gates locais repetidos
+
+Num PostgreSQL 16 descartável novo em `127.0.0.1:55453`, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 109.68s, exit 0
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 48 commits
+```
+
+A imagem candidata foi reconstruída localmente com manifest list `sha256:9f021cd979906d7ad6e8d380718edd60f0f28383474f812ce4ae0c361af56999`. O smoke com os defaults seguros confirmou `/up=200`, dashboard e páginas ricas em `403`, e Agent ingress desativado em `404`. O container PostgreSQL, o container de smoke, a imagem local e o backup temporário criados nesta retoma foram removidos; as portas `55453` e `58004` ficaram livres.
+
+### Gates externos e limite seguro
+
+O PR `#1` continua draft, mergeable, sem reviews, checks ou environments GitHub. Não existe DNS para os três nomes de staging inspecionados. Produção continua saudável no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`.
+
+O host live continua sem base CRM identificável e sem configuração CRM/`DATABASE_URL` no container atual. O filesystem está a 87%, com 3,1 GiB livres; a máquina tem 3,8 GiB de RAM, cerca de 1,6 GiB disponível e 1,5 GiB de swap em uso. Não existem credenciais ou CLIs locais para provisionar um staging isolado noutro fornecedor. Improvisar PostgreSQL, staging e backup no host live partilhado violaria os gates de capacidade, isolamento, restore e rollback do plano.
+
+A telemetria agregada do `kamal-proxy` nas últimas 48 horas voltou a encontrar um pedido `2xx` em cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. A Tarefa 19 não pode remover esses contratos sem quebrar consumidores observados e sem a evidência de dois releases estáveis, export e aceitação exigida pelo plano.
+
+Continuam ausentes artefactos que a execução local não pode fabricar: staging isolado, mapping live de principal/papel/workspace, decisão oficial e evidência para `Won`, política de retenção e scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner comercial, smoke browser/security no ambiente final, soak, cutover e dois releases estáveis sem consumidores v0. A autorização autónoma remove pausas de aprovação, mas não satisfaz estes gates técnicos, de dados e de release. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
