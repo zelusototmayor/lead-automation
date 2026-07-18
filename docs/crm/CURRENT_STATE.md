@@ -985,3 +985,48 @@ Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3
 A telemetria estruturada do `kamal-proxy` nas últimas 48 horas contém exatamente um pedido `2xx` para cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. A Tarefa 19 não pode retirar esses contratos sem quebrar consumidores observados e sem dois releases estáveis, export e aceitação.
 
 Continuam materialmente ausentes staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. Estes gates explícitos impedem merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado e criação do sentinel; não são substituídos pela autorização autónoma.
+
+---
+
+## Retoma autónoma em 2026-07-18T15:18:23Z
+
+A retoma começou no `HEAD` limpo e sincronizado `4072815acea77a047522b8cf75bd53f36bb61dd1`. Foram reinspecionados o plano canónico, `CURRENT_STATE.md`, commits, PR, processos, containers, produção e configuração antes de qualquer mutação. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound do projeto ativos. Containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+### Candidato local e PostgreSQL descartável
+
+Num PostgreSQL 16 novo em `127.0.0.1:55455`, explicitamente marcado para testes:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 105.46s, exit 0
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup vazio restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 50 commits
+Imagem local construída: manifest list sha256:6bf3e1db478121b250ac506e73eb5f366cae9e41e598b0082db2177d854025d2
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; POST Agent ingress=404
+Browser smoke autenticado local: 401 sem credenciais; páginas e APIs ricas=200; 0 erros de consola
+```
+
+Uma captura temporária `0600` da Sheet real foi repetida através do scope Google read-only. Credencial, snapshot e backups temporários foram removidos sem imprimir conteúdo. O apply foi feito apenas no PostgreSQL descartável e repetido com input idêntico:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 accounts criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 eventos failed/dead-letter
+Backup shadow restaurado: schema=0007, 15 tabelas, 1 workspace, 0 violações
+```
+
+A idempotência dos registos aplicáveis e as invariantes permanecem verdes, mas os conflitos e a falta de paridade continuam a bloquear o gate de dados. Não foram feitos merges automáticos por nome nem writes na Sheet.
+
+### Revalidação externa
+
+O PR `#1` continua draft, mergeable e sem reviews, checks ou environments GitHub. Não existe DNS para os três nomes de staging inspecionados. Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`.
+
+O host live não tem `DATABASE_URL`, flags CRM nem mapping de principal no container atual; não existe base ou backup CRM identificável. O filesystem está a 87%, com 3,1 GiB livres; a máquina tem 3,8 GiB de RAM e 1,4 GiB de swap em uso. Não existem CLIs ou credenciais locais para provisionar staging isolado noutro fornecedor. A telemetria JSON do proxy nas últimas 48 horas voltou a mostrar um pedido `2xx` em cada um dos seis contratos v0 acompanhados.
+
+Continuam sem evidência os gates que não podem ser fabricados localmente: staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak/cutover e dois releases estáveis sem consumidores v0. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
