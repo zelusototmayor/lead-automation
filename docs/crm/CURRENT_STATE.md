@@ -1199,3 +1199,36 @@ O PR `#1` continua draft, mergeable, sem reviews/checks e sem GitHub environment
 O host live mantém filesystem a 87%, 3,1 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM identificável e nenhum timer de backup CRM observado. A telemetria estruturada do proxy nas últimas 48 horas continua a provar consumidores `2xx` ativos: `/api/stats` 2, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 3, `/api/email-followups` 3 e `/api/proposal-followups` 3, entre `2026-07-18T09:09:06Z` e `2026-07-18T16:48:46Z`.
 
 A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas retirar o legado agora quebraria consumidores observados e violaria os gates de dois releases estáveis, export e aceitação. Permanecem também fechados staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-18T19:41:35Z
+
+A retoma começou no `HEAD` limpo e sincronizado `e8c6b2494967460bc6bdc7bf433f4a7950303e32`. O plano canónico, este documento, commits, suite, migrations, processos, PR, staging, produção e pré-requisitos de cloud foram reinspecionados antes de qualquer mutação. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+### Gates locais repetidos
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55461`, explicitamente marcado para testes, sem dados ou credenciais live e removido automaticamente no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 108.77s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff checks e Gitleaks: passed; 0 leaks em 58 commits
+Imagem local: sha256:632121f6a07f203cf40cde8de3f2862bae568790e89a65f5aca44ff88c9f70a3
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+```
+
+A primeira invocação do restore verifier usou nomes de argumentos incorretos, falhou antes do restore e executou o cleanup registado. A invocação documentada foi depois repetida num PostgreSQL exclusivo novo e passou. O PostgreSQL, dump, base de restore, container de smoke e imagem temporários foram removidos; as portas `55461` e `58010` ficaram livres.
+
+O export read-only preservado fora do repositório foi verificado sem imprimir conteúdo: modo `0600`, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`.
+
+### Gates externos revalidados
+
+O PR `#1` continua draft, mergeable e sem reviews/checks; a API GitHub continua sem environments. Os três nomes de staging inspecionados continuam sem DNS. Não existem CLIs nem credenciais de cloud disponíveis localmente para provisionar um staging isolado noutro fornecedor.
+
+Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, nenhuma base CRM identificável e nenhum timer de backup CRM observado. A consulta estruturada atual às últimas 48 horas não encontrou registos dos seis endpoints v0 acompanhados, mas uma única janela vazia não satisfaz o gate de ausência de consumidores, porque não existem dois releases pós-cutover estáveis e as janelas imediatamente anteriores registaram consumidores `2xx` ativos.
+
+A primeira tarefa formalmente incompleta permanece a Tarefa 19. Permanecem também fechados os gates anteriores de staging e cutover: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final e soak. A autorização autónoma não substitui esta evidência técnica, de dados e de release. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
