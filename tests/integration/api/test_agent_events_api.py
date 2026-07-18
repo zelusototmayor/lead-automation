@@ -263,3 +263,18 @@ def test_failed_repository_write_rolls_back_caller_transaction(
             )
             == 0
         )
+
+
+def test_authenticated_agent_requests_are_rate_limited_per_principal(agent_api) -> None:
+    client, _engine, _workspace_id, now = agent_api
+
+    responses = [
+        client.post("/api/v1/agent-events", json=event_payload(), headers=headers(now))
+        for _ in range(61)
+    ]
+
+    assert responses[0].status_code == 202
+    assert all(response.status_code == 200 for response in responses[1:60])
+    assert responses[60].status_code == 429
+    assert responses[60].json() == {"detail": "Too many requests"}
+    assert responses[60].headers["retry-after"] == "60"

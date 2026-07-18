@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections import deque
 from datetime import UTC, datetime, timedelta
 import json
 import secrets
-from typing import Annotated
+from threading import Lock
+import time
+from typing import Annotated, Mapping
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -25,9 +29,14 @@ from src.crm.ingestion.contracts import EventEnvelope, MAX_CANONICAL_EVENT_BYTES
 
 router = APIRouter()
 _AUTH_WINDOW = timedelta(minutes=5)
+_RATE_LIMIT_WINDOW_SECONDS = 60.0
+_RATE_LIMIT_MAX_REQUESTS = 60
+_rate_limit_buckets: dict[tuple[UUID, str], deque[float]] = {}
+_rate_limit_lock = Lock()
 _UNAUTHORIZED = {"detail": "Unauthorized"}
 _FORBIDDEN = {"detail": "Forbidden"}
 _INVALID = {"detail": "Invalid request"}
+_TOO_MANY_REQUESTS = {"detail": "Too many requests"}
 
 
 def get_agent_event_session():
@@ -38,8 +47,33 @@ def get_agent_event_session():
         yield session
 
 
-def _response(status_code: int, content: dict[str, object]) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content=content)
+def _response(
+    status_code: int,
+    content: Mapping[str, object],
+    *,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content=content, headers=headers)
+
+
+def _consume_rate_limit(workspace_id: UUID, endpoint: str) -> bool:
+    """Consume one request from the process-local principal/endpoint window."""
+
+    now = time.monotonic()
+    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+    key = (workspace_id, endpoint)
+    with _rate_limit_lock:
+        for bucket_key, bucket in tuple(_rate_limit_buckets.items()):
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
+            if not bucket:
+                _rate_limit_buckets.pop(bucket_key, None)
+
+        bucket = _rate_limit_buckets.setdefault(key, deque())
+        if len(bucket) >= _RATE_LIMIT_MAX_REQUESTS:
+            return False
+        bucket.append(now)
+        return True
 
 
 def _authenticate(request: Request) -> AgentSettings | JSONResponse:
@@ -119,6 +153,12 @@ async def create_agent_event(
         return principal
     if "agent-events:write" not in principal.scopes:
         return _response(403, _FORBIDDEN)
+    if not _consume_rate_limit(principal.workspace_id, request.url.path):
+        return _response(
+            429,
+            _TOO_MANY_REQUESTS,
+            headers={"Retry-After": str(int(_RATE_LIMIT_WINDOW_SECONDS))},
+        )
 
     try:
         raw_payload = await _bounded_json(request)
