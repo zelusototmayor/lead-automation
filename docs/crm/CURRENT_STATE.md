@@ -1096,3 +1096,36 @@ Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb73
 O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,4 GiB de swap em uso e nenhum PostgreSQL/backup CRM identificável. Não existem credenciais ou configuração local para provisionar um serviço PostgreSQL/staging isolado noutro fornecedor; usar o host partilhado sem margem de restore e isolamento violaria os gates de capacidade e rollback.
 
 A telemetria estruturada do proxy, entre `2026-07-17T23:05:32Z` e `2026-07-18T16:11:52Z`, contém um pedido `200` em cada contrato v0 acompanhado. Além dos consumidores observados, continuam ausentes os artefactos que a execução não pode fabricar: decisão oficial e evidência de `Won`, política de retenção/scopes, resolução ou aceitação dos conflitos shadow, validação da amostra pelo owner comercial, staging final, backup automático e restore real, soak/cutover e dois releases estáveis com aceitação dos stakeholders. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-18T17:18:32Z
+
+A retoma começou no `HEAD` sincronizado `d91754b9e8dd967c40e3f7beb4fbb38fef020870` e preservou duas alterações staged já existentes. O candidato implementa o controlo mínimo de rate limiting exigido para Agent ingress: 60 pedidos autenticados por minuto, por principal/workspace e endpoint, antes de ler ou validar o payload, com sincronização entre threads, limpeza de buckets expirados, resposta genérica `429` e `Retry-After: 60`. O trabalho foi verificado e publicado no commit `e0da7bbf4eb1c5739c4addd1d7f1944bd8001e12` (`security: rate limit CRM agent ingestion`).
+
+### Evidência local
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55458`, explicitamente marcado para testes e removido no fim:
+
+```text
+Agent event API focused: 15 passed
+Suite segura completa com DeprecationWarning como erro: 951 passed, 1 skipped em 109.06s, exit 0
+Rate limit concorrente: 60 pedidos aceites e 40 rejeitados em 100 chamadas paralelas
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, format check, compileall, git diff --check e Gitleaks: passed; 0 leaks em 53 commits e no candidato staged
+Imagem local: sha256:3e93a5aa59d3c7ec124db42161e03702be86981f59a6272f14aff30da35214f1
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress desativado=404; 0 erros no log
+```
+
+O PostgreSQL, backup, container de smoke e imagem criados nesta retoma foram removidos. Não existiam processos locais de worker CRM, reconciler, outbox publisher ou jobs outbound. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+### Gates externos revalidados
+
+O PR `#1` permanece draft, mergeable e sem reviews, checks ou environments GitHub. Os três nomes de staging inspecionados continuam sem DNS. Produção permanece saudável no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso e nenhum PostgreSQL/backup CRM identificável.
+
+A telemetria estruturada do proxy nas últimas 48 horas contém consumidores `2xx` ativos: `/api/stats` 2 pedidos, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 3, `/api/email-followups` 3 e `/api/proposal-followups` 3, entre `2026-07-18T09:09:06Z` e `2026-07-18T16:48:46Z`.
+
+Continuam materialmente fechados os gates de staging/cutover e de dados: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução ou aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. A Tarefa 19 exige ainda dois releases estáveis sem rollback, ausência de consumidores v0 e aceitação de stakeholders. Improvisar staging e PostgreSQL no host live partilhado violaria os gates de capacidade, isolamento, restore e rollback. Por isso não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação do sentinel.
