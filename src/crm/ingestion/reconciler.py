@@ -8,6 +8,7 @@ other.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import hashlib
 import json
 from typing import Callable, Protocol
@@ -23,7 +24,7 @@ from src.crm.ingestion.checkpoints import (
     CheckpointKey,
     persist_event_batch_and_advance_checkpoint,
 )
-from src.crm.persistence.models import SyncCheckpoint
+from src.crm.persistence.models import ReconciliationRun, SyncCheckpoint
 
 
 class ConnectorSource(Protocol):
@@ -50,7 +51,9 @@ def _validate_config(config: object) -> ConnectorRunConfig:
             type(value) is not str
             or not value.strip()
             or len(value) > maximum
-            or any(unicodedata.category(character) in {"Cc", "Cf"} for character in value)
+            or any(
+                unicodedata.category(character) in {"Cc", "Cf"} for character in value
+            )
         ):
             raise ValueError("invalid connector run configuration")
     return config
@@ -109,6 +112,7 @@ def run_connector_page(
             {"key": _run_lock_key(config)},
         )
         cursor = _checkpoint_cursor(session, config)
+        started_at = datetime.now(UTC)
         page = source.fetch_page(config.source_scope, cursor)
         if type(page) is not ConnectorPage:
             raise RuntimeError("connector fetch failed")
@@ -118,6 +122,27 @@ def run_connector_page(
             page.next_cursor,
             page.events,
             high_watermark_at=page.high_watermark_at,
+        )
+        finished_at = datetime.now(UTC)
+        window_end_at = page.high_watermark_at or finished_at
+        session.add(
+            ReconciliationRun(
+                workspace_id=config.workspace_id,
+                connector=config.connector,
+                source_scope=config.source_scope,
+                window_start_at=window_end_at,
+                window_end_at=window_end_at,
+                started_at=started_at,
+                finished_at=finished_at,
+                status="succeeded",
+                scanned_count=len(page.events),
+                created_count=result.inserted_count,
+                updated_count=0,
+                duplicate_count=result.duplicate_count,
+                conflict_count=0,
+                error_count=0,
+                report={},
+            )
         )
         if before_commit is not None:
             before_commit()

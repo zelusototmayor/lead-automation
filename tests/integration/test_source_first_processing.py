@@ -19,9 +19,11 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    EmailMessage,
     Evidence,
     IngestEvent,
     Lead,
+    Meeting,
     Proposal,
     ProposalVersion,
     Workspace,
@@ -139,6 +141,14 @@ def test_gmail_proposal_without_sheet_row_materializes_once(engine):
             == 1
         )
         assert _count(session, Proposal, workspace_id) == 1
+        message = session.scalar(
+            select(EmailMessage).where(EmailMessage.workspace_id == workspace_id)
+        )
+        assert message is not None
+        assert message.provider_message_id == "message-1"
+        assert message.provider_thread_id == "thread-1"
+        assert message.direction == "outbound"
+        assert message.contact_id is not None
         assert (
             session.scalar(
                 select(func.count())
@@ -262,6 +272,13 @@ def test_calendar_commercial_meeting_materializes_but_personal_event_is_ignored(
             )
             == 1
         )
+        meeting = session.scalar(
+            select(Meeting).where(Meeting.workspace_id == workspace_id)
+        )
+        assert meeting is not None
+        assert meeting.external_event_id == "calendar-1"
+        assert meeting.status == "booked"
+        assert meeting.lead_id is not None
         assert session.get(IngestEvent, personal_id).processing_status == "ignored"
 
 
@@ -360,3 +377,80 @@ def test_meeting_notes_without_sheet_row_create_minimized_evidence(engine):
         assert evidence.evidence_type == "meeting_note"
         assert evidence.excerpt_redacted is None
         assert evidence.metadata_json == {"has_notes": True}
+        meeting = session.scalar(
+            select(Meeting).where(Meeting.workspace_id == workspace_id)
+        )
+        assert meeting is not None
+        assert meeting.external_event_id == "meeting-1"
+        assert meeting.status == "held"
+        assert meeting.notes_evidence_id == evidence.id
+
+
+def test_meeting_notes_attach_to_existing_calendar_occurrence(engine):
+    from src.crm.ingestion.processor import process_ingest_event
+
+    workspace_id = _workspace(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    calendar_scope = "calendar:commercial"
+    calendar = CalendarSource(
+        transport=OnePageTransport(
+            {
+                "id": "shared-meeting-1",
+                "updated": "2026-07-16T12:30:00+00:00",
+                "occurred_at": NOW,
+                "classification": "confirmed",
+                "status": "booked",
+                "contact_email": "buyer@shared.test",
+                "domain": "shared.test",
+                "company_name": "Shared Buyer",
+            }
+        ),
+        enabled=True,
+        allowed_scopes={calendar_scope},
+    )
+    calendar_event_id = _ingest(
+        factory,
+        workspace_id,
+        calendar,
+        "google_calendar",
+        calendar_scope,
+        "events",
+    )
+    assert (
+        process_ingest_event(factory, workspace_id, calendar_event_id).status
+        == "applied"
+    )
+
+    notes_scope = "granola:team"
+    notes = MeetingNotesSource(
+        transport=OnePageTransport(
+            {
+                "id": "note-shared-1",
+                "meeting_external_id": "shared-meeting-1",
+                "occurred_at": NOW,
+                "classification": "confirmed",
+                "has_notes": True,
+                "contact_email": "buyer@shared.test",
+                "domain": "shared.test",
+                "company_name": "Shared Buyer",
+            }
+        ),
+        enabled=True,
+        allowed_scopes={notes_scope},
+    )
+    notes_event_id = _ingest(
+        factory, workspace_id, notes, "granola", notes_scope, "notes"
+    )
+    assert (
+        process_ingest_event(factory, workspace_id, notes_event_id).status == "applied"
+    )
+
+    with Session(engine) as session:
+        meetings = tuple(
+            session.scalars(select(Meeting).where(Meeting.workspace_id == workspace_id))
+        )
+        assert len(meetings) == 1
+        assert meetings[0].provider == "google_calendar"
+        assert meetings[0].status == "held"
+        assert meetings[0].held_at == NOW
+        assert meetings[0].notes_evidence_id is not None

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
+import logging
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
@@ -16,7 +17,7 @@ from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
-from dashboard.app.feature_flags import require_proposals_postgres_reads
+from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.schemas.proposals import (
     DimensionTotals,
     ProposalDetail,
@@ -40,6 +41,7 @@ from src.crm.persistence.models import (
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parents[1] / "templates"))
+logger = logging.getLogger(__name__)
 _OPEN_STATUSES = ("draft", "promised", "sent", "viewed", "negotiation")
 _DIMENSIONS = ("one_off", "mrr", "arr")
 
@@ -55,12 +57,43 @@ def _proposal_engine() -> Engine:
     return create_database_engine()
 
 
+def _unconfigured_proposal_shadow_comparison(_principal: CRMPrincipal) -> None:
+    raise RuntimeError("proposal shadow comparison is not configured")
+
+
+_proposal_shadow_comparison = _unconfigured_proposal_shadow_comparison
+
+
 def get_proposal_request_context(
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
 ):
     """Open the database only after identity and cutover gates pass."""
 
-    require_proposals_postgres_reads()
+    try:
+        flags = get_feature_flags()
+    except ValueError:
+        flags = None
+    if flags is None or not flags.database_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Proposals unavailable",
+        )
+    if flags.proposals_read_model == "shadow":
+        try:
+            _proposal_shadow_comparison(principal)
+        except Exception:
+            logger.warning("proposal shadow comparison failed")
+        else:
+            logger.info("proposal shadow comparison completed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Proposals unavailable",
+        )
+    if flags.proposals_read_model != "postgres":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Proposals unavailable",
+        )
     try:
         engine = _proposal_engine()
     except (TypeError, ValueError):

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 import sys
@@ -13,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from sqlalchemy import func, select  # noqa: E402
-from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy import func, or_, select  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from dashboard.app.db import (  # noqa: E402
     create_database_engine,
@@ -32,6 +33,51 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def process_batch(
+    session_factory: sessionmaker[Session],
+    workspace_id: UUID,
+    *,
+    limit: int,
+    now: datetime | None = None,
+) -> tuple[int, int]:
+    """Process an eligible batch while isolating failures to one event."""
+
+    eligible_at = now or datetime.now(UTC)
+    eligible = or_(
+        IngestEvent.processing_status == "received",
+        (
+            (IngestEvent.processing_status == "failed")
+            & (
+                IngestEvent.next_attempt_at.is_(None)
+                | (IngestEvent.next_attempt_at <= eligible_at)
+            )
+        ),
+    )
+    with session_factory() as session:
+        eligible_count = session.scalar(
+            select(func.count())
+            .select_from(IngestEvent)
+            .where(IngestEvent.workspace_id == workspace_id, eligible)
+        )
+        event_ids = tuple(
+            session.scalars(
+                select(IngestEvent.id)
+                .where(IngestEvent.workspace_id == workspace_id, eligible)
+                .order_by(IngestEvent.received_at, IngestEvent.id)
+                .limit(limit)
+            )
+        )
+
+    processed = 0
+    for event_id in event_ids:
+        try:
+            process_ingest_event(session_factory, workspace_id, event_id)
+        except Exception:
+            continue
+        processed += 1
+    return int(eligible_count or 0), processed
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not 1 <= args.limit <= 1000:
@@ -45,30 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         engine = create_database_engine()
         factory = create_session_factory(engine)
-        with Session(engine) as session:
-            eligible_count = session.scalar(
-                select(func.count())
-                .select_from(IngestEvent)
-                .where(
-                    IngestEvent.workspace_id == args.workspace_id,
-                    IngestEvent.processing_status.in_(("received", "failed")),
-                )
-            )
-            event_ids = tuple(
-                session.scalars(
-                    select(IngestEvent.id)
-                    .where(
-                        IngestEvent.workspace_id == args.workspace_id,
-                        IngestEvent.processing_status.in_(("received", "failed")),
-                    )
-                    .order_by(IngestEvent.received_at, IngestEvent.id)
-                    .limit(args.limit)
-                )
-            )
-        processed = 0
-        for event_id in event_ids:
-            process_ingest_event(factory, args.workspace_id, event_id)
-            processed += 1
+        eligible_count, processed = process_batch(
+            factory, args.workspace_id, limit=args.limit
+        )
         print(
             json.dumps(
                 {

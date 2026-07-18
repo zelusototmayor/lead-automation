@@ -150,7 +150,7 @@ def test_disabled_agent_event_route_does_not_resolve_auth_or_database(monkeypatc
     assert response.json() == {"detail": "Not found"}
 
 
-def test_shadow_account_route_does_not_open_postgres(monkeypatch):
+def test_shadow_account_route_executes_comparison_without_serving_postgres(monkeypatch):
     from dashboard.app import main as dashboard_main
     from dashboard.app.feature_flags import get_feature_flags
     from dashboard.app.routers import accounts
@@ -160,17 +160,16 @@ def test_shadow_account_route_does_not_open_postgres(monkeypatch):
     monkeypatch.setenv("CRM_DB_ENABLED", "true")
     monkeypatch.setenv("CRM_ACCOUNTS_READ_MODEL", "shadow")
     get_feature_flags.cache_clear()
-    opened = False
+    workspace_id = uuid4()
+    compared: list[CRMPrincipal] = []
 
-    def forbidden_engine():
-        nonlocal opened
-        opened = True
-        raise AssertionError("shadow reads must not open PostgreSQL for user traffic")
+    def compare(principal):
+        compared.append(principal)
 
     async def principal_override():
-        return CRMPrincipal(workspace_id=uuid4(), subject="cutover-test")
+        return CRMPrincipal(workspace_id=workspace_id, subject="cutover-test")
 
-    monkeypatch.setattr(accounts, "_account_engine", forbidden_engine)
+    monkeypatch.setattr(accounts, "_account_shadow_comparison", compare, raising=False)
     dashboard_main.app.dependency_overrides[require_crm_principal] = principal_override
     try:
         response = TestClient(dashboard_main.app).get("/api/v1/accounts")
@@ -180,7 +179,45 @@ def test_shadow_account_route_does_not_open_postgres(monkeypatch):
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Accounts unavailable"}
-    assert opened is False
+    assert len(compared) == 1
+    assert compared[0].workspace_id == workspace_id
+
+
+def test_shadow_proposal_route_executes_comparison_without_serving_postgres(
+    monkeypatch,
+):
+    from dashboard.app import main as dashboard_main
+    from dashboard.app.feature_flags import get_feature_flags
+    from dashboard.app.routers import proposals
+    from dashboard.app.security import CRMPrincipal, require_crm_principal
+
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("CRM_DB_ENABLED", "true")
+    monkeypatch.setenv("CRM_PROPOSALS_READ_MODEL", "shadow")
+    get_feature_flags.cache_clear()
+    workspace_id = uuid4()
+    compared: list[CRMPrincipal] = []
+
+    def compare(principal):
+        compared.append(principal)
+
+    async def principal_override():
+        return CRMPrincipal(workspace_id=workspace_id, subject="cutover-test")
+
+    monkeypatch.setattr(
+        proposals, "_proposal_shadow_comparison", compare, raising=False
+    )
+    dashboard_main.app.dependency_overrides[require_crm_principal] = principal_override
+    try:
+        response = TestClient(dashboard_main.app).get("/api/v1/proposals")
+    finally:
+        dashboard_main.app.dependency_overrides.pop(require_crm_principal, None)
+        get_feature_flags.cache_clear()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Proposals unavailable"}
+    assert len(compared) == 1
+    assert compared[0].workspace_id == workspace_id
 
 
 @pytest.mark.parametrize(

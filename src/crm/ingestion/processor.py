@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -15,7 +15,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.crm.ingestion.contracts import EventEnvelope
-from src.crm.persistence.models import IngestEvent, SourceIdentity
+from src.crm.persistence.models import (
+    EmailMessage,
+    IngestEvent,
+    Meeting,
+    SourceIdentity,
+)
 from src.crm.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.crm.services.account_service import (
     AccountService,
@@ -34,6 +39,10 @@ from src.crm.services.proposal_discovery_service import (
 class ProcessOutcome:
     event_id: UUID
     status: str
+
+
+MAX_PROCESSING_ATTEMPTS = 5
+RETRY_BASE_DELAY = timedelta(minutes=1)
 
 
 def _event_lock_key(workspace_id: UUID, event_id: UUID) -> int:
@@ -211,6 +220,14 @@ def _materialize_proposal(
     lead_id: UUID,
 ) -> None:
     assert uow.session is not None
+    mailbox_identity_id = _claim_identity(
+        uow.session,
+        workspace_id=workspace_id,
+        source_system="gmail",
+        source_scope=envelope.source.scope,
+        entity_kind="mailbox",
+        external_id=envelope.source.scope,
+    )
     message_identity_id = _claim_identity(
         uow.session,
         workspace_id=workspace_id,
@@ -239,6 +256,28 @@ def _materialize_proposal(
             source_identity_id=message_identity_id,
             ingest_event_id=event_id,
         )
+    uow.session.execute(
+        insert(EmailMessage)
+        .values(
+            workspace_id=workspace_id,
+            account_id=account_id,
+            contact_id=lead.contact_id,
+            mailbox_identity_id=mailbox_identity_id,
+            provider_message_id=envelope.subject.external_id,
+            provider_thread_id=thread_id,
+            direction=_text_fact(envelope.facts, "direction") or "outbound",
+            sent_at=envelope.occurred_at,
+            has_attachments=envelope.facts.get("has_attachments") is True,
+            proposal_candidate_state=_classification(envelope),
+        )
+        .on_conflict_do_nothing(
+            index_elements=[
+                EmailMessage.workspace_id,
+                EmailMessage.mailbox_identity_id,
+                EmailMessage.provider_message_id,
+            ]
+        )
+    )
     thread_identity_id = _claim_identity(
         uow.session,
         workspace_id=workspace_id,
@@ -304,6 +343,7 @@ def _materialize_meeting(
             source_identity_id=meeting_identity_id,
             ingest_event_id=event_id,
         )
+    notes_evidence_id = None
     if (
         envelope.event_type == "meeting.note.observed"
         and envelope.facts.get("has_notes") is True
@@ -311,7 +351,7 @@ def _materialize_meeting(
         content_hash = hashlib.sha256(
             f"{meeting_identity_id}:notes-present".encode()
         ).hexdigest()
-        EvidenceService(uow).record(
+        evidence = EvidenceService(uow).record(
             RecordEvidenceCommand(
                 workspace_id=workspace_id,
                 account_id=account_id,
@@ -322,6 +362,65 @@ def _materialize_meeting(
                 metadata={"has_notes": True},
             )
         )
+        uow.session.flush([evidence])
+        notes_evidence_id = evidence.id
+
+    if envelope.event_type == "calendar.meeting.observed":
+        external_event_id = envelope.subject.external_id
+        meeting_status = _text_fact(envelope.facts, "status") or ""
+        provider = "google_calendar"
+    else:
+        external_event_id = _text_fact(envelope.facts, "meeting_external_id") or ""
+        meeting_status = "held"
+        provider = envelope.source.system
+    if meeting_status not in {"booked", "held", "cancelled", "no_show"}:
+        raise IdentityReviewRequired("identity requires review")
+    if envelope.event_type == "meeting.note.observed":
+        existing = tuple(
+            uow.session.scalars(
+                select(Meeting)
+                .where(
+                    Meeting.workspace_id == workspace_id,
+                    Meeting.account_id == account_id,
+                    Meeting.external_event_id == external_event_id,
+                )
+                .with_for_update()
+            )
+        )
+        if len(existing) > 1:
+            raise IdentityReviewRequired("identity requires review")
+        if existing:
+            meeting = existing[0]
+            meeting.status = "held"
+            meeting.held_at = envelope.occurred_at
+            meeting.notes_evidence_id = notes_evidence_id
+            meeting.updated_at = datetime.now(UTC)
+            return
+    uow.session.execute(
+        insert(Meeting)
+        .values(
+            workspace_id=workspace_id,
+            account_id=account_id,
+            lead_id=lead_id,
+            provider=provider,
+            calendar_id=envelope.source.scope,
+            external_event_id=external_event_id,
+            occurrence_start_at=envelope.occurred_at,
+            scheduled_start_at=envelope.occurred_at,
+            status=meeting_status,
+            held_at=envelope.occurred_at if meeting_status == "held" else None,
+            notes_evidence_id=notes_evidence_id,
+        )
+        .on_conflict_do_nothing(
+            index_elements=[
+                Meeting.workspace_id,
+                Meeting.provider,
+                Meeting.calendar_id,
+                Meeting.external_event_id,
+                Meeting.occurrence_start_at,
+            ]
+        )
+    )
 
 
 def process_ingest_event(
@@ -353,15 +452,21 @@ def process_ingest_event(
         )
         if event is None:
             raise ValueError("invalid processing request")
-        if event.processing_status in {"applied", "ignored", "review"}:
+        if event.processing_status in {"applied", "ignored", "review", "dead_letter"}:
             return ProcessOutcome(event.id, event.processing_status)
-        envelope = EventEnvelope.model_validate(event.payload)
-        if envelope.payload_hash() != event.payload_hash:
-            raise ValueError("invalid processing request")
+        if (
+            event.processing_status == "failed"
+            and event.next_attempt_at is not None
+            and event.next_attempt_at > datetime.now(UTC)
+        ):
+            return ProcessOutcome(event.id, "failed")
 
         try:
             with session.begin_nested():
                 event.attempt_count += 1
+                envelope = EventEnvelope.model_validate(event.payload)
+                if envelope.payload_hash() != event.payload_hash:
+                    raise ValueError("invalid processing request")
                 if _classification(envelope) == "excluded":
                     status = "ignored"
                     account_id = None
@@ -425,6 +530,30 @@ def process_ingest_event(
             event.last_error_redacted = "identity requires review"
             event.next_attempt_at = None
             outcome = ProcessOutcome(event.id, "review")
+        except Exception:
+            event = session.scalar(
+                select(IngestEvent)
+                .where(
+                    IngestEvent.workspace_id == workspace_id,
+                    IngestEvent.id == event_id,
+                )
+                .with_for_update()
+            )
+            assert event is not None
+            event.attempt_count += 1
+            event.processing_status = (
+                "dead_letter"
+                if event.attempt_count >= MAX_PROCESSING_ATTEMPTS
+                else "failed"
+            )
+            event.last_error_redacted = "unexpected processing error"
+            event.next_attempt_at = (
+                None
+                if event.processing_status == "dead_letter"
+                else datetime.now(UTC)
+                + (RETRY_BASE_DELAY * (2 ** (event.attempt_count - 1)))
+            )
+            outcome = ProcessOutcome(event.id, event.processing_status)
         else:
             event.processing_status = status
             event.last_error_redacted = None

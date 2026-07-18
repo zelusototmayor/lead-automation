@@ -98,6 +98,22 @@ def operations_api_fixture():
                 VALUES
                     (:checkpoint_id, :workspace_id, 'manual', 'ops-test', 'events',
                      CURRENT_TIMESTAMP - interval '5 minutes');
+                INSERT INTO reconciliation_runs
+                    (id, workspace_id, connector, source_scope, window_start_at,
+                     window_end_at, started_at, finished_at, status, scanned_count,
+                     created_count, updated_count, duplicate_count, conflict_count,
+                     error_count, report)
+                VALUES
+                    (:reconciliation_id, :workspace_id, 'gmail', 'mailbox:ops-test',
+                     CURRENT_TIMESTAMP - interval '1 day', CURRENT_TIMESTAMP,
+                     CURRENT_TIMESTAMP - interval '6 minutes',
+                     CURRENT_TIMESTAMP - interval '5 minutes', 'succeeded', 10, 2, 1, 4, 2, 1,
+                     jsonb_build_object('conflict', 2, 'error', 1)),
+                    (:foreign_reconciliation_id, :foreign_workspace_id, 'gmail',
+                     'mailbox:private', CURRENT_TIMESTAMP - interval '1 day', CURRENT_TIMESTAMP,
+                     CURRENT_TIMESTAMP - interval '6 minutes',
+                     CURRENT_TIMESTAMP - interval '5 minutes', 'succeeded', 100, 0, 0, 0, 99, 1,
+                     jsonb_build_object('conflict', 99, 'error', 1));
                 INSERT INTO proposals
                     (id, workspace_id, account_id, title, currency, value_state)
                 VALUES
@@ -122,6 +138,8 @@ def operations_api_fixture():
             "dead_id": uuid4(),
             "foreign_event_id": uuid4(),
             "checkpoint_id": uuid4(),
+            "reconciliation_id": uuid4(),
+            "foreign_reconciliation_id": uuid4(),
             "proposal_id": uuid4(),
             "outbox_id": uuid4(),
             "command_id": uuid4(),
@@ -165,7 +183,7 @@ def test_operations_metrics_are_canonical_workspace_scoped_and_redacted(
     assert 115 <= body["event_lag_seconds"] <= 135
     assert 295 <= body["checkpoint_age_seconds"] <= 315
     assert body["dead_letter_count"] == 1
-    assert body["reconciliation_mismatch_count"] == 1
+    assert body["reconciliation_mismatch_count"] == 3
     assert body["missing_value_count"] == 1
     assert body["account_invariant_violation_count"] == 2
     assert 235 <= body["outbox_lag_seconds"] <= 255

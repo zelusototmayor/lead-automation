@@ -24,7 +24,13 @@ class AccountSummary(BaseModel):
     sector: str | None
     contact_count: int = Field(ge=0)
     email_count: int = Field(ge=0)
+    sent_email_count: int = Field(ge=0)
+    received_email_count: int = Field(ge=0)
     meeting_count: int = Field(ge=0)
+    booked_meeting_count: int = Field(ge=0)
+    held_meeting_count: int = Field(ge=0)
+    cancelled_meeting_count: int = Field(ge=0)
+    no_show_meeting_count: int = Field(ge=0)
     proposal_count: int = Field(ge=0)
     probability: float | None = Field(default=None, ge=0, le=1)
     next_action: str | None

@@ -19,13 +19,16 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    EmailMessage,
     Evidence,
     Lead,
+    Meeting,
     Proposal,
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
     SourceIdentity,
+    Task,
     Workspace,
 )
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
@@ -112,8 +115,69 @@ def account_api_fixture():
         )
         session.flush()
         occurred = datetime(2026, 7, 15, 10, 0, tzinfo=UTC)
+        mailbox = SourceIdentity(
+            workspace_id=workspace_id,
+            source_system="gmail",
+            source_scope="mailbox:fixture",
+            entity_kind="mailbox",
+            external_id="mailbox:fixture",
+        )
+        session.add(mailbox)
+        session.flush()
+        proposal = Proposal(
+            workspace_id=workspace_id,
+            account_id=account_id,
+            lead_id=lead_id,
+            title="Account fixture proposal",
+            status="draft",
+            currency="EUR",
+        )
+        session.add(proposal)
+        session.flush()
         session.add_all(
             [
+                EmailMessage(
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                    mailbox_identity_id=mailbox.id,
+                    provider_message_id="fixture-outbound",
+                    provider_thread_id="fixture-thread",
+                    direction="outbound",
+                    sent_at=occurred,
+                ),
+                EmailMessage(
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                    mailbox_identity_id=mailbox.id,
+                    provider_message_id="fixture-inbound",
+                    provider_thread_id="fixture-thread",
+                    direction="inbound",
+                    sent_at=occurred + timedelta(minutes=1),
+                ),
+                Meeting(
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    lead_id=lead_id,
+                    provider="google_calendar",
+                    calendar_id="commercial",
+                    external_event_id="fixture-meeting",
+                    occurrence_start_at=occurred,
+                    scheduled_start_at=occurred,
+                    status="held",
+                    held_at=occurred,
+                ),
+                Task(
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    proposal_id=proposal.id,
+                    task_type="follow_up",
+                    title="Call buyer",
+                    due_at=occurred + timedelta(days=1),
+                    owner_user_id=uuid4(),
+                    status="open",
+                ),
                 Activity(
                     workspace_id=workspace_id,
                     account_id=account_id,

@@ -97,10 +97,16 @@ def test_account_detail_includes_counts_next_action_and_allowlisted_evidence(
     assert body["display_name"] == "Acme Transport"
     assert body["contact_count"] == 1
     assert body["email_count"] == 2
+    assert body["sent_email_count"] == 1
+    assert body["received_email_count"] == 1
     assert body["meeting_count"] == 1
+    assert body["booked_meeting_count"] == 0
+    assert body["held_meeting_count"] == 1
+    assert body["cancelled_meeting_count"] == 0
+    assert body["no_show_meeting_count"] == 0
     assert body["proposal_count"] == 1
     assert body["probability"] is None
-    assert body["next_action"] is None
+    assert body["next_action"] == "Call buyer"
     assert {item["type"] for item in body["evidence_refs"]} == {
         "email_received",
         "email_sent",
@@ -136,7 +142,7 @@ def test_account_detail_bounds_recent_evidence(account_api_fixture):
     assert len(response.json()["evidence_refs"]) == 50
 
 
-def test_historical_task_activity_is_not_presented_as_a_next_action(
+def test_canonical_open_task_is_presented_instead_of_historical_activity(
     account_api_fixture,
 ):
     client, ids = account_api_fixture
@@ -144,7 +150,7 @@ def test_historical_task_activity_is_not_presented_as_a_next_action(
     response = client.get(f"/api/v1/accounts/{ids['account_id']}")
 
     assert response.status_code == 200
-    assert response.json()["next_action"] is None
+    assert response.json()["next_action"] == "Call buyer"
 
 
 def test_account_detail_has_explicit_empty_state(account_api_fixture):

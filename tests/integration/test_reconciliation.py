@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.crm.connectors.sheets_source import ConnectorPage
 from src.crm.ingestion.checkpoints import EventToPersist
 from src.crm.ingestion.contracts import EventEnvelope
-from src.crm.persistence.models import IngestEvent, SyncCheckpoint, Workspace
+from src.crm.persistence.models import (
+    IngestEvent,
+    ReconciliationRun,
+    SyncCheckpoint,
+    Workspace,
+)
 from tests.migration._postgres import require_disposable_postgres
 
 
@@ -171,6 +176,44 @@ def test_runner_replays_from_checkpoint_and_deduplicates_out_of_order_events(eng
         assert checkpoint.high_watermark_at == later
 
 
+def test_runner_records_minimized_reconciliation_run_in_same_transaction(engine):
+    from src.crm.ingestion.reconciler import ConnectorRunConfig, run_connector_page
+
+    workspace_id = _workspace(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    occurred_at = datetime(2026, 7, 16, 12, tzinfo=UTC)
+    source = FakeSource([_page("cursor-1", _event("new-run", occurred_at))])
+    config = ConnectorRunConfig(
+        workspace_id=workspace_id,
+        connector="gmail",
+        source_scope="mailbox:commercial",
+        stream="messages",
+    )
+
+    result = run_connector_page(factory, source, config)
+
+    assert result.inserted_count == 1
+    with Session(engine) as session:
+        run = session.scalar(
+            select(ReconciliationRun).where(
+                ReconciliationRun.workspace_id == workspace_id
+            )
+        )
+        assert run is not None
+        assert run.connector == "gmail"
+        assert run.source_scope == "mailbox:commercial"
+        assert run.status == "succeeded"
+        assert run.scanned_count == 1
+        assert run.created_count == 1
+        assert run.duplicate_count == 0
+        assert run.updated_count == 0
+        assert run.conflict_count == 0
+        assert run.error_count == 0
+        assert run.report == {}
+        assert run.finished_at is not None
+        assert run.finished_at >= run.started_at
+
+
 def test_runner_serializes_same_checkpoint_before_fetching_next_page(engine):
     from src.crm.ingestion.reconciler import ConnectorRunConfig, run_connector_page
 
@@ -243,6 +286,14 @@ def test_runner_rolls_back_events_and_checkpoint_when_crashing_before_commit(eng
             session.scalar(
                 select(SyncCheckpoint).where(
                     SyncCheckpoint.workspace_id == workspace_id
+                )
+            )
+            is None
+        )
+        assert (
+            session.scalar(
+                select(ReconciliationRun).where(
+                    ReconciliationRun.workspace_id == workspace_id
                 )
             )
             is None

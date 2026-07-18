@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import logging
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -9,11 +10,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Engine, func, literal, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
-from dashboard.app.feature_flags import require_accounts_postgres_reads
+from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.schemas.accounts import (
     AccountDetail,
     AccountPage,
@@ -21,10 +22,19 @@ from dashboard.app.schemas.accounts import (
     EvidenceReference,
 )
 from dashboard.app.security import CRMPrincipal, require_crm_principal
-from src.crm.persistence.models import Account, Activity, Contact
+from src.crm.persistence.models import (
+    Account,
+    Activity,
+    Contact,
+    EmailMessage,
+    Meeting,
+    Proposal,
+    Task,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parents[1] / "templates"))
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,12 +48,43 @@ def _account_engine() -> Engine:
     return create_database_engine()
 
 
+def _unconfigured_account_shadow_comparison(_principal: CRMPrincipal) -> None:
+    raise RuntimeError("account shadow comparison is not configured")
+
+
+_account_shadow_comparison = _unconfigured_account_shadow_comparison
+
+
 def get_account_request_context(
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
 ):
     """Open a read session only after identity and cutover gates pass."""
 
-    require_accounts_postgres_reads()
+    try:
+        flags = get_feature_flags()
+    except ValueError:
+        flags = None
+    if flags is None or not flags.database_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Accounts unavailable",
+        )
+    if flags.accounts_read_model == "shadow":
+        try:
+            _account_shadow_comparison(principal)
+        except Exception:
+            logger.warning("account shadow comparison failed")
+        else:
+            logger.info("account shadow comparison completed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Accounts unavailable",
+        )
+    if flags.accounts_read_model != "postgres":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Accounts unavailable",
+        )
     try:
         engine = _account_engine()
     except (TypeError, ValueError):
@@ -66,43 +107,110 @@ def _summary_columns(workspace_id: UUID):
         .scalar_subquery()
     )
     email_count = (
-        select(func.count(Activity.id))
+        select(func.count(EmailMessage.id))
         .where(
-            Activity.workspace_id == workspace_id,
-            Activity.account_id == Account.id,
-            Activity.activity_type.in_(("email_sent", "email_received")),
+            EmailMessage.workspace_id == workspace_id,
+            EmailMessage.account_id == Account.id,
+        )
+        .correlate(Account)
+        .scalar_subquery()
+    )
+    sent_email_count = (
+        select(func.count(EmailMessage.id))
+        .where(
+            EmailMessage.workspace_id == workspace_id,
+            EmailMessage.account_id == Account.id,
+            EmailMessage.direction == "outbound",
+        )
+        .correlate(Account)
+        .scalar_subquery()
+    )
+    received_email_count = (
+        select(func.count(EmailMessage.id))
+        .where(
+            EmailMessage.workspace_id == workspace_id,
+            EmailMessage.account_id == Account.id,
+            EmailMessage.direction == "inbound",
         )
         .correlate(Account)
         .scalar_subquery()
     )
     meeting_count = (
-        select(func.count(Activity.id))
+        select(func.count(Meeting.id))
         .where(
-            Activity.workspace_id == workspace_id,
-            Activity.account_id == Account.id,
-            Activity.activity_type == "meeting",
+            Meeting.workspace_id == workspace_id,
+            Meeting.account_id == Account.id,
         )
         .correlate(Account)
         .scalar_subquery()
     )
+
+    def meeting_status_count(status_value: str):
+        return (
+            select(func.count(Meeting.id))
+            .where(
+                Meeting.workspace_id == workspace_id,
+                Meeting.account_id == Account.id,
+                Meeting.status == status_value,
+            )
+            .correlate(Account)
+            .scalar_subquery()
+        )
+
+    booked_meeting_count = meeting_status_count("booked")
+    held_meeting_count = meeting_status_count("held")
+    cancelled_meeting_count = meeting_status_count("cancelled")
+    no_show_meeting_count = meeting_status_count("no_show")
     proposal_count = (
-        select(func.count(Activity.id))
+        select(func.count(Proposal.id))
         .where(
-            Activity.workspace_id == workspace_id,
-            Activity.account_id == Account.id,
-            Activity.activity_type == "proposal",
+            Proposal.workspace_id == workspace_id,
+            Proposal.account_id == Account.id,
         )
         .correlate(Account)
         .scalar_subquery()
     )
-    next_action = literal(None)
-    return contact_count, email_count, meeting_count, proposal_count, next_action
+    next_action = (
+        select(Task.title)
+        .where(
+            Task.workspace_id == workspace_id,
+            Task.account_id == Account.id,
+            Task.status == "open",
+        )
+        .order_by(Task.due_at.asc().nulls_last(), Task.created_at.asc(), Task.id.asc())
+        .limit(1)
+        .correlate(Account)
+        .scalar_subquery()
+    )
+    return (
+        contact_count,
+        email_count,
+        sent_email_count,
+        received_email_count,
+        meeting_count,
+        booked_meeting_count,
+        held_meeting_count,
+        cancelled_meeting_count,
+        no_show_meeting_count,
+        proposal_count,
+        next_action,
+    )
 
 
 def _summary_statement(workspace_id: UUID):
-    contact_count, email_count, meeting_count, proposal_count, next_action = (
-        _summary_columns(workspace_id)
-    )
+    (
+        contact_count,
+        email_count,
+        sent_email_count,
+        received_email_count,
+        meeting_count,
+        booked_meeting_count,
+        held_meeting_count,
+        cancelled_meeting_count,
+        no_show_meeting_count,
+        proposal_count,
+        next_action,
+    ) = _summary_columns(workspace_id)
     return select(
         Account.id,
         Account.display_name,
@@ -111,7 +219,13 @@ def _summary_statement(workspace_id: UUID):
         Account.sector,
         contact_count.label("contact_count"),
         email_count.label("email_count"),
+        sent_email_count.label("sent_email_count"),
+        received_email_count.label("received_email_count"),
         meeting_count.label("meeting_count"),
+        booked_meeting_count.label("booked_meeting_count"),
+        held_meeting_count.label("held_meeting_count"),
+        cancelled_meeting_count.label("cancelled_meeting_count"),
+        no_show_meeting_count.label("no_show_meeting_count"),
         proposal_count.label("proposal_count"),
         next_action.label("next_action"),
     ).where(
@@ -129,7 +243,13 @@ def _to_summary(row) -> AccountSummary:
         sector=row.sector,
         contact_count=row.contact_count,
         email_count=row.email_count,
+        sent_email_count=row.sent_email_count,
+        received_email_count=row.received_email_count,
         meeting_count=row.meeting_count,
+        booked_meeting_count=row.booked_meeting_count,
+        held_meeting_count=row.held_meeting_count,
+        cancelled_meeting_count=row.cancelled_meeting_count,
+        no_show_meeting_count=row.no_show_meeting_count,
         proposal_count=row.proposal_count,
         probability=None,
         next_action=row.next_action,

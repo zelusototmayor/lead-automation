@@ -21,6 +21,7 @@ from src.crm.persistence.models import (
     Lead,
     OutboxEvent,
     Proposal,
+    ReconciliationRun,
     SyncCheckpoint,
 )
 
@@ -112,10 +113,15 @@ def operations_metrics(
                 )
             ),
             "reconciliation_mismatch_count": count(
-                select(func.count(IngestEvent.id)).where(
-                    IngestEvent.workspace_id == workspace_id,
-                    IngestEvent.processing_status == "review",
-                )
+                select(
+                    func.coalesce(
+                        func.sum(
+                            ReconciliationRun.conflict_count
+                            + ReconciliationRun.error_count
+                        ),
+                        0,
+                    )
+                ).where(ReconciliationRun.workspace_id == workspace_id)
             ),
             "missing_value_count": count(
                 select(func.count(Proposal.id)).where(
