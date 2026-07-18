@@ -25,7 +25,8 @@ from psycopg import sql
 
 _DISPOSABLE_MARKER = "CRM_DISPOSABLE_TEST_DATABASE"
 _RESTORE_PREFIX = "crm_restore_verify_"
-_REQUIRED_TABLES = frozenset(
+EXPECTED_SCHEMA_REVISION = "0007"
+REQUIRED_TABLES = frozenset(
     {
         "workspaces",
         "accounts",
@@ -37,7 +38,39 @@ _REQUIRED_TABLES = frozenset(
         "proposals",
         "outbox_events",
         "audit_events",
+        "email_messages",
+        "meetings",
+        "tasks",
+        "reconciliation_runs",
         "alembic_version",
+    }
+)
+REQUIRED_CONSTRAINTS = frozenset(
+    {
+        "ck_email_messages_mailbox_identity",
+        "ck_email_messages_to_addresses_minimized",
+        "ck_email_messages_body_preview_bounded",
+        "ck_meetings_next_steps_minimized",
+        "ck_reconciliation_runs_report_minimized",
+        "fk_email_messages_workspace_account",
+        "fk_email_messages_workspace_mailbox_identity",
+        "fk_email_messages_workspace_account_evidence",
+        "fk_meetings_workspace_account",
+        "fk_meetings_workspace_account_notes_evidence",
+        "fk_tasks_workspace_account",
+        "fk_tasks_workspace_account_proposal",
+        "uq_evidence_workspace_account_id_type",
+        "uq_source_identities_workspace_id_semantics",
+    }
+)
+REQUIRED_INDEXES = frozenset(
+    {
+        "uq_email_messages_workspace_mailbox_provider",
+        "ix_email_messages_account_sent_at",
+        "uq_meetings_workspace_provider_occurrence",
+        "ix_meetings_account_scheduled",
+        "ix_tasks_account_status_due",
+        "ix_reconciliation_runs_workspace_connector_started",
     }
 )
 
@@ -54,9 +87,14 @@ class SafeTarget:
     password: str | None
     database: str
 
+    @property
+    def hostaddr(self) -> str:
+        return "::1" if self.host == "::1" else "127.0.0.1"
+
     def connection_kwargs(self, *, database: str | None = None) -> dict[str, object]:
         values: dict[str, object] = {
             "host": self.host,
+            "hostaddr": self.hostaddr,
             "port": self.port,
             "user": self.user,
             "dbname": database or self.database,
@@ -67,15 +105,13 @@ class SafeTarget:
         return values
 
     def subprocess_environment(self, database: str) -> dict[str, str]:
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "PGHOST": self.host,
-                "PGPORT": str(self.port),
-                "PGUSER": self.user,
-                "PGDATABASE": database,
-            }
-        )
+        environment = {
+            "PGHOST": self.host,
+            "PGHOSTADDR": self.hostaddr,
+            "PGPORT": str(self.port),
+            "PGUSER": self.user,
+            "PGDATABASE": database,
+        }
         if self.password is not None:
             environment["PGPASSWORD"] = self.password
         else:
@@ -173,13 +209,30 @@ def _smoke_restored_database(target: SafeTarget, database: str) -> dict[str, obj
                 "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'"
             )
         }
-        if not _REQUIRED_TABLES.issubset(tables):
+        if not REQUIRED_TABLES.issubset(tables):
             raise BackupVerificationError("restored schema is incomplete")
         revisions = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        if revisions != [("0006",)]:
+        if revisions != [(EXPECTED_SCHEMA_REVISION,)]:
             raise BackupVerificationError("restored migration revision is invalid")
+        constraints = {
+            row[0]
+            for row in connection.execute(
+                "SELECT conname FROM pg_catalog.pg_constraint "
+                "WHERE connamespace = 'public'::regnamespace"
+            )
+        }
+        indexes = {
+            row[0]
+            for row in connection.execute(
+                "SELECT indexname FROM pg_catalog.pg_indexes WHERE schemaname = 'public'"
+            )
+        }
+        if not REQUIRED_CONSTRAINTS.issubset(
+            constraints
+        ) or not REQUIRED_INDEXES.issubset(indexes):
+            raise BackupVerificationError("restored schema invariants are incomplete")
         workspace_count = int(
             connection.execute("SELECT count(*) FROM workspaces").fetchone()[0]
         )
@@ -210,6 +263,30 @@ def _smoke_restored_database(target: SafeTarget, database: str) -> dict[str, obj
                   UNION ALL
                   SELECT e.workspace_id FROM ingest_events e
                   LEFT JOIN workspaces w ON w.id = e.workspace_id WHERE w.id IS NULL
+                  UNION ALL
+                  SELECT em.workspace_id FROM email_messages em
+                  LEFT JOIN evidence ev
+                    ON ev.workspace_id = em.workspace_id
+                   AND ev.account_id = em.account_id
+                   AND ev.id = em.evidence_id
+                   AND ev.evidence_type = em.evidence_type
+                  WHERE em.evidence_id IS NOT NULL AND ev.id IS NULL
+                  UNION ALL
+                  SELECT m.workspace_id FROM meetings m
+                  LEFT JOIN evidence ev
+                    ON ev.workspace_id = m.workspace_id
+                   AND ev.account_id = m.account_id
+                   AND ev.id = m.notes_evidence_id
+                   AND ev.evidence_type = m.notes_evidence_type
+                  WHERE m.notes_evidence_id IS NOT NULL AND ev.id IS NULL
+                  UNION ALL
+                  SELECT em.workspace_id FROM email_messages em
+                  LEFT JOIN source_identities si
+                    ON si.workspace_id = em.workspace_id
+                   AND si.id = em.mailbox_identity_id
+                   AND si.source_system = 'gmail'
+                   AND si.entity_kind = 'mailbox'
+                  WHERE si.id IS NULL
                 ) AS orphans
                 """
             ).fetchone()[0]
@@ -220,8 +297,8 @@ def _smoke_restored_database(target: SafeTarget, database: str) -> dict[str, obj
         return {
             "status": "verified",
             "postgres_major": 16,
-            "schema_revision": "0006",
-            "required_tables": len(_REQUIRED_TABLES),
+            "schema_revision": EXPECTED_SCHEMA_REVISION,
+            "required_tables": len(REQUIRED_TABLES),
             "workspace_count": workspace_count,
             "invariant_violations": 0,
         }

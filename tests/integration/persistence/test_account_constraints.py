@@ -1893,7 +1893,18 @@ def test_migration_lifecycle_from_foreign_cwd_restores_head(engine, tmp_path):
         return result
 
     try:
-        assert "0006 (head)" in run("current").stdout
+        assert run("current").stdout.strip() == run("heads").stdout.strip()
+        run("downgrade", "0006")
+        with engine.connect() as connection:
+            entity_kind_constraint = connection.scalar(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conname = 'ck_source_identities_entity_kind'"
+                )
+            )
+        assert entity_kind_constraint is not None
+        assert "mailbox" not in entity_kind_constraint
+        run("upgrade", "head")
         run("downgrade", "0001")
         inspector = inspect(engine)
         assert {

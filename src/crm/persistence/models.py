@@ -44,6 +44,7 @@ ENTITY_KINDS = (
     "account",
     "contact",
     "message",
+    "mailbox",
     "thread",
     "meeting",
     "proposal",
@@ -226,6 +227,13 @@ class SourceIdentity(Base):
         UniqueConstraint(
             "workspace_id", "id", name="uq_source_identities_workspace_id"
         ),
+        UniqueConstraint(
+            "workspace_id",
+            "id",
+            "source_system",
+            "entity_kind",
+            name="uq_source_identities_workspace_id_semantics",
+        ),
         Index(
             "ix_source_identities_canonical_entity",
             "canonical_entity_type",
@@ -403,6 +411,99 @@ class SyncCheckpoint(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ReconciliationRun(Base):
+    __tablename__ = "reconciliation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(connector)) > 0",
+            name="ck_reconciliation_runs_connector_nonblank",
+        ),
+        CheckConstraint(
+            "length(btrim(source_scope)) > 0",
+            name="ck_reconciliation_runs_source_scope_nonblank",
+        ),
+        CheckConstraint(
+            "window_end_at >= window_start_at",
+            name="ck_reconciliation_runs_window_order",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="ck_reconciliation_runs_finish_order",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed')",
+            name="ck_reconciliation_runs_status",
+        ),
+        CheckConstraint(
+            "((status = 'running' AND finished_at IS NULL) OR "
+            "(status IN ('succeeded', 'failed') AND finished_at IS NOT NULL)) IS TRUE",
+            name="ck_reconciliation_runs_finish_state",
+        ),
+        CheckConstraint(
+            "scanned_count >= 0 AND created_count >= 0 AND updated_count >= 0 "
+            "AND duplicate_count >= 0 AND conflict_count >= 0 AND error_count >= 0",
+            name="ck_reconciliation_runs_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(report) = 'object' AND octet_length(report::text) <= 512 "
+            "AND (report - ARRAY['duplicate', 'conflict', 'error', 'unmapped', 'missing']) = '{}'::jsonb "
+            "AND NOT jsonb_path_exists(report, '$.* ? (@.type() != \"number\" || @ < 0)')",
+            name="ck_reconciliation_runs_report_minimized",
+        ),
+        UniqueConstraint(
+            "workspace_id", "id", name="uq_reconciliation_runs_workspace_id"
+        ),
+        Index(
+            "ix_reconciliation_runs_workspace_connector_started",
+            "workspace_id",
+            "connector",
+            "started_at",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    connector: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_scope: Mapped[str] = mapped_column(String(255), nullable=False)
+    window_start_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    window_end_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    scanned_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    created_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    updated_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    duplicate_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    conflict_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    error_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    report: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
 
 
@@ -862,6 +963,337 @@ class Activity(Base):
     )
 
 
+class EmailMessage(Base):
+    __tablename__ = "email_messages"
+    __table_args__ = (
+        CheckConstraint(
+            "direction IN ('inbound', 'outbound')", name="ck_email_messages_direction"
+        ),
+        CheckConstraint(
+            "length(btrim(provider_message_id)) > 0",
+            name="ck_email_messages_provider_message_id_nonblank",
+        ),
+        CheckConstraint(
+            "length(btrim(provider_thread_id)) > 0",
+            name="ck_email_messages_provider_thread_id_nonblank",
+        ),
+        CheckConstraint(
+            "mailbox_source_system = 'gmail' AND mailbox_entity_kind = 'mailbox'",
+            name="ck_email_messages_mailbox_identity",
+        ),
+        CheckConstraint(
+            "from_address IS NULL OR octet_length(from_address::text) <= 320",
+            name="ck_email_messages_from_address_bounded",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(to_addresses) = 'array' "
+            "AND octet_length(to_addresses::text) <= 4096 "
+            "AND NOT jsonb_path_exists(to_addresses, '$[*] ? (@.type() != \"string\")') "
+            "AND NOT jsonb_path_exists(to_addresses, "
+            '\'$[*] ? (@ like_regex "^\\\\s*$" || @ like_regex "^.{254}.+$" flag "s")\')',
+            name="ck_email_messages_to_addresses_minimized",
+        ),
+        CheckConstraint(
+            "evidence_type = 'email_message'",
+            name="ck_email_messages_evidence_type",
+        ),
+        CheckConstraint(
+            "subject IS NULL OR octet_length(subject) <= 512",
+            name="ck_email_messages_subject_bounded",
+        ),
+        CheckConstraint(
+            "body_preview_redacted IS NULL OR octet_length(body_preview_redacted) <= 2048",
+            name="ck_email_messages_body_preview_bounded",
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_email_messages_workspace_id"),
+        UniqueConstraint(
+            "workspace_id",
+            "mailbox_identity_id",
+            "provider_message_id",
+            name="uq_email_messages_workspace_mailbox_provider",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_email_messages_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "contact_id"],
+            ["contacts.workspace_id", "contacts.account_id", "contacts.id"],
+            name="fk_email_messages_workspace_account_contact",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "workspace_id",
+                "mailbox_identity_id",
+                "mailbox_source_system",
+                "mailbox_entity_kind",
+            ],
+            [
+                "source_identities.workspace_id",
+                "source_identities.id",
+                "source_identities.source_system",
+                "source_identities.entity_kind",
+            ],
+            name="fk_email_messages_workspace_mailbox_identity",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "evidence_id", "evidence_type"],
+            [
+                "evidence.workspace_id",
+                "evidence.account_id",
+                "evidence.id",
+                "evidence.evidence_type",
+            ],
+            name="fk_email_messages_workspace_account_evidence",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_email_messages_account_sent_at", "account_id", "sent_at"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    mailbox_identity_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False
+    )
+    mailbox_source_system: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'gmail'")
+    )
+    mailbox_entity_kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'mailbox'")
+    )
+    provider_message_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    provider_thread_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    from_address: Mapped[str | None] = mapped_column(CITEXT())
+    to_addresses: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    subject: Mapped[str | None] = mapped_column(Text)
+    body_preview_redacted: Mapped[str | None] = mapped_column(Text)
+    has_attachments: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    proposal_candidate_state: Mapped[str | None] = mapped_column(String(32))
+    evidence_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    evidence_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'email_message'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Meeting(Base):
+    __tablename__ = "meetings"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('booked', 'held', 'cancelled', 'no_show')",
+            name="ck_meetings_status",
+        ),
+        CheckConstraint(
+            "(status = 'held' AND held_at IS NOT NULL) OR "
+            "(status <> 'held' AND held_at IS NULL)",
+            name="ck_meetings_held_state",
+        ),
+        CheckConstraint(
+            "scheduled_end_at IS NULL OR scheduled_end_at >= scheduled_start_at",
+            name="ck_meetings_schedule_order",
+        ),
+        CheckConstraint(
+            "(summary IS NULL OR octet_length(summary) <= 4096) "
+            "AND (needs IS NULL OR octet_length(needs) <= 4096) "
+            "AND (objections IS NULL OR octet_length(objections) <= 4096) "
+            "AND (decisions IS NULL OR octet_length(decisions) <= 4096) "
+            "AND (commitments IS NULL OR octet_length(commitments) <= 4096)",
+            name="ck_meetings_text_minimized",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(next_steps) = 'object' "
+            "AND octet_length(next_steps::text) <= 4096 "
+            "AND (next_steps - ARRAY['action', 'owner', 'due_at', 'status']) = '{}'::jsonb "
+            'AND NOT jsonb_path_exists(next_steps, \'$.* ? (@.type() != "string" && @.type() != "null")\')',
+            name="ck_meetings_next_steps_minimized",
+        ),
+        CheckConstraint(
+            "notes_evidence_type = 'meeting_note'",
+            name="ck_meetings_notes_evidence_type",
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_meetings_workspace_id"),
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "calendar_id",
+            "external_event_id",
+            "occurrence_start_at",
+            name="uq_meetings_workspace_provider_occurrence",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_meetings_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "lead_id"],
+            ["leads.workspace_id", "leads.id"],
+            name="fk_meetings_workspace_lead",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "lead_id"],
+            ["leads.workspace_id", "leads.account_id", "leads.id"],
+            name="fk_meetings_workspace_account_lead",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "notes_evidence_id", "notes_evidence_type"],
+            [
+                "evidence.workspace_id",
+                "evidence.account_id",
+                "evidence.id",
+                "evidence.evidence_type",
+            ],
+            name="fk_meetings_workspace_account_notes_evidence",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_meetings_account_scheduled", "account_id", "scheduled_start_at"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    calendar_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    external_event_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    occurrence_start_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    scheduled_start_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    scheduled_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    held_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str | None] = mapped_column(Text)
+    needs: Mapped[str | None] = mapped_column(Text)
+    objections: Mapped[str | None] = mapped_column(Text)
+    decisions: Mapped[str | None] = mapped_column(Text)
+    commitments: Mapped[str | None] = mapped_column(Text)
+    next_steps: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    notes_evidence_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    notes_evidence_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'meeting_note'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(task_type)) > 0", name="ck_tasks_task_type_nonblank"
+        ),
+        CheckConstraint("length(btrim(title)) > 0", name="ck_tasks_title_nonblank"),
+        CheckConstraint("octet_length(title) <= 512", name="ck_tasks_title_bounded"),
+        CheckConstraint(
+            "status IN ('open', 'completed', 'cancelled')", name="ck_tasks_status"
+        ),
+        CheckConstraint(
+            "((status = 'completed' AND completed_at IS NOT NULL "
+            "AND completion_activity_id IS NOT NULL) OR "
+            "(status <> 'completed' AND completed_at IS NULL "
+            "AND completion_activity_id IS NULL)) IS TRUE",
+            name="ck_tasks_completion_state",
+        ),
+        CheckConstraint(
+            "source_rule IS NULL OR length(btrim(source_rule)) > 0",
+            name="ck_tasks_source_rule_nonblank",
+        ),
+        CheckConstraint("version > 0", name="ck_tasks_version_positive"),
+        UniqueConstraint("workspace_id", "id", name="uq_tasks_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id"],
+            ["accounts.workspace_id", "accounts.id"],
+            name="fk_tasks_workspace_account",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "proposal_id"],
+            ["proposals.workspace_id", "proposals.account_id", "proposals.id"],
+            name="fk_tasks_workspace_account_proposal",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "account_id", "completion_activity_id"],
+            ["activities.workspace_id", "activities.account_id", "activities.id"],
+            name="fk_tasks_workspace_account_completion_activity",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_tasks_account_status_due", "account_id", "status", "due_at"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    proposal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    owner_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'open'")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completion_activity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    source_rule: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    __mapper_args__ = {"version_id_col": version}
+
+
 class Evidence(Base):
     __tablename__ = "evidence"
     __table_args__ = (
@@ -886,6 +1318,13 @@ class Evidence(Base):
             name="ck_evidence_retention_interval",
         ),
         UniqueConstraint("workspace_id", "id", name="uq_evidence_workspace_id"),
+        UniqueConstraint(
+            "workspace_id",
+            "account_id",
+            "id",
+            "evidence_type",
+            name="uq_evidence_workspace_account_id_type",
+        ),
         UniqueConstraint(
             "workspace_id",
             "source_identity_id",
@@ -1201,6 +1640,9 @@ class Proposal(Base):
         ),
         CheckConstraint("version > 0", name="ck_proposals_version_positive"),
         UniqueConstraint("workspace_id", "id", name="uq_proposals_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "account_id", "id", name="uq_proposals_workspace_account_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "account_id"],
             ["accounts.workspace_id", "accounts.id"],

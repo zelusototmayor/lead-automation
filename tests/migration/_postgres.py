@@ -13,17 +13,21 @@ from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
+    EmailMessage,
     Evidence,
     IngestEvent,
     Lead,
+    Meeting,
     Proposal,
     ProposalFollowup,
     ProposalItem,
     ProposalVersion,
     Recommendation,
+    ReconciliationRun,
     ReviewCandidate,
     SourceIdentity,
     SyncCheckpoint,
+    Task,
     Workspace,
 )
 
@@ -81,6 +85,16 @@ def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
         session.execute(
             delete(ProposalItem).where(
                 ProposalItem.proposal_version_id.in_(version_ids)
+            )
+        )
+        session.execute(delete(Task).where(Task.workspace_id == workspace_id))
+        session.execute(delete(Meeting).where(Meeting.workspace_id == workspace_id))
+        session.execute(
+            delete(EmailMessage).where(EmailMessage.workspace_id == workspace_id)
+        )
+        session.execute(
+            delete(ReconciliationRun).where(
+                ReconciliationRun.workspace_id == workspace_id
             )
         )
         session.execute(
