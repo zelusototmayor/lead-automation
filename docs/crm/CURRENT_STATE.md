@@ -938,3 +938,50 @@ O host live continua sem base CRM identificável e sem configuração CRM/`DATAB
 A telemetria agregada do `kamal-proxy` nas últimas 48 horas voltou a encontrar um pedido `2xx` em cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. A Tarefa 19 não pode remover esses contratos sem quebrar consumidores observados e sem a evidência de dois releases estáveis, export e aceitação exigida pelo plano.
 
 Continuam ausentes artefactos que a execução local não pode fabricar: staging isolado, mapping live de principal/papel/workspace, decisão oficial e evidência para `Won`, política de retenção e scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner comercial, smoke browser/security no ambiente final, soak, cutover e dois releases estáveis sem consumidores v0. A autorização autónoma remove pausas de aprovação, mas não satisfaz estes gates técnicos, de dados e de release. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-18T14:19:18Z
+
+A retoma começou no `HEAD` limpo e sincronizado `cd1d49d2fc11f5c4fad4a4f994ae18b2571fe2dd`. O plano canónico, este documento, commits, PR, processos locais, containers, configuração de deploy e host live foram reinspecionados antes de qualquer alteração. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos. Containers PostgreSQL preexistentes foram tratados como trabalho desconhecido e não foram alterados.
+
+### Gates locais e shadow real
+
+Num PostgreSQL 16 descartável novo em `127.0.0.1:55454`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 105.43s, exit 0
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup vazio restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Backup do shadow restaurado: schema=0007, 15 tabelas, 1 workspace, 0 violações
+Ruff lint no delta, compileall, git diff --check e Gitleaks: passed; 0 leaks em 49 commits
+Imagem local construída: manifest list sha256:cd6db0daed9fe0c29d833ce5c3d60fc47ac24c97b84bb3d0c44bc907fd899db0
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404
+Smoke autenticado com PostgreSQL: 401 sem credenciais; páginas e APIs ricas=200; Agent ingress=404
+```
+
+Uma snapshot temporária `0600` da Sheet real, capturada via scope read-only e removida no fim, confirmou o estado atual:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 accounts criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 eventos failed/dead-letter
+```
+
+A primeira tentativa de apply com um UUID que ainda não existia na tabela `workspaces` falhou fechada por FK e não persistiu registos. `MIGRATION.md` passou a documentar explicitamente esta pré-condição antes do backfill; o apply válido foi repetido apenas depois de criar a workspace descartável.
+
+### Gates externos e decisão de não cutover
+
+O PR `#1` permanece draft, mergeable, sem reviews/checks e sem GitHub environments. A tentativa de obter scope OAuth `workflow` exigiu login interativo indisponível, pelo que o workflow preservado fora do repositório não foi aplicado nem foi deixado trabalho local não publicável.
+
+Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host tem filesystem a 87%, 3,1 GiB livres, 3,8 GiB de RAM, swap sob pressão e nenhuma base CRM identificável. Não há credenciais ou CLI para provisionar staging isolado noutro fornecedor. Improvisar staging, PostgreSQL CRM e backup no host partilhado violaria os gates de capacidade, isolamento, restore e rollback.
+
+A telemetria estruturada do `kamal-proxy` nas últimas 48 horas contém exatamente um pedido `2xx` para cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. A Tarefa 19 não pode retirar esses contratos sem quebrar consumidores observados e sem dois releases estáveis, export e aceitação.
+
+Continuam materialmente ausentes staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. Estes gates explícitos impedem merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado e criação do sentinel; não são substituídos pela autorização autónoma.

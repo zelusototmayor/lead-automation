@@ -39,16 +39,17 @@ The real tab uses `Stage` and `Contact`; the migration adapter accepts them as e
 1. Back up the live database, if one exists, and restore-test that exact archive.
 2. Pause connector consumers, agent-event processing, command workers and outbox publishing.
 3. Apply additive migrations to a staging copy and record duration/locks.
-4. Run the account and proposal backfills in dry-run mode.
-5. Review aggregate duplicate, conflict, unmapped-stage, missing-evidence and missing-value reports.
-6. Run apply against staging only, then repeat the identical input. The second run must create zero domain duplicates.
-7. Run reconciliation twice and confirm stable counts/checkpoints.
-8. Verify every lead at rank 40 or later has a valid account.
-9. Validate a representative real sample with the commercial owner. Unknown values remain `NULL/missing`; `Won` never becomes `Meeting Booked`.
-10. Run security, unit, integration, contract, migration and browser smoke suites.
-11. Enable PostgreSQL reads in staging one area at a time: Contas, Propostas, Inteligência.
-12. Soak with connectors disabled, then enable one allowlisted connector at a time in shadow mode.
-13. Only after stable shadow evidence, switch the command writer to PostgreSQL while keeping the Sheets projection reversible.
+4. Create or verify the single canonical workspace row and record its non-secret UUID. The `--workspace-id` passed to backfills must already exist; a random UUID alone is not sufficient and foreign-key failure must not be mistaken for a data conflict.
+5. Run the account and proposal backfills in dry-run mode.
+6. Review aggregate duplicate, conflict, unmapped-stage, missing-evidence and missing-value reports.
+7. Run apply against staging only, then repeat the identical input. The second run must create zero domain duplicates.
+8. Run reconciliation twice and confirm stable counts/checkpoints.
+9. Verify every lead at rank 40 or later has a valid account.
+10. Validate a representative real sample with the commercial owner. Unknown values remain `NULL/missing`; `Won` never becomes `Meeting Booked`.
+11. Run security, unit, integration, contract, migration and browser smoke suites.
+12. Enable PostgreSQL reads in staging one area at a time: Contas, Propostas, Inteligência.
+13. Soak with connectors disabled, then enable one allowlisted connector at a time in shadow mode.
+14. Only after stable shadow evidence, switch the command writer to PostgreSQL while keeping the Sheets projection reversible.
 
 ## Required cutover flags
 
