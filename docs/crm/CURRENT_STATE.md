@@ -1065,3 +1065,34 @@ O PR `#1` continua draft, mergeable e sem reviews, checks ou environments GitHub
 A telemetria estruturada disponível do `kamal-proxy`, entre `2026-07-18T01:56:31Z` e `2026-07-18T15:38:24Z`, contém um pedido `200` para cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. Remover estes contratos quebraria consumidores observados e violaria o gate da Tarefa 19.
 
 Continuam materialmente fechados os gates de staging/cutover: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. A Tarefa 19 exige ainda dois releases estáveis sem rollback, ausência de consumidores v0 e aceitação de stakeholders. Por isso não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-18T16:14:11Z
+
+A retoma preservou a alteração staged de `ROLLBACK.md` e as duas camadas staged/unstaged de `CURRENT_STATE.md`, verificou-as e publicou-as no commit atómico `f237a8ab4429178502938b4b68087c1559da277c` (`docs: record CRM export and rollback evidence`). A branch ficou sincronizada com `origin/feat/crm-accounts-proposals-v1` e o sentinel continuou ausente.
+
+### Verificação local no candidato publicado
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55457`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 110.03s, exit 0
+Alembic lifecycle: base -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 52 commits
+Imagem local: sha256:afa5cb07413f2f9a63789dfb1c09857aef4a85ca58afa9f99126fc9b328818c3
+Smoke com PostgreSQL e principal de teste: /up=200; páginas e APIs ricas autenticadas=200; pedidos sem credenciais rejeitados; Agent ingress desativado=404
+```
+
+Os containers e a imagem criados por esta retoma foram removidos; as portas `55457` e `58007` ficaram livres. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos.
+
+### Revalidação dos gates externos
+
+Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O PR `#1` permanece draft, mergeable e sem reviews, checks ou environments GitHub. Os três nomes de staging inspecionados continuam sem DNS.
+
+O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,4 GiB de swap em uso e nenhum PostgreSQL/backup CRM identificável. Não existem credenciais ou configuração local para provisionar um serviço PostgreSQL/staging isolado noutro fornecedor; usar o host partilhado sem margem de restore e isolamento violaria os gates de capacidade e rollback.
+
+A telemetria estruturada do proxy, entre `2026-07-17T23:05:32Z` e `2026-07-18T16:11:52Z`, contém um pedido `200` em cada contrato v0 acompanhado. Além dos consumidores observados, continuam ausentes os artefactos que a execução não pode fabricar: decisão oficial e evidência de `Won`, política de retenção/scopes, resolução ou aceitação dos conflitos shadow, validação da amostra pelo owner comercial, staging final, backup automático e restore real, soak/cutover e dois releases estáveis com aceitação dos stakeholders. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
