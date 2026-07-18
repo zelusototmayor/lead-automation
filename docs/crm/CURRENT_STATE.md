@@ -1231,4 +1231,42 @@ O PR `#1` continua draft, mergeable e sem reviews/checks; a API GitHub continua 
 
 Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, nenhuma base CRM identificável e nenhum timer de backup CRM observado. A consulta estruturada atual às últimas 48 horas não encontrou registos dos seis endpoints v0 acompanhados, mas uma única janela vazia não satisfaz o gate de ausência de consumidores, porque não existem dois releases pós-cutover estáveis e as janelas imediatamente anteriores registaram consumidores `2xx` ativos.
 
-A primeira tarefa formalmente incompleta permanece a Tarefa 19. Permanecem também fechados os gates anteriores de staging e cutover: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final e soak. A autorização autónoma não substitui esta evidência técnica, de dados e de release. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+A primeira tarefa formalmente incompleta permanece a Tarefa 19. Permanecem também fechados os gates anteriores de staging e cutover: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final e soak. A autorização autónoma não substitui esta evidência técnica, de dados e de release. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Ensaio de staging isolado em 2026-07-18T20:38:09Z
+
+Foi provisionado um GitHub Codespace isolado e efémero, `crm-revamp-staging-20260718-696rwjr5w75jc4pv`, com 4 cores, 16 GiB de RAM e 32 GiB de storage, no branch limpo `feat/crm-accounts-proposals-v1` e no SHA exato `e151925e965ffa7ecf041605c3e239dc3837c437`. Não foi usado o host de produção para PostgreSQL ou staging. O ambiente não recebeu publishers de outbox, workers outbound, conectores live ou jobs comerciais.
+
+O candidato foi construído com `python:3.11-slim`; PostgreSQL 16 foi executado numa network e volume exclusivos. Migrations aditivas aplicaram de `base` até `0007`. Uma base separada e descartável foi usada para a suite e para o lifecycle, sem tocar os dados shadow:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 122.41s
+Alembic lifecycle descartável: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+compileall e git diff --check: passed
+```
+
+O export read-only preservado fora do repositório foi transferido para o ambiente com mode `0600` e checksum verificado, sem imprimir valores. A snapshot canónica e os dois applies idênticos produziram apenas métricas agregadas:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 contas criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+Invariantes: 0 leads rank>=40 sem account, 0 zeros sintéticos missing, 0 eventos failed/dead-letter
+```
+
+Um dump custom-format do shadow, com 196.034 bytes e SHA-256 `0dd6744d6a5a64eaebb603970ada1069569a195f8dd0e3cac406c36b38e2fb84`, foi restaurado num PostgreSQL 16 descartável e validado: schema `0007`, 15 tabelas, 1 workspace e 0 violações. Um sidecar isolado ficou configurado para dumps automáticos de staging a cada 30 minutos enquanto o Codespace estiver ativo; isto não substitui backup automático de produção.
+
+O smoke HTTP confirmou `/up=200`, `401` sem credenciais nas rotas ricas, `200` autenticado para Contas, Propostas, Inteligência e Operações e `404` para Agent ingress desativado. Um browser smoke Playwright através de tunnel autenticado carregou as quatro áreas com `200`, zero erros de consola e zero responses falhadas. Um soak técnico adicional fez 16 ciclos em quatro minutos sobre health, Contas e Propostas: zero falhas, zero restarts e zero erros de aplicação.
+
+Este ensaio fecha a ausência de um ambiente externo isolado para validação técnica, mas não abre o cutover. A paridade real continua falsa por conflitos que não podem ser auto-fundidos; falta validação/aceitação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, TLS/proxy do ambiente final, PostgreSQL e backup automático de produção, soak de produção e dois releases estáveis.
+
+A revalidação read-only em `2026-07-18T21:37:57Z` confirmou que o Codespace efémero continuava disponível no SHA exato e com a worktree limpa, mas que todos os containers, bases, backups e processos do ensaio já tinham sido removidos. Produção permanecia no container saudável `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, sem base CRM nem timer de backup CRM. A telemetria JSON estruturada disponível entre `2026-07-18T19:16:31Z` e `2026-07-18T21:13:55Z` continha pedidos `2xx` ativos em `/api/stats` (1), `/api/portfolio` (1) e `/api/recommendations` (1). A ausência de tráfego nos outros três endpoints durante esta janela não satisfaz ausência de consumidores nem substitui os dois releases pós-cutover. O gate da Tarefa 19 continua fechado.
+
+Não houve merge, deploy de produção, migração live, cutover, remoção do legado ou criação do sentinel.
