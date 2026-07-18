@@ -1030,3 +1030,38 @@ O PR `#1` continua draft, mergeable e sem reviews, checks ou environments GitHub
 O host live não tem `DATABASE_URL`, flags CRM nem mapping de principal no container atual; não existe base ou backup CRM identificável. O filesystem está a 87%, com 3,1 GiB livres; a máquina tem 3,8 GiB de RAM e 1,4 GiB de swap em uso. Não existem CLIs ou credenciais locais para provisionar staging isolado noutro fornecedor. A telemetria JSON do proxy nas últimas 48 horas voltou a mostrar um pedido `2xx` em cada um dos seis contratos v0 acompanhados.
 
 Continuam sem evidência os gates que não podem ser fabricados localmente: staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak/cutover e dois releases estáveis sem consumidores v0. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-18T15:47:43Z
+
+A retoma começou no `HEAD` limpo e sincronizado `dc816c2d0bdb0f4f5d1dd28fefe29070ca497dac`. O plano canónico, `CURRENT_STATE.md`, commits, decisões, migrations, processos, PR, staging e produção foram reinspecionados antes de qualquer mutação. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+### Gates locais repetidos
+
+Num PostgreSQL 16 descartável novo em `127.0.0.1:55456`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 950 passed, 1 skipped em 105.61s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 51 commits
+Imagem local construída: manifest list sha256:f762389fc15abd8fc5a74ce6fb40df19fb74f23dfa7aef209f3441333074b01e
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+Smoke HTTP autenticado: 401 sem credenciais; páginas e APIs ricas=200; Agent ingress=404
+Browser smoke Playwright com HTTP credentials: Contas, Propostas, Inteligência e Operações=200; estados de erro ausentes; 0 erros de consola
+```
+
+Os containers, base, backup temporário e imagem criados nesta retoma foram removidos; as portas `55456`, `58005` e `58006` ficaram livres. O único skip continua a ser o teste que exige literalmente a porta documentada `55432`, ocupada por um container preexistente que não foi alterado.
+
+Foi também criado um export read-only do tab `PT Logistics` fora do repositório, com permissões `0600`: 1.248 linhas, 43 colunas máximas, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`. O export está em `/Users/max/.hermes/profiles/marketing-max/backups/crm/pt-logistics-export-20260718T154500Z.json`; nenhum valor foi impresso. A tentativa de obter também o workbook XLSX nativo falhou fechada com `403 insufficientPermissions`: o OAuth disponível autorizou a leitura via Sheets API, mas não a operação Drive export. Nenhum ficheiro parcial foi preservado.
+
+### Gates externos revalidados
+
+O PR `#1` continua draft, mergeable e sem reviews, checks ou environments GitHub. Os três nomes de staging inspecionados continuam sem DNS. Produção permanece no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, com `/up=200` e as novas páginas/APIs em `404`. O host mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM e nenhum PostgreSQL/backup CRM identificável.
+
+A telemetria estruturada disponível do `kamal-proxy`, entre `2026-07-18T01:56:31Z` e `2026-07-18T15:38:24Z`, contém um pedido `200` para cada contrato v0 acompanhado: `/api/stats`, `/api/portfolio`, `/api/recommendations`, `/api/outreach-followups`, `/api/email-followups` e `/api/proposal-followups`. Remover estes contratos quebraria consumidores observados e violaria o gate da Tarefa 19.
+
+Continuam materialmente fechados os gates de staging/cutover: mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore do arquivo real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. A Tarefa 19 exige ainda dois releases estáveis sem rollback, ausência de consumidores v0 e aceitação de stakeholders. Por isso não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, retirada do legado ou criação do sentinel.

@@ -33,6 +33,14 @@ An earlier image may be deployed only if it is compatible with the current addit
 
 Restore only from a backup whose exact archive has passed `scripts/crm_verify_backup.py` on PostgreSQL 16. Restore into a new database/service first, run smoke and invariants, then use the infrastructure-approved promotion path. Never overwrite the only copy of the affected database.
 
+## Legacy Sheet export and recovery
+
+Before any legacy retirement release, create a read-only export outside the repository with owner-only permissions and record its timestamp, source spreadsheet ID, row/column counts and SHA-256 without recording cell values. Prefer the native Google workbook export when the approved OAuth principal has Drive export scope; otherwise retain a complete Sheets API values export and record that formulas/formatting are not preserved.
+
+Treat every export as commercial data: keep it outside Git, use mode `0600`, do not print or attach its contents to logs/tickets, and follow the approved retention policy. Verify the checksum before use.
+
+Never restore over the live Sheet. Create a new restricted spreadsheet, import into that disposable recovery copy, compare headers, row counts and a representative owner-validated sample, then explicitly decide whether to promote the copy or keep the live Sheet. Pause CRM writers/outbox projection throughout the exercise. A successful API parse is not a stakeholder-approved restore.
+
 ## Exit criteria
 
 Resume only after:
