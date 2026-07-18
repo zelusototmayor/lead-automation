@@ -1163,3 +1163,39 @@ O PR `#1` continua draft, mergeable e sem reviews, checks ou environments GitHub
 O host live mantém filesystem a 87%, 3,1 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso e nenhuma base CRM identificável. O PostgreSQL instalado não tem timer de backup CRM observado. A telemetria estruturada do proxy nas últimas 48 horas continua a provar consumidores `2xx` ativos: `/api/stats` 2, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 3, `/api/email-followups` 3 e `/api/proposal-followups` 3.
 
 Continuam ausentes os artefactos que a execução não pode fabricar sem violar os gates: staging isolado; mapping live de principal/papel/workspace; decisão oficial de `Won`; política de retenção/scopes; PostgreSQL CRM com backup automático e restore do arquivo real; resolução ou aceitação dos conflitos shadow; validação da amostra pelo owner; smoke browser/security no ambiente final; soak/cutover; e dois releases estáveis sem consumidores v0. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma e auth-before-database em 2026-07-18T19:22:38Z
+
+A retoma começou em `99ee9a5637253548cecd6c334eb9e88e4d3950fa` e preservou integralmente duas alterações staged já existentes. O candidato corrigia uma ordem insegura de dependencies no Agent ingress: quando a rota estava ativa, FastAPI podia construir a engine/sessão antes de autenticar o pedido. O RED foi reproduzido anteriormente num worktree detached contra o código de `HEAD`; o teste falhou porque o pedido não autenticado alcançou a dependency da base. O candidato move autenticação, timestamp, scope de escrita e rate limit para uma dependency partilhada que precede a sessão. A cache de dependencies do FastAPI garante uma única autenticação/consumo do bucket por pedido; a regressão de rate limit existente continuou a provar 60 pedidos aceites e o 61.º rejeitado.
+
+O candidato exato foi congelado com digest staged `3cc2021070b4396c17db6a41031d130928db4b8791d65ed3d887c2cf5a58cdbf`. Duas revisões independentes em processos Hermes separados devolveram `PASS` e `APPROVED`, sem findings críticos, importantes, de segurança ou lógica. Foi commitado atomicamente como `b23257e93aabef4cbd6834a04a50342c18cce652` (`security: authenticate agent ingress before database access`).
+
+### Evidência local repetida
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55460`, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Agent API + shadow/runtime focused: 42 passed
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 108.03s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta, format check, compileall, git diff checks e Gitleaks: passed; 0 leaks nos 56 commits existentes antes do commit de código
+Imagem local: manifest list sha256:80fef1eecff45255a5e5feb109cfd27eba23e97b23ea65d15544d86a9bf28359
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress desativado=404; 0 erros no log
+Smoke autenticado com PostgreSQL: pedidos sem credenciais=401; páginas e APIs ricas=200
+Auth-before-database com destino PostgreSQL deliberadamente inalcançável: sem auth=401; scope insuficiente=403; 0 tentativas de conexão registadas
+```
+
+O export read-only preservado fora do repositório foi novamente verificado sem imprimir conteúdo: modo `0600`, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`. Não existiam workers CRM, reconciler, outbox publisher ou jobs outbound ativos durante testes/migrations.
+
+### Gates externos revalidados
+
+O PR `#1` continua draft, mergeable, sem reviews/checks e sem GitHub environments. Os três nomes de staging inspecionados continuam sem DNS. Produção permanece saudável no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up=200` e as novas páginas/APIs permanecem em `404`.
+
+O host live mantém filesystem a 87%, 3,1 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM identificável e nenhum timer de backup CRM observado. A telemetria estruturada do proxy nas últimas 48 horas continua a provar consumidores `2xx` ativos: `/api/stats` 2, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 3, `/api/email-followups` 3 e `/api/proposal-followups` 3, entre `2026-07-18T09:09:06Z` e `2026-07-18T16:48:46Z`.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas retirar o legado agora quebraria consumidores observados e violaria os gates de dois releases estáveis, export e aceitação. Permanecem também fechados staging isolado, mapping live de principal/papel/workspace, decisão oficial de `Won`, política de retenção/scopes, PostgreSQL CRM com backup automático e restore real, resolução/aceitação dos conflitos shadow, validação da amostra pelo owner, browser/security smoke no ambiente final, soak e cutover. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
