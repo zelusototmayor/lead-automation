@@ -809,3 +809,34 @@ Produção continua saudável na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3
 O host live continua sem base CRM dedicada, com filesystem a 87%, apenas 3,2 GiB livres, 3,8 GiB de RAM e 1,3 GiB de swap em uso. A telemetria agregada das últimas 48 horas prova consumidores v0 ativos: `/api/stats` 66, `/api/portfolio` 29, `/api/recommendations` 29, `/api/outreach-followups` 79, `/api/email-followups` 67 e `/api/proposal-followups` 69.
 
 A primeira tarefa genuinamente incompleta permanece a Tarefa 19, mas remover os contratos legados agora quebraria consumidores observados e violaria o gate de dois releases estáveis. Também continuam ausentes staging isolado, PostgreSQL CRM com backup automático e restore real, mapping live de principal/papel/workspace, decisões de retenção/scopes/prova de `Won`, resolução e validação humana da amostra shadow, smoke browser/security externo e soak. Não houve merge, deploy, migração/backfill live, cutover, remoção do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma e fecho das lacunas canónicas em 2026-07-18T08:45:24Z
+
+A retoma começou em `f19b6c8036a7faaff0cab56ea46967ebd7ca37a0` com trabalho staged, unstaged e untracked já existente. Todo esse trabalho foi preservado, auditado e concluído em dois commits atómicos:
+
+- `77eee6e` adiciona a migration `0007`, modelos canónicos de email, reuniões, tarefas e reconciliation runs, constraints tenant-safe e verificação de backup atualizada;
+- `f605ef6` liga os factos canónicos às APIs/observabilidade, isola dependências por runtime mode, torna retries de ingestão recuperáveis e acrescenta regressões de auth-before-I/O, shadow comparison, source-first processing e worker safety.
+
+A primeira execução comportamental válida da suite encontrou sete falhas reais na projeção de Contas: o schema exigia contagens por estado de reunião, mas a query não as selecionava nem serializava. A correção mínima foi aplicada depois do RED e o target focado passou com `13 passed`.
+
+### Evidência local deste candidato
+
+Num PostgreSQL 16 descartável em loopback, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Suite segura completa, com DeprecationWarning como erro: 947 passed, 1 skipped em 107.54s
+Targets alterados e regressões canónicas: 136 passed
+Alembic lifecycle: 0007 -> 0006 -> 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff, format check, compileall, git diff --check e Gitleaks: passed
+Imagem local construída: manifest list sha256:1b31f258485f466adaef660f10f95266f476f685a241fb3cb78aaee8572f067f
+Smoke com defaults seguros: /up=200; rotas ricas=403; agent ingress=404; 0 erros no log
+```
+
+A descoberta externa permaneceu read-only: o PR `#1` está draft, mergeable e sem checks/reviews; a API GitHub não apresenta environments; produção responde `/up=200` e `404` nas novas rotas, coerente com o build pré-revamp. Não existe staging configurado no repositório/GitHub.
+
+Os gates externos continuam materialmente fechados: PostgreSQL CRM com backup automático e restore do arquivo real, staging isolado, mapping live de principal/papel/workspace, decisões de retenção/scopes/prova oficial de `Won`, resolução e validação humana da amostra shadow, browser/security smoke externo, soak/cutover e dois releases estáveis com ausência comprovada de consumidores v0 antes da Tarefa 19. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, remoção do legado ou criação do sentinel.

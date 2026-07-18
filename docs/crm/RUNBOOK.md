@@ -55,7 +55,7 @@ export CRM_RESTORE_TEST_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/c
   --target-url-env CRM_RESTORE_TEST_URL
 ```
 
-The verifier checks archive readability, PostgreSQL major version, Alembic revision `0006`, required tables, workspace count, orphan references and account invariants, then force-drops only its generated `crm_restore_verify_<uuid>` database.
+The verifier checks archive readability, PostgreSQL major version, current Alembic head (`0007`), required tables, workspace count, orphan references and account invariants, then force-drops only its generated `crm_restore_verify_<uuid>` database.
 
 ## Observed local evidence
 
@@ -66,3 +66,11 @@ Backup verified by PostgreSQL 16 restore: schema=0006, tables=11, workspaces=0, 
 ```
 
 The temporary archive and generated restore database were removed. This proves the local restore path only; it is not evidence that production backups exist or are restorable.
+
+On 2026-07-18, the verifier restored a fresh custom-format dump migrated to the current head after a complete `0007 -> base -> 0007` lifecycle:
+
+```text
+Backup verified by PostgreSQL 16 restore: schema=0007, tables=15, workspaces=0, invariants=0
+```
+
+The archive and generated restore database were removed. Production backup existence and restore remain separate deployment gates.
