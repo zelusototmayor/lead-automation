@@ -1346,3 +1346,23 @@ O container e dump criados nesta retoma foram removidos e a porta `55464` ficou 
 A descoberta de produção permaneceu read-only. `/up` e o dashboard legado devolveram `200`; as novas páginas/APIs devolveram `404`. O container saudável continua na imagem `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host tem filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, zero bases com nome CRM/leads, zero containers CRM e zero timers de backup CRM. Em 2.879 registos JSON parseáveis das últimas 48 horas, a telemetria confirmou um pedido `2xx` em cada uma de `/api/stats`, `/api/portfolio` e `/api/recommendations`.
 
 O código, migrations, rollback descartável e ensaio técnico de staging permanecem verdes, mas os gates de dados, produção e retirada do legado continuam materialmente fechados. A paridade real continua falsa; conflitos de identidade/account não foram resolvidos nem aceites; não existe validação da amostra pelo owner comercial, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção com backup automático e restore do arquivo real, smoke no proxy/TLS final ou soak de produção. A Tarefa 19 continua bloqueada por consumidores v0 observados, ausência de dois releases pós-cutover e falta de aceitação dos stakeholders. Improvisar PostgreSQL e backup no host partilhado sob pressão de disco/swap violaria os gates de capacidade, isolamento, restore e rollback. Por isso não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-18T23:40:34Z
+
+A retoma partiu do `HEAD` limpo e sincronizado `3e9c7e9a95e56e69d91a020c6fef07070913a8b4`. O plano canónico, este documento, branch, commits, suite, migrations, processos, containers, PR, Codespace e produção foram reinspecionados. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55465`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 106.95s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Ruff no delta Python, compileall, diff check e Gitleaks: passed; 0 leaks em 63 commits
+```
+
+O container foi removido e a porta `55465` ficou livre. Produção respondeu `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e as APIs v1 continuaram `404`, coerentes com a imagem pré-revamp. O PR `#1` permaneceu draft, mergeable, no SHA exato da branch, sem reviews ou checks. O Codespace isolado permaneceu parado, sincronizado e limpo. Não houve alteração de código desde o ensaio técnico de staging.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas os gates anteriores de cutover também permanecem fechados. A paridade real é falsa; conflitos de identidade/account continuam sem resolução ou aceitação; faltam validação da amostra pelo owner, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção com backup automático e restore real, smoke no proxy/TLS final e soak de produção. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Estes artefactos não podem ser fabricados por testes locais nem substituídos pela autorização autónoma. Não houve merge, deploy, migração live, cutover, retirada do legado ou criação do sentinel.
