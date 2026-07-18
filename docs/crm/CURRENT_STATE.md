@@ -1270,3 +1270,33 @@ Este ensaio fecha a ausência de um ambiente externo isolado para validação t�
 A revalidação read-only em `2026-07-18T21:37:57Z` confirmou que o Codespace efémero continuava disponível no SHA exato e com a worktree limpa, mas que todos os containers, bases, backups e processos do ensaio já tinham sido removidos. Produção permanecia no container saudável `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, sem base CRM nem timer de backup CRM. A telemetria JSON estruturada disponível entre `2026-07-18T19:16:31Z` e `2026-07-18T21:13:55Z` continha pedidos `2xx` ativos em `/api/stats` (1), `/api/portfolio` (1) e `/api/recommendations` (1). A ausência de tráfego nos outros três endpoints durante esta janela não satisfaz ausência de consumidores nem substitui os dois releases pós-cutover. O gate da Tarefa 19 continua fechado.
 
 Não houve merge, deploy de produção, migração live, cutover, remoção do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma e revalidação final em 2026-07-18T21:47:56Z
+
+A retoma preservou o candidato staged encontrado em `e151925e965ffa7ecf041605c3e239dc3837c437`, corrigiu apenas a descrição factual do estado do Codespace, congelou o diff no digest `488f04ac051a59e1e9bfa1a26e518753f3e02896386ee03204da078867e5d9b5` e publicou-o no commit `e7463d76d83457894a32eb7582fcc6c5cc35306c` (`docs: record isolated CRM staging rehearsal`).
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55462`, sem dados ou credenciais live:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 110.12s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks, scan estático de linhas adicionadas e Gitleaks: passed
+Imagem local: sha256:c19a9a9a51804195b46a1fa0ec527287677b7b6ccb4842b08a796d3bf3bac6c3
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+Smoke autenticado com PostgreSQL: rotas ricas sem credenciais=401; páginas e APIs de Contas, Propostas, Inteligência e Operações=200
+```
+
+O PostgreSQL, containers de smoke, dump e imagem criados nesta retoma foram removidos; as portas `55462`, `58011` e `58012` ficaram livres. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido. O Codespace de staging foi parado, sem ser apagado, depois de confirmar worktree limpa e ausência de containers, bases, backups ou processos do ensaio.
+
+A descoberta live permaneceu read-only. Produção continuava saudável na imagem `7622a2b2b8d5e0790858208b2c3a1f119edb7328`, com `/up=200`, dashboard legado em `/=200` e novas páginas/APIs em `404`. O host mantinha filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, nenhuma base CRM identificável e nenhum timer de backup CRM. Nenhum worker CRM, reconciler, outbox publisher ou job outbound estava ativo.
+
+A telemetria estruturada das últimas 48 horas continha 2.248 registos parseáveis e pedidos `2xx` ativos em `/api/stats` (1), `/api/portfolio` (1) e `/api/recommendations` (1), todos entre `2026-07-18T20:35:23Z` e `2026-07-18T21:12:54Z`. Portanto, retirar v0 agora quebraria consumidores observados e violaria o gate da Tarefa 19.
+
+O PR `#1` continua draft, sem checks ou reviews configurados. O cutover permanece materialmente bloqueado por paridade real falsa, conflitos de identidade/account não resolvidos ou aceites, ausência de validação da amostra pelo owner comercial, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção com backup automático e restore do arquivo real, smoke no proxy/TLS final e soak de produção. A Tarefa 19 exige ainda dois releases estáveis sem rollback, ausência de consumidores v0 e aceitação dos stakeholders.
+
+Estes são gates explícitos de dados, operação e release, não pausas de aprovação que a autorização autónoma possa remover. Por isso não houve merge, deploy de produção, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
