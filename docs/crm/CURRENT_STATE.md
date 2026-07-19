@@ -1522,3 +1522,27 @@ A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, 
 O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, zero bases CRM/leads, zero containers CRM e zero timers de backup CRM observáveis. Em 6.491 registos JSON parseáveis das últimas 48 horas, foram observados pedidos `2xx` ativos nos seis contratos v0 acompanhados: `/api/stats` 3, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 4, `/api/email-followups` 4 e `/api/proposal-followups` 4.
 
 A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas o seu gate permanece fechado por consumidores v0 ativos, ausência de dois releases pós-cutover e falta de aceitação dos stakeholders. Os gates anteriores de cutover também permanecem fechados por paridade real falsa, conflitos sem resolução/aceitação, ausência de validação da amostra pelo owner, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final e soak de produção. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-19T04:38:45Z
+
+A retoma começou no `HEAD` limpo e sincronizado `b8f8aa049f2790d5914cf9c2e43a84acc733674f`. Foram reinspecionados o plano canónico, este documento, branch, commits, PR, staging, processos, containers e produção. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound. Containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55471`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 110.11s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff check e Gitleaks: passed; 0 leaks em 69 commits
+Cleanup: container removido e porta 55471 livre
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch e sem reviews/checks/environments. O Codespace técnico está parado, limpo e sincronizado; os três nomes de staging inspecionados continuam sem DNS. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`.
+
+O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM/leads e nenhum timer de backup CRM observável. Em 6.898 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos: `/api/stats` 4, `/api/portfolio` 2, `/api/recommendations` 2, `/api/outreach-followups` 5, `/api/email-followups` 5 e `/api/proposal-followups` 5.
+
+A implementação até à Tarefa 18 permanece verde. A conclusão global continua materialmente bloqueada por paridade real falsa, conflitos sem resolução/aceitação, validação humana da amostra, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final, soak e cutover. A Tarefa 19 exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Estes gates técnicos, de dados, humanos e temporais não podem ser fabricados nem dispensados pela autorização autónoma. Não houve merge, deploy, migração live, cutover, retirada do legado ou criação do sentinel.
