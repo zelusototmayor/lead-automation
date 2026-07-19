@@ -1808,3 +1808,27 @@ A verificação pública confirmou `/up=200`, dashboard legado `200` e novas pá
 A telemetria estruturada das últimas 48 horas contém consumidores `2xx` ativos nos seis contratos v0: `/api/stats` 9, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6. Os pedidos mais recentes a stats/portfolio/recommendations ocorreram em 2026-07-19T11:39Z. Retirar ou proteger estes contratos agora quebraria tráfego observado.
 
 A implementação até à Tarefa 18 permanece verde. A conclusão global continua bloqueada pelos gates explícitos de dados, produção e release: paridade falsa e conflitos sem resolução/aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A Tarefa 19 exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-19T15:15:25Z
+
+A retoma começou no `HEAD` limpo e sincronizado `30cf368ab3a67799e1ad9505830839508d5e2fbc`, na branch esperada. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, staging, produção e telemetria foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55484`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 110.39s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+compileall, git diff check e Gitleaks: passed; 0 leaks em 80 commits
+Cleanup: container e dump removidos; porta 55484 livre
+```
+
+A descoberta externa permaneceu read-only. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host mantém filesystem a 87%, 3.242.680 KiB livres, 3.915 MiB de RAM total, 1.275 MiB disponíveis, 1.115 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM. O PR `#1` permanece draft, mergeable, sem reviews, checks, deployments ou environments GitHub; não existe DNS para os três nomes de staging inspecionados.
+
+Em 11.854 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` ativos nos seis contratos v0: `/api/stats` 9, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6. Os pedidos mais recentes ocorreram entre `2026-07-19T08:11:54Z` e `2026-07-19T11:39:22Z`. Retirar ou proteger estes contratos agora quebraria tráfego observado.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19. Os gates anteriores de dados e cutover permanecem fechados: paridade real falsa e conflitos sem resolução/aceitação; falta de validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige adicionalmente dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria gates explícitos do plano; nenhuma dessas ações foi executada.
