@@ -1919,4 +1919,30 @@ A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, 
 
 O host live mantém filesystem a 87%, 3.251.204 KiB livres, 3.915 MiB de RAM total, 1.016 MiB disponíveis, 1.056 MiB de swap em uso, PostgreSQL 17 sem base CRM/leads, zero containers CRM e zero timers de backup CRM observáveis. A janela atual do `kamal-proxy` tinha apenas 82 registos JSON parseáveis e não continha os seis endpoints v0 acompanhados; esta janela curta não prova ausência de consumidores, porque a verificação imediatamente anterior observou tráfego `2xx` ativo e ainda não existe qualquer release pós-cutover.
 
-A implementação até à Tarefa 18 permanece verde, mas a conclusão global e a Tarefa 19 continuam bloqueadas pelos gates explícitos do plano: paridade real falsa e conflitos sem resolução ou aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria esses gates; nenhuma dessas ações foi executada.
+A implementação até à Tarefa 18 permanece verde, mas a conclusão global e a Tarefa 19 continuam bloqueadas pelos gates explícitos do plano: paridade real falsa e conflitos sem resolução ou aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore real; smoke no proxy/TLS final; soak e cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria esses gates; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-19T19:16:25Z
+
+A retoma começou no `HEAD` limpo e sincronizado `be93393a33b0c0192f7cab90eb4fca518564bb12`, na branch esperada. O plano canónico, este documento, commits, testes, migrations, processos, containers, PR, staging, produção e telemetria foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Recursos preexistentes desconhecidos foram preservados.
+
+Num PostgreSQL 16 descartável exclusivo em loopback, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 111.41s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall e diff checks: passed
+Cleanup: containers, dump e bases de restore removidos; portas 55490 e 55491 livres
+```
+
+Uma primeira invocação da suite omitiu o marker obrigatório `CRM_DISPOSABLE_TEST_DATABASE=1` e falhou fechada antes de constituir evidência comportamental válida. A invocação corrigida acima passou integralmente; não houve alteração de código para obter o resultado.
+
+A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks ou environments GitHub. O Codespace técnico continua em `Shutdown`, sincronizado e limpo, e não existe DNS nos três nomes de staging inspecionados. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`.
+
+O host live mantém filesystem a 87%, 3.249.912 KiB livres, 3.915 MiB de RAM total, 1.276 MiB disponíveis, 1.052 MiB de swap em uso, zero bases CRM/leads, zero containers CRM e zero timers de backup CRM observáveis. Em 1.838 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` ativos em `/api/stats` (1), `/api/outreach-followups` (2), `/api/email-followups` (2) e `/api/proposal-followups` (2), com os últimos pedidos em 2026-07-19T16:48Z. A janela atual não contém portfolio/recommendations, mas janelas anteriores continham consumidores e não existe qualquer release pós-cutover.
+
+O export read-only preservado continua disponível fora do repositório com mode `0600`, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`. A implementação até à Tarefa 18 permanece verde, mas a Tarefa 19 e a conclusão global continuam bloqueadas pelos gates de dados, produção, humanos e temporais do plano. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação do sentinel.
