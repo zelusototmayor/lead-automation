@@ -1710,3 +1710,26 @@ O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks
 O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,1 GiB de swap em uso, zero bases com nome CRM/leads e zero timers de backup CRM. Em 10.023 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` ativos nos seis contratos v0: `/api/stats` 5, `/api/portfolio` 3, `/api/recommendations` 3, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6, entre `2026-07-18T20:35:23Z` e `2026-07-19T08:11:54Z`.
 
 Os gates continuam materialmente fechados. Não é seguro provisionar PostgreSQL CRM, backups e cutover no host partilhado sob pressão de disco/swap; a paridade real e a validação humana continuam em falta; e retirar v0 quebraria consumidores observados antes dos dois releases pós-cutover exigidos. O sentinel permanece proibido neste estado.
+
+---
+
+## Retoma autónoma em 2026-07-19T10:14:50Z
+
+A retoma começou no `HEAD` limpo e sincronizado `26522b3e52aa1bba755b6c57fcc5e1e58a55108b`, na branch esperada. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, Codespace, DNS, produção e telemetria foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55479`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 109.89s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Cleanup: container e dump removidos; porta 55479 livre
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks, deployments ou environments GitHub. O Codespace técnico continua parado, sincronizado e limpo; os três nomes de staging inspecionados continuam sem DNS. Desde o ensaio isolado de staging `e151925`, apenas `CURRENT_STATE.md` e `MIGRATION.md` mudaram. Produção respondeu `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com o build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. A imagem live continua presente localmente no host pelo digest `sha256:38a76feee6fff1b68eaa832e4187edc190c4749a2b4eebac0de1ca4cbe64b817`; não existe imagem imutável acessível do candidato atual.
+
+O host live continua inadequado para improvisar staging e PostgreSQL CRM: filesystem a 87% com 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB disponíveis, 1,1 GiB de swap em uso, PostgreSQL 17.7 partilhado sem base CRM/leads e zero timers de backup CRM. Em 10.210 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `200` ativos nos seis contratos v0: `/api/stats` 5, `/api/portfolio` 3, `/api/recommendations` 3, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6, entre `2026-07-18T20:35:23Z` e `2026-07-19T08:11:54Z`.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, e os gates anteriores de dados e cutover permanecem fechados: paridade real falsa, conflitos sem resolução/aceitação, falta de validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, smoke no proxy/TLS final, soak e cutover. A retirada do legado exige adicionalmente dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria os gates explícitos do plano; nenhuma dessas ações foi executada.
