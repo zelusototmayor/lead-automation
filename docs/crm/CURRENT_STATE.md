@@ -1832,3 +1832,43 @@ A descoberta externa permaneceu read-only. Produção responde `/up=200` e dashb
 Em 11.854 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` ativos nos seis contratos v0: `/api/stats` 9, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6. Os pedidos mais recentes ocorreram entre `2026-07-19T08:11:54Z` e `2026-07-19T11:39:22Z`. Retirar ou proteger estes contratos agora quebraria tráfego observado.
 
 A primeira tarefa formalmente incompleta continua a ser a Tarefa 19. Os gates anteriores de dados e cutover permanecem fechados: paridade real falsa e conflitos sem resolução/aceitação; falta de validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige adicionalmente dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria gates explícitos do plano; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-19T16:15:07Z
+
+A retoma começou no `HEAD` limpo e sincronizado `8093430255ad8f3fb23fcd02cafbd24362f87fae`, na branch esperada. O plano canónico, este documento, commits, testes, migrations, processos, containers, PR, staging, produção, Sheet real e telemetria foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Recursos preexistentes desconhecidos foram preservados.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55485`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 110.22s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 81 commits
+Imagem local: sha256:5bebb25d36fb6b98ff5b0348dee8ee046afcd58dfd25921cec5fe2e259ab816c
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+Cleanup: PostgreSQL, dump, container de smoke e imagem removidos; portas 55485, 55486 e 58017 livres
+```
+
+Uma captura read-only atual da Sheet real foi guardada apenas em ficheiros temporários `0600`, aplicada duas vezes num segundo PostgreSQL 16 descartável e removida com a credencial temporária no fim:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 contas criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Review: 12 duplicate_stable_id, 21 missing_stable_id, 18 history_required, 1 identity_conflict
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+```
+
+A comparação terminou deliberadamente com exit `1` porque a paridade permanece falsa. Nenhum conflito foi auto-fundido, nenhum valor comercial foi impresso, não houve write na Sheet e todos os recursos temporários desta validação foram removidos.
+
+A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks, deployments ou environments GitHub. O Codespace técnico continua em `Shutdown`; não existe DNS para os três nomes de staging inspecionados. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`.
+
+O host live mantém filesystem a 87%, 3.229.744 KiB livres, 3.915 MiB de RAM total, 1.330 MiB disponíveis, 1.105 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM observáveis. Em 12.699 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `2xx` ativos nos seis contratos v0: `/api/stats` 9, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6. Os pedidos mais recentes ocorreram entre `2026-07-19T08:11:54Z` e `2026-07-19T11:39:22Z`.
+
+A implementação até à Tarefa 18 permanece verde, mas os gates de dados, produção e release continuam materialmente fechados. Persistem paridade falsa, conflitos sem resolução ou aceitação, falta de validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, smoke no proxy/TLS final, soak e cutover. A Tarefa 19 exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria os gates explícitos do plano; nenhuma dessas ações foi executada.
