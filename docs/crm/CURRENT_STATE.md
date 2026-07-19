@@ -1407,3 +1407,28 @@ A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, 
 A telemetria estruturada do `kamal-proxy` nas últimas 48 horas continha 3.504 registos JSON parseáveis e consumidores `2xx` ativos entre `2026-07-18T20:35:23Z` e `2026-07-19T00:05:47Z`: `/api/stats` 3, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 4, `/api/email-followups` 4 e `/api/proposal-followups` 4. Retirar ou proteger estes contratos sem migrar os consumidores quebraria tráfego observado.
 
 Os blockers materiais mantêm-se: paridade real falsa; conflitos sem resolução/aceitação; validação da amostra pelo owner; decisão oficial de `Won`; política de retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A Tarefa 19 exige adicionalmente dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. A autorização autónoma não substitui esta evidência técnica, humana e temporal. Por isso não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-19T00:41:12Z
+
+A retoma começou no `HEAD` limpo e sincronizado `da17b8ec7f89ecd963cba26e8e0fea915c534b1f`. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, staging e produção foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55466`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 106.83s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff check e Gitleaks: passed; 0 leaks em 65 commits
+```
+
+A primeira invocação agregada dos checks estáticos passou incorretamente a lista de ficheiros newline-delimited ao Ruff como um único caminho e terminou com `E902 File name too long`; o mesmo check foi repetido com `git -z | xargs -0` e passou. Isto foi um erro do comando de verificação, não um finding de código. O container, dump e base de restore criados nesta retoma foram removidos e a porta `55466` ficou livre.
+
+A descoberta externa permaneceu read-only. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O host mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, zero bases com nome CRM/leads e zero timers de backup CRM observáveis. O PR `#1` permanece draft, mergeable, no SHA exato da branch, sem reviews, checks ou environments GitHub; o Codespace técnico permanece parado.
+
+Em 3.913 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas, foram observados pedidos `2xx` ativos entre `2026-07-18T19:16:31Z` e `2026-07-19T00:40:30Z`: `/api/stats` 3, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 4, `/api/email-followups` 4 e `/api/proposal-followups` 4. Retirar ou proteger esses contratos sem migrar os consumidores quebraria tráfego observado.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas o seu gate permanece fechado por consumidores v0 ativos, ausência de dois releases pós-cutover e falta de aceitação dos stakeholders. Os gates anteriores de cutover também permanecem fechados por paridade real falsa, conflitos sem resolução/aceitação, ausência de validação da amostra pelo owner, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final e soak de produção. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
