@@ -1366,3 +1366,44 @@ Ruff no delta Python, compileall, diff check e Gitleaks: passed; 0 leaks em 63 c
 O container foi removido e a porta `55465` ficou livre. Produção respondeu `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e as APIs v1 continuaram `404`, coerentes com a imagem pré-revamp. O PR `#1` permaneceu draft, mergeable, no SHA exato da branch, sem reviews ou checks. O Codespace isolado permaneceu parado, sincronizado e limpo. Não houve alteração de código desde o ensaio técnico de staging.
 
 A primeira tarefa formalmente incompleta continua a ser a Tarefa 19, mas os gates anteriores de cutover também permanecem fechados. A paridade real é falsa; conflitos de identidade/account continuam sem resolução ou aceitação; faltam validação da amostra pelo owner, decisão oficial de `Won`, política de retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção com backup automático e restore real, smoke no proxy/TLS final e soak de produção. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Estes artefactos não podem ser fabricados por testes locais nem substituídos pela autorização autónoma. Não houve merge, deploy, migração live, cutover, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-19T01:16:36+01:00
+
+A retoma começou no `HEAD` limpo e sincronizado `2753c708579e156d342959f48de97bf917311a50`. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, staging e produção foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em loopback, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 108.57s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff lint no delta Python, compileall, git diff --check e Gitleaks: passed; 0 leaks em 64 commits
+Imagem local: sha256:55d2f5ca918d19e3d1cf4d178ee0616033bdcb9667473f41aaded06a0417059e
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+```
+
+O format check global do delta continua a identificar seis ficheiros legados/preexistentes que seriam reformatados; não existe delta de código desde o ensaio de staging `e151925`, apenas alterações de documentação em `CURRENT_STATE.md` e `MIGRATION.md`. Esses ficheiros não foram reformatados para evitar scope creep.
+
+Uma captura read-only atual da Sheet real, guardada apenas num ficheiro temporário `0600` e removida no fim, foi aplicada duas vezes num segundo PostgreSQL 16 descartável:
+
+```text
+Snapshot: 1.247 input rows, 1.202 aplicáveis, 12 identidades duplicadas, 21 linhas sem identidade segura
+Accounts apply #1: 65 imports, 46 contas criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Review: 12 duplicate_stable_id, 21 missing_stable_id, 18 history_required, 1 identity_conflict
+Proposals apply #1: 44 imports, 4 unmatched accounts, 48 missing value/evidence
+Proposals apply #2: 0 imports, 44 replay no-op
+Compare: parity=false, 1 lead/account em falta, 0 stage/account/source-field mismatches
+```
+
+A comparação terminou deliberadamente com exit `1` porque a paridade permanece falsa; isto é um gate de dados falhado, não uma falha do comando. Nenhum conflito foi auto-fundido, nenhum valor foi impresso, não houve write na Sheet e a credencial temporária, snapshot, bases e containers criados nesta retoma foram removidos.
+
+A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, no SHA exato da branch e sem checks. O Codespace de staging técnico está parado; não existe DNS de staging. O browser local não tinha sessão DigitalOcean e não existem `doctl`, `flyctl`, `railway` ou credenciais cloud observáveis para provisionar um PostgreSQL gerido isolado. O host live continua no build pré-revamp, com PostgreSQL 17 partilhado mas sem base/backup CRM, filesystem a 87%, cerca de 3,2 GB livres e pressão de swap. Usar esse serviço partilhado ou improvisar backups no único host violaria os gates de PostgreSQL 16, isolamento, capacidade, restore e rollback.
+
+A telemetria estruturada do `kamal-proxy` nas últimas 48 horas continha 3.504 registos JSON parseáveis e consumidores `2xx` ativos entre `2026-07-18T20:35:23Z` e `2026-07-19T00:05:47Z`: `/api/stats` 3, `/api/portfolio` 1, `/api/recommendations` 1, `/api/outreach-followups` 4, `/api/email-followups` 4 e `/api/proposal-followups` 4. Retirar ou proteger estes contratos sem migrar os consumidores quebraria tráfego observado.
+
+Os blockers materiais mantêm-se: paridade real falsa; conflitos sem resolução/aceitação; validação da amostra pelo owner; decisão oficial de `Won`; política de retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A Tarefa 19 exige adicionalmente dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. A autorização autónoma não substitui esta evidência técnica, humana e temporal. Por isso não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
