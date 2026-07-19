@@ -1572,3 +1572,25 @@ O PR `#1` continua draft, mergeable, no SHA exato da branch e sem reviews/checks
 O host live mantém o filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM/leads, nenhum container CRM e nenhum timer de backup CRM observável. Não existem CLIs, credenciais cloud ou configuração local observáveis para provisionar um PostgreSQL/staging isolado noutro fornecedor. Em 7.521 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos: `/api/stats` 4, `/api/portfolio` 2, `/api/recommendations` 2, `/api/outreach-followups` 5, `/api/email-followups` 5 e `/api/proposal-followups` 5.
 
 A implementação até à Tarefa 18 permanece verde, mas a Tarefa 19 e os gates anteriores de cutover continuam materialmente fechados: paridade real falsa, conflitos sem resolução/aceitação, validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final, soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirada do legado ou criar `.hermes/crm-revamp-complete.json` agora violaria gates explícitos do plano; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-19T06:11:15Z
+
+A retoma começou no `HEAD` limpo e sincronizado `df7e80afd15ec5d6b45ebd5a7d3d1ce2dbb7f74b`. O plano canónico, este documento, branch, commits, suite, migrations, processos, containers, PR e superfícies live foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55473`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 109.91s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 71 commits
+Cleanup: container e dump removidos; porta 55473 livre
+```
+
+O fetch confirmou que a branch e `origin/feat/crm-accounts-proposals-v1` apontavam para o mesmo SHA. O PR `#1` permanecia draft, mergeable, no SHA exato da branch e sem reviews, checks ou environments GitHub. A consulta direta a produção confirmou `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e APIs v1 continuavam `404`, coerentes com a imagem pré-revamp. Nenhum deploy, migração live ou cutover foi executado.
+
+A primeira tarefa formalmente incompleta continua a ser a Tarefa 19. Os gates que impedem o cutover permanecem reais: paridade real falsa e conflitos não resolvidos/aceites; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. O sentinel continua corretamente ausente.
