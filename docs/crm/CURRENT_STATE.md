@@ -1872,3 +1872,27 @@ A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, 
 O host live mantém filesystem a 87%, 3.229.744 KiB livres, 3.915 MiB de RAM total, 1.330 MiB disponíveis, 1.105 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM observáveis. Em 12.699 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `2xx` ativos nos seis contratos v0: `/api/stats` 9, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 6, `/api/email-followups` 6 e `/api/proposal-followups` 6. Os pedidos mais recentes ocorreram entre `2026-07-19T08:11:54Z` e `2026-07-19T11:39:22Z`.
 
 A implementação até à Tarefa 18 permanece verde, mas os gates de dados, produção e release continuam materialmente fechados. Persistem paridade falsa, conflitos sem resolução ou aceitação, falta de validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, smoke no proxy/TLS final, soak e cutover. A Tarefa 19 exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria os gates explícitos do plano; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-19T17:14:25Z
+
+A retoma começou no `HEAD` limpo e sincronizado `8530cf0320cd48f3c96e9bd431d0b31102e10fd9`, na branch esperada. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, staging, produção e telemetria foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Recursos preexistentes desconhecidos foram preservados.
+
+Dois PostgreSQL 16 descartáveis exclusivos foram usados em loopback e removidos no fim. A primeira execução verificou migrations, rollback e restore; a segunda repetiu a suite com o exit code capturado explicitamente:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 109.67s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 82 commits
+Cleanup: containers e dump removidos; portas 55487 e 55488 livres
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews ou checks. O Codespace técnico continua em `Shutdown`, sincronizado e limpo. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`.
+
+O host live mantém filesystem a 87%, 3.251.644 KiB livres, 3.915 MiB de RAM total, 999 MiB disponíveis, 1.057 MiB de swap em uso, PostgreSQL 17.7 sem base CRM/leads e zero timers de backup CRM observáveis. Nos 745 registos JSON parseáveis disponíveis das últimas 48 horas foram observados pedidos `2xx` ativos em `/api/stats` (1), `/api/outreach-followups` (2), `/api/email-followups` (2) e `/api/proposal-followups` (2), com os últimos pedidos em 2026-07-19T16:48Z. A janela atual não contém portfolio/recommendations, mas janelas anteriores continham consumidores e não existem dois releases pós-cutover.
+
+A implementação até à Tarefa 18 continua verde. A primeira tarefa formalmente incompleta é a Tarefa 19, mas os gates anteriores de dados e cutover permanecem fechados: paridade real falsa e conflitos sem resolução ou aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. A autorização autónoma não cria evidência humana ou temporal nem permite violar estes gates técnicos. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação do sentinel.
