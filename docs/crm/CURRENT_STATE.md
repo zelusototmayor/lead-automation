@@ -1546,3 +1546,29 @@ O PR `#1` continua draft, mergeable, no SHA exato da branch e sem reviews/checks
 O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM/leads e nenhum timer de backup CRM observável. Em 6.898 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos: `/api/stats` 4, `/api/portfolio` 2, `/api/recommendations` 2, `/api/outreach-followups` 5, `/api/email-followups` 5 e `/api/proposal-followups` 5.
 
 A implementação até à Tarefa 18 permanece verde. A conclusão global continua materialmente bloqueada por paridade real falsa, conflitos sem resolução/aceitação, validação humana da amostra, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final, soak e cutover. A Tarefa 19 exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Estes gates técnicos, de dados, humanos e temporais não podem ser fabricados nem dispensados pela autorização autónoma. Não houve merge, deploy, migração live, cutover, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-19T05:12:38Z
+
+A retoma começou no `HEAD` limpo e sincronizado `d1358000d1e4696995ff83b79d9973fd63deabd2`. O plano canónico, este documento, commits, suite, migrations, processos, containers, PR, staging, DNS e produção foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55472`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 108.02s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, git diff check e Gitleaks: passed; 0 leaks em 70 commits
+Imagem local: manifest list sha256:ae6bc273bae639410340f6d9589b9260b8f73f5caf116cd241e48bacf744b921
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+Cleanup: containers e imagem desta retoma removidos; portas 55472 e 58014 livres
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch e sem reviews/checks/environments. Não existe environment GitHub nem DNS nos três nomes de staging inspecionados. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`.
+
+O host live mantém o filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,3 GiB de swap em uso, nenhuma base CRM/leads, nenhum container CRM e nenhum timer de backup CRM observável. Não existem CLIs, credenciais cloud ou configuração local observáveis para provisionar um PostgreSQL/staging isolado noutro fornecedor. Em 7.521 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos: `/api/stats` 4, `/api/portfolio` 2, `/api/recommendations` 2, `/api/outreach-followups` 5, `/api/email-followups` 5 e `/api/proposal-followups` 5.
+
+A implementação até à Tarefa 18 permanece verde, mas a Tarefa 19 e os gates anteriores de cutover continuam materialmente fechados: paridade real falsa, conflitos sem resolução/aceitação, validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, smoke no proxy/TLS final, soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirada do legado ou criar `.hermes/crm-revamp-complete.json` agora violaria gates explícitos do plano; nenhuma dessas ações foi executada.
