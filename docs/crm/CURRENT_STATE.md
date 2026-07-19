@@ -1594,3 +1594,27 @@ Cleanup: container e dump removidos; porta 55473 livre
 O fetch confirmou que a branch e `origin/feat/crm-accounts-proposals-v1` apontavam para o mesmo SHA. O PR `#1` permanecia draft, mergeable, no SHA exato da branch e sem reviews, checks ou environments GitHub. A consulta direta a produção confirmou `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência e APIs v1 continuavam `404`, coerentes com a imagem pré-revamp. Nenhum deploy, migração live ou cutover foi executado.
 
 A primeira tarefa formalmente incompleta continua a ser a Tarefa 19. Os gates que impedem o cutover permanecem reais: paridade real falsa e conflitos não resolvidos/aceites; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. O sentinel continua corretamente ausente.
+
+---
+
+## Retoma autónoma em 2026-07-19T06:41:12Z
+
+A retoma começou no `HEAD` limpo e sincronizado `115d4416dbbc071cb86c83d68dc4a2e6b0721872`. O plano canónico, este documento, branch, commits, suite, migrations, processos, containers, PR, Codespace, DNS, produção e telemetria foram reinspecionados antes de qualquer mutação. Não existia trabalho staged, unstaged ou untracked, nem processos CRM de worker, reconciler, outbox publisher ou jobs outbound ativos. Containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55474`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 952 passed, 1 skipped em 108.51s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 72 commits
+Cleanup: container e dump removidos; porta 55474 livre
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch e sem reviews/checks/environments. O Codespace técnico continua parado e não existe DNS nos três nomes de staging inspecionados. Produção responde `/up=200` e dashboard legado `200`; Contas, Propostas, Inteligência, Operações e APIs v1 continuam `404`, coerentes com a imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. O tag imutável dessa imagem de rollback continua disponível no registry; o tag do candidato atual não existe ou não está acessível.
+
+O host live mantém filesystem a 87%, 3,2 GiB livres, 3,8 GiB de RAM, 1,2 GiB de swap em uso, PostgreSQL 17.7 sem base CRM/leads e nenhum timer de backup CRM observável. Em 8.231 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos nos seis contratos v0 acompanhados: `/api/stats` 4, `/api/portfolio` 2, `/api/recommendations` 2, `/api/outreach-followups` 5, `/api/email-followups` 5 e `/api/proposal-followups` 5. O export read-only preservado continua disponível com mode `0600`, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`.
+
+A implementação até à Tarefa 18 permanece verde, mas os gates de cutover e da Tarefa 19 continuam materialmente fechados: paridade real falsa; conflitos sem resolução/aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` agora violaria gates explícitos do plano; nenhuma dessas ações foi executada.
