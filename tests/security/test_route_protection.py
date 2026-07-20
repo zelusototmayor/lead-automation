@@ -124,6 +124,8 @@ def configured_security(monkeypatch):
     monkeypatch.setenv("CRM_PRINCIPAL_USERNAME", PRINCIPAL_USERNAME)
     monkeypatch.setenv("CRM_PRINCIPAL_PASSWORD", PRINCIPAL_PASSWORD)
     monkeypatch.setenv("CRM_PRINCIPAL_WORKSPACE_ID", PRINCIPAL_WORKSPACE_ID)
+    monkeypatch.setenv("CRM_PRINCIPAL_ACTOR_ID", PRINCIPAL_WORKSPACE_ID)
+    monkeypatch.setenv("CRM_PRINCIPAL_PERMISSIONS", "crm:read")
     monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", "true")
     get_settings.cache_clear()
     get_principal_settings.cache_clear()

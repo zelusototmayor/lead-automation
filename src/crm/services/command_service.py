@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import hashlib
 import json
 from uuid import UUID, uuid5
@@ -14,7 +15,7 @@ from src.crm.domain.stage_policy import (
     validate_transition,
 )
 from src.crm.ingestion.outbox import enqueue_outbox_event
-from src.crm.persistence.models import AuditEvent
+from src.crm.persistence.models import Activity, AuditEvent
 
 
 class CommandAuthorizationError(RuntimeError):
@@ -151,6 +152,25 @@ class HumanCommandService:
         audit_id = uuid5(
             command.workspace_id,
             f"{command.command_id}:audit:lead.stage-transitioned",
+        )
+        self.uow.activities.add(
+            Activity(
+                id=uuid5(
+                    command.workspace_id,
+                    f"{command.command_id}:activity:lead.stage-transitioned",
+                ),
+                workspace_id=command.workspace_id,
+                account_id=lead.account_id,
+                lead_id=lead.id,
+                activity_type="stage_change",
+                occurred_at=datetime.now(UTC),
+                title="Stage changed",
+                summary=None,
+                semantic_fingerprint=semantic_hash,
+                source_system="manual",
+                actor_type="human",
+                actor_id=principal.actor_id,
+            )
         )
         enqueue_outbox_event(
             self.uow,

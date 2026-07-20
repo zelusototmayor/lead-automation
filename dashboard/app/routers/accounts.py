@@ -7,23 +7,32 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine, func, select, true
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from dashboard.app.db import create_database_engine
-from dashboard.app.feature_flags import get_feature_flags
+from dashboard.app.db import create_database_engine, create_session_factory
+from dashboard.app.feature_flags import (
+    get_feature_flags,
+    require_postgres_command_writer,
+)
 from dashboard.app.schemas.accounts import (
     AccountDetail,
     AccountPage,
     AccountSummary,
     EvidenceReference,
     LeadPage,
+    LeadStageCommand,
+    LeadStageCommandResult,
     LeadSummary,
 )
-from dashboard.app.security import CRMPrincipal, require_crm_principal
+from dashboard.app.security import (
+    CRMPrincipal,
+    require_crm_command_access,
+    require_crm_principal,
+)
 from src.crm.persistence.models import (
     Account,
     Activity,
@@ -33,6 +42,14 @@ from src.crm.persistence.models import (
     Meeting,
     Proposal,
     Task,
+)
+from src.crm.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.crm.services.command_service import (
+    CommandAuthorizationError,
+    CommandConflictError,
+    HumanCommandPrincipal,
+    HumanCommandService,
+    TransitionLeadCommand,
 )
 
 router = APIRouter()
@@ -44,6 +61,12 @@ logger = logging.getLogger(__name__)
 class AccountRequestContext:
     principal: CRMPrincipal
     session: Session
+
+
+@dataclass(frozen=True)
+class LeadCommandContext:
+    principal: CRMPrincipal
+    session_factory: sessionmaker[Session]
 
 
 @lru_cache(maxsize=1)
@@ -97,6 +120,22 @@ def get_account_request_context(
         ) from None
     with Session(engine) as session:
         yield AccountRequestContext(principal=principal, session=session)
+
+
+def get_lead_command_context(
+    principal: Annotated[CRMPrincipal, Depends(require_crm_command_access)],
+) -> LeadCommandContext:
+    """Resolve canonical command resources only after auth and write gates pass."""
+
+    require_postgres_command_writer()
+    try:
+        factory = create_session_factory(_account_engine())
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Writer unavailable",
+        ) from None
+    return LeadCommandContext(principal=principal, session_factory=factory)
 
 
 def _summary_columns(workspace_id: UUID):
@@ -364,6 +403,61 @@ def list_leads(
         total=total or 0,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.post(
+    "/api/v1/commands/leads/{lead_id}/transition-stage",
+    response_model=LeadStageCommandResult,
+)
+@router.put(
+    "/api/v1/leads/{lead_id}/stage",
+    response_model=LeadStageCommandResult,
+)
+def transition_lead_stage(
+    lead_id: UUID,
+    body: LeadStageCommand,
+    context: Annotated[LeadCommandContext, Depends(get_lead_command_context)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> LeadStageCommandResult:
+    if idempotency_key is None:
+        raise HTTPException(status_code=422, detail="Invalid command")
+    try:
+        header_command_id = UUID(idempotency_key)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Invalid command") from None
+    if header_command_id != body.command_id:
+        raise HTTPException(status_code=409, detail="Command conflict")
+    principal = context.principal
+    if principal.actor_id is None:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        with SqlAlchemyUnitOfWork(context.session_factory) as uow:
+            result = HumanCommandService(uow).transition_lead(
+                HumanCommandPrincipal(
+                    actor_id=principal.actor_id,
+                    workspace_id=principal.workspace_id,
+                    permissions=principal.permissions,
+                ),
+                TransitionLeadCommand(
+                    command_id=body.command_id,
+                    workspace_id=principal.workspace_id,
+                    lead_id=lead_id,
+                    target_stage=body.target_stage,
+                    expected_version=body.expected_version,
+                    reviewed_correction=body.reviewed_correction,
+                ),
+            )
+            uow.commit()
+    except CommandAuthorizationError:
+        raise HTTPException(status_code=403, detail="Forbidden") from None
+    except CommandConflictError:
+        raise HTTPException(status_code=409, detail="Command conflict") from None
+    return LeadStageCommandResult(
+        command_id=result.command_id,
+        lead_id=result.aggregate_id,
+        version=result.version,
+        replayed=result.replayed,
     )
 
 

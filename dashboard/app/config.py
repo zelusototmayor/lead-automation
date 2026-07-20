@@ -17,6 +17,18 @@ from pydantic import SecretStr
 _LOCAL_ENVIRONMENTS = {"dev", "development", "test"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+_CRM_PRINCIPAL_PERMISSIONS = frozenset(
+    {
+        "crm:read",
+        "crm:lead:create",
+        "crm:lead:edit",
+        "crm:lead-stage:write",
+        "crm:call:log",
+        "crm:email:log",
+        "crm:task:write",
+        "crm:proposal:write",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,8 @@ class PrincipalSettings:
     username: str
     password: SecretStr
     workspace_id: UUID
+    actor_id: UUID
+    permissions: frozenset[str]
     is_admin: bool
 
 
@@ -169,12 +183,27 @@ def _principal_username() -> str:
     return username
 
 
+def _principal_permissions() -> frozenset[str]:
+    raw = _required_principal_value("CRM_PRINCIPAL_PERMISSIONS")
+    values = raw.split(",")
+    if (
+        not values
+        or any(not value or value != value.strip() for value in values)
+        or len(values) != len(set(values))
+        or not set(values).issubset(_CRM_PRINCIPAL_PERMISSIONS)
+        or "crm:read" not in values
+    ):
+        raise ValueError("invalid principal configuration")
+    return frozenset(values)
+
+
 @lru_cache(maxsize=1)
 def get_principal_settings() -> PrincipalSettings:
     """Load the rich-route principal mapping without database or network I/O."""
 
     try:
         workspace_id = UUID(_required_principal_value("CRM_PRINCIPAL_WORKSPACE_ID"))
+        actor_id = UUID(_required_principal_value("CRM_PRINCIPAL_ACTOR_ID"))
     except (TypeError, ValueError):
         raise ValueError("invalid principal configuration") from None
     raw_is_admin = _required_principal_value("CRM_PRINCIPAL_IS_ADMIN")
@@ -184,6 +213,8 @@ def get_principal_settings() -> PrincipalSettings:
         username=_principal_username(),
         password=SecretStr(_required_basic_value("CRM_PRINCIPAL_PASSWORD")),
         workspace_id=workspace_id,
+        actor_id=actor_id,
+        permissions=_principal_permissions(),
         is_admin=raw_is_admin == "true",
     )
 

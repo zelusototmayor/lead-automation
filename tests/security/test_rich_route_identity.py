@@ -15,12 +15,16 @@ from dashboard.app.security import CRMPrincipal, require_crm_principal
 
 
 WORKSPACE_ID = UUID("11111111-2222-4333-8444-555555555555")
+ACTOR_ID = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
 USERNAME = "crm-reviewer"
 PASSWORD = "correct horse battery staple"
+PERMISSIONS = frozenset({"crm:read", "crm:lead-stage:write"})
 PRINCIPAL_ENV_NAMES = (
     "CRM_PRINCIPAL_USERNAME",
     "CRM_PRINCIPAL_PASSWORD",
     "CRM_PRINCIPAL_WORKSPACE_ID",
+    "CRM_PRINCIPAL_ACTOR_ID",
+    "CRM_PRINCIPAL_PERMISSIONS",
     "CRM_PRINCIPAL_IS_ADMIN",
 )
 RICH_PATHS = (
@@ -60,10 +64,12 @@ IDENTITY_APP = FastAPI()
 @IDENTITY_APP.get("/protected")
 async def protected(
     principal: CRMPrincipal = Depends(require_crm_principal),
-) -> dict[str, str | bool]:
+) -> dict[str, str | bool | list[str]]:
     return {
         "workspace_id": str(principal.workspace_id),
+        "actor_id": str(principal.actor_id),
         "subject": principal.subject,
+        "permissions": sorted(principal.permissions),
         "is_admin": principal.is_admin,
     }
 
@@ -81,6 +87,8 @@ def _configured_identity(monkeypatch, *, is_admin: str = "false") -> None:
     monkeypatch.setenv("CRM_PRINCIPAL_USERNAME", USERNAME)
     monkeypatch.setenv("CRM_PRINCIPAL_PASSWORD", PASSWORD)
     monkeypatch.setenv("CRM_PRINCIPAL_WORKSPACE_ID", str(WORKSPACE_ID))
+    monkeypatch.setenv("CRM_PRINCIPAL_ACTOR_ID", str(ACTOR_ID))
+    monkeypatch.setenv("CRM_PRINCIPAL_PERMISSIONS", ",".join(sorted(PERMISSIONS)))
     monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", is_admin)
     get_principal_settings.cache_clear()
 
@@ -141,7 +149,9 @@ def test_valid_basic_credentials_return_server_configured_principal(monkeypatch)
     assert response.status_code == 200
     assert response.json() == {
         "workspace_id": str(WORKSPACE_ID),
+        "actor_id": str(ACTOR_ID),
         "subject": USERNAME,
+        "permissions": sorted(PERMISSIONS),
         "is_admin": True,
     }
 
@@ -198,6 +208,10 @@ def test_every_missing_server_identity_value_fails_closed_without_challenge(
         ("CRM_PRINCIPAL_PASSWORD", "p\N{LATIN SMALL LETTER A WITH DIAERESIS}ssword"),
         ("CRM_PRINCIPAL_PASSWORD", "line\nbreak"),
         ("CRM_PRINCIPAL_WORKSPACE_ID", "not-a-uuid"),
+        ("CRM_PRINCIPAL_ACTOR_ID", "not-a-uuid"),
+        ("CRM_PRINCIPAL_PERMISSIONS", ""),
+        ("CRM_PRINCIPAL_PERMISSIONS", "crm:read,unknown:permission"),
+        ("CRM_PRINCIPAL_PERMISSIONS", "crm:read, crm:lead-stage:write"),
         ("CRM_PRINCIPAL_IS_ADMIN", ""),
     ),
 )
@@ -267,9 +281,30 @@ def test_authenticated_request_cannot_override_server_workspace_or_role(monkeypa
     assert response.status_code == 200
     assert response.json() == {
         "workspace_id": str(WORKSPACE_ID),
+        "actor_id": str(ACTOR_ID),
         "subject": USERNAME,
+        "permissions": sorted(PERMISSIONS),
         "is_admin": False,
     }
+
+
+def test_authenticated_request_cannot_override_server_actor_or_permissions(monkeypatch):
+    _configured_identity(monkeypatch)
+
+    response = TestClient(IDENTITY_APP).get(
+        "/protected",
+        auth=(USERNAME, PASSWORD),
+        params={"actor_id": str(UUID(int=0)), "permissions": "crm:proposal:write"},
+        headers={
+            "X-CRM-Actor-ID": str(UUID(int=0)),
+            "X-CRM-Permissions": "crm:proposal:write",
+            "Cookie": "actor_id=00000000-0000-0000-0000-000000000000; permissions=*",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["actor_id"] == str(ACTOR_ID)
+    assert response.json()["permissions"] == sorted(PERMISSIONS)
 
 
 @pytest.mark.parametrize(

@@ -19,6 +19,8 @@ def configured_identity(monkeypatch):
     monkeypatch.setenv("CRM_PRINCIPAL_USERNAME", USERNAME)
     monkeypatch.setenv("CRM_PRINCIPAL_PASSWORD", PASSWORD)
     monkeypatch.setenv("CRM_PRINCIPAL_WORKSPACE_ID", WORKSPACE_ID)
+    monkeypatch.setenv("CRM_PRINCIPAL_ACTOR_ID", WORKSPACE_ID)
+    monkeypatch.setenv("CRM_PRINCIPAL_PERMISSIONS", "crm:read")
     monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", "true")
     get_principal_settings.cache_clear()
     yield

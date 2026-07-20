@@ -142,3 +142,12 @@ def require_legacy_sheet_writer() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Writer unavailable",
         )
+
+
+def require_postgres_command_writer() -> None:
+    flags = require_database_enabled(detail="Writer unavailable")
+    if flags.command_writer != "postgres":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Writer unavailable",
+        )

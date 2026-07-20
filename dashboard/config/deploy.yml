@@ -46,6 +46,8 @@ env:
     # until deployment supplies the approved non-secret principal mapping.
     CRM_PRINCIPAL_USERNAME: ""
     CRM_PRINCIPAL_WORKSPACE_ID: ""
+    CRM_PRINCIPAL_ACTOR_ID: ""
+    CRM_PRINCIPAL_PERMISSIONS: ""
     CRM_PRINCIPAL_IS_ADMIN: "false"
   secret:
     - CRM_WRITE_TOKEN

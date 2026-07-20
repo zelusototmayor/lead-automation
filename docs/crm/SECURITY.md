@@ -6,8 +6,8 @@ The approved implementation boundary leaves only minimal `GET /up` public. The l
 
 ## Required controls
 
-- derive workspace and role from a trusted server-side principal;
-- require all of `CRM_PRINCIPAL_USERNAME`, `CRM_PRINCIPAL_PASSWORD`, `CRM_PRINCIPAL_WORKSPACE_ID` and `CRM_PRINCIPAL_IS_ADMIN`; accept exactly `true` or `false` for the role flag;
+- derive workspace, actor, permissions and role from a trusted server-side principal;
+- require all of `CRM_PRINCIPAL_USERNAME`, `CRM_PRINCIPAL_PASSWORD`, `CRM_PRINCIPAL_WORKSPACE_ID`, `CRM_PRINCIPAL_ACTOR_ID`, `CRM_PRINCIPAL_PERMISSIONS` and `CRM_PRINCIPAL_IS_ADMIN`; permissions must come from the explicit application allowlist and include `crm:read`; accept exactly `true` or `false` for the role flag;
 - return generic `403` with no Basic challenge for malformed/missing principal configuration, and generic `401` with `WWW-Authenticate: Basic` for missing, malformed or wrong credentials after configuration is valid;
 - require admin role for operations metrics;
 - require authorization and CSRF for human writes;

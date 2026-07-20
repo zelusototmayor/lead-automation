@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 
 
 class EvidenceReference(BaseModel):
@@ -39,6 +39,24 @@ class LeadPage(BaseModel):
     total: int = Field(ge=0)
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0)
+
+
+class LeadStageCommand(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    command_id: UUID
+    target_stage: StrictStr = Field(min_length=1, max_length=64)
+    expected_version: StrictInt = Field(ge=1)
+    reviewed_correction: StrictBool = False
+
+
+class LeadStageCommandResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    command_id: UUID
+    lead_id: UUID
+    version: int = Field(ge=1)
+    replayed: bool
 
 
 class AccountSummary(BaseModel):

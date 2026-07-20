@@ -37,6 +37,8 @@ def test_deployment_secret_template_covers_all_required_secrets() -> None:
     assert {
         "CRM_PRINCIPAL_USERNAME",
         "CRM_PRINCIPAL_WORKSPACE_ID",
+        "CRM_PRINCIPAL_ACTOR_ID",
+        "CRM_PRINCIPAL_PERMISSIONS",
         "CRM_PRINCIPAL_IS_ADMIN",
     } <= clear_environment.keys()
     assert "CRM_PRINCIPAL_PASSWORD" not in clear_environment

@@ -70,6 +70,17 @@ Status: blocked by external gates
 - Legacy v0 contracts remain available while telemetry shows consumers.
 - Task 19 requires two stable releases, an export path, absence of v0 consumers and stakeholder acceptance. Authorization to execute autonomously does not waive these technical and data-quality gates.
 
+## ADR-008: Operational parity before canonical cutover
+
+Status: contract recorded; implementation and owner acceptance incomplete
+
+- The legacy dashboard is the minimum behavioral specification for daily pipeline management.
+- PostgreSQL read visibility does not establish operational parity.
+- Canonical cutover requires the queues, commands, task lifecycle, timeline, proposal updates, desktop flow and mobile flow recorded in `PIPELINE_PARITY.md`.
+- Human browser writes must use narrow authenticated command endpoints with server-derived actor/workspace/permissions, optimistic versions, idempotency, immutable activity, audit and outbox in one transaction.
+- The temporary `/leads` validation list is not the final daily workspace.
+- No legacy removal or production writer cutover occurs before every matrix item is implemented, exercised in staging and accepted by José.
+
 ## Open activation evidence
 
 The following must be recorded before production activation:
