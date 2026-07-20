@@ -125,7 +125,9 @@ CONTENT_SECURITY_POLICY = "; ".join(
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/api/") and not path.startswith("/api/v1/"):
+    if path.startswith("/api/") and not (
+        path == "/api/v1" or path.startswith("/api/v1/")
+    ):
         response.headers["Deprecation"] = "true"
         route_template = getattr(request.scope.get("route"), "path", None)
         safe_path = (

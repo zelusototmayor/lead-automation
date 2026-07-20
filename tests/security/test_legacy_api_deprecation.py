@@ -62,6 +62,11 @@ def test_v1_api_and_health_responses_are_not_marked_deprecated():
 
     responses = (
         (
+            client.get("/api/v1", auth=(USERNAME, PASSWORD)),
+            404,
+            {"detail": "Not Found"},
+        ),
+        (
             client.get("/api/v1/not-a-route", auth=(USERNAME, PASSWORD)),
             404,
             {"detail": "Not Found"},
