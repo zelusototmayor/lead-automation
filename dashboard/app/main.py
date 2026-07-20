@@ -124,6 +124,18 @@ CONTENT_SECURITY_POLICY = "; ".join(
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") and not path.startswith("/api/v1/"):
+        response.headers["Deprecation"] = "true"
+        route_template = getattr(request.scope.get("route"), "path", None)
+        safe_path = (
+            route_template
+            if route_template and route_template.startswith("/api/")
+            else "<unmatched>"
+        )
+        logger.info(
+            "legacy API request path=%s status=%s", safe_path, response.status_code
+        )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
