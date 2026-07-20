@@ -22,9 +22,10 @@
       row.className = "lead-row";
 
       const identity = document.createElement("div");
-      const company = document.createElement("div");
+      const company = document.createElement(lead.account_id ? "a" : "div");
       company.className = "lead-company";
       company.textContent = lead.company;
+      if (lead.account_id) company.href = `/contas/${encodeURIComponent(lead.account_id)}`;
       const contact = document.createElement("div");
       contact.className = "lead-contact";
       contact.textContent = [lead.contact_name, lead.email, lead.phone].filter(Boolean).join(" · ") || "Sem contacto";
@@ -34,11 +35,16 @@
       stage.className = "lead-stage";
       stage.textContent = stageLabel(lead.stage);
 
+      const done = document.createElement("div");
+      done.className = "lead-action";
+      const proposalLabel = `${lead.proposal_count} proposta${lead.proposal_count === 1 ? "" : "s"}`;
+      done.textContent = `${proposalLabel} · atualizado ${new Date(lead.updated_at).toLocaleDateString("pt-PT")}`;
+
       const action = document.createElement("div");
       action.className = "lead-action";
       action.textContent = lead.next_action ? `${lead.next_action}${formatDueAt(lead.next_action_due_at)}` : "Sem próxima ação";
 
-      row.append(identity, stage, action);
+      row.append(identity, stage, done, action);
       list.appendChild(row);
     });
     show(root, rows.length ? "ready" : "empty");
@@ -55,6 +61,7 @@
       if (!response.ok) throw new Error("leads unavailable");
       const page = await response.json();
       const leads = Array.isArray(page.items) ? page.items : [];
+      root.querySelector("[data-lead-total]").textContent = String(page.total ?? leads.length);
       const search = root.querySelector("[data-lead-search]");
       const stageFilter = root.querySelector("[data-stage-filter]");
       [...new Set(leads.map((lead) => lead.stage).filter(Boolean))].sort().forEach((stage) => {

@@ -6,7 +6,7 @@
   .lead-tools input, .lead-tools select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
   .state, .leads-list { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .state { padding: 24px; color: var(--muted); }
-  .lead-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) minmax(190px, 1.4fr); gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .lead-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) minmax(150px, 1fr) minmax(190px, 1.4fr); gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
   .lead-row:last-child { border-bottom: 0; }
   .lead-head { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
   .lead-company { font-weight: 800; }
@@ -23,7 +23,7 @@
 {% block content %}
 <section id="leads-app" aria-live="polite">
   <header class="topbar">
-    <div><p class="eyebrow">CRM</p><h1>Leads</h1><p class="subtle">Lista operacional de contactos e próximas ações.</p></div>
+    <div><p class="eyebrow">CRM</p><h1>Leads</h1><p class="subtle"><span data-lead-total>—</span> leads · contactos, estado e próximas ações.</p></div>
   </header>
   <div class="lead-tools">
     <label>Pesquisar<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
@@ -33,7 +33,7 @@
   <div class="state hidden" data-state="empty">Ainda não existem leads neste workspace.</div>
   <div class="state hidden" data-state="error">Não foi possível carregar os leads.</div>
   <div class="leads-list hidden" data-state="ready" data-leads-list>
-    <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>Próxima ação</span></div>
+    <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>O que foi feito</span><span>Próxima ação</span></div>
   </div>
 </section>
 {% endblock %}
