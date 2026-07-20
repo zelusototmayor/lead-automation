@@ -840,6 +840,10 @@ class Activity(Base):
             name="ck_activities_direction",
         ),
         CheckConstraint(
+            "outcome_code IS NULL OR length(btrim(outcome_code)) > 0",
+            name="ck_activities_outcome_code_nonblank",
+        ),
+        CheckConstraint(
             f"source_system IS NULL OR {_in_check('source_system', SOURCE_SYSTEMS)}",
             name="ck_activities_source_system",
         ),
@@ -952,6 +956,7 @@ class Activity(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     semantic_fingerprint: Mapped[str | None] = mapped_column(String(64))
     direction: Mapped[str | None] = mapped_column(String(32))
+    outcome_code: Mapped[str | None] = mapped_column(String(32))
     source_system: Mapped[str | None] = mapped_column(String(32))
     source_identity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     ingest_event_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
@@ -1221,6 +1226,10 @@ class Task(Base):
         CheckConstraint(
             "length(btrim(task_type)) > 0", name="ck_tasks_task_type_nonblank"
         ),
+        CheckConstraint(
+            "(task_type NOT IN ('call', 'email') OR lead_id IS NOT NULL) IS TRUE",
+            name="ck_tasks_lead_context",
+        ),
         CheckConstraint("length(btrim(title)) > 0", name="ck_tasks_title_nonblank"),
         CheckConstraint("octet_length(title) <= 512", name="ck_tasks_title_bounded"),
         CheckConstraint(
@@ -1252,12 +1261,25 @@ class Task(Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
+            ["workspace_id", "account_id", "lead_id"],
+            ["leads.workspace_id", "leads.account_id", "leads.id"],
+            name="fk_tasks_workspace_account_lead",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["workspace_id", "account_id", "completion_activity_id"],
             ["activities.workspace_id", "activities.account_id", "activities.id"],
             name="fk_tasks_workspace_account_completion_activity",
             ondelete="RESTRICT",
         ),
         Index("ix_tasks_account_status_due", "account_id", "status", "due_at"),
+        Index(
+            "ix_tasks_workspace_lead_status_due",
+            "workspace_id",
+            "lead_id",
+            "status",
+            "due_at",
+        ),
     )
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
@@ -1268,6 +1290,7 @@ class Task(Base):
         nullable=False,
     )
     account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     proposal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     task_type: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)

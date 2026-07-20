@@ -25,7 +25,7 @@ from psycopg import sql
 
 _DISPOSABLE_MARKER = "CRM_DISPOSABLE_TEST_DATABASE"
 _RESTORE_PREFIX = "crm_restore_verify_"
-EXPECTED_SCHEMA_REVISION = "0007"
+EXPECTED_SCHEMA_REVISION = "0008"
 REQUIRED_TABLES = frozenset(
     {
         "workspaces",
@@ -58,7 +58,9 @@ REQUIRED_CONSTRAINTS = frozenset(
         "fk_meetings_workspace_account",
         "fk_meetings_workspace_account_notes_evidence",
         "fk_tasks_workspace_account",
+        "fk_tasks_workspace_account_lead",
         "fk_tasks_workspace_account_proposal",
+        "ck_activities_outcome_code_nonblank",
         "uq_evidence_workspace_account_id_type",
         "uq_source_identities_workspace_id_semantics",
     }
@@ -70,6 +72,7 @@ REQUIRED_INDEXES = frozenset(
         "uq_meetings_workspace_provider_occurrence",
         "ix_meetings_account_scheduled",
         "ix_tasks_account_status_due",
+        "ix_tasks_workspace_lead_status_due",
         "ix_reconciliation_runs_workspace_connector_started",
     }
 )
