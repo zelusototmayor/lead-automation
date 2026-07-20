@@ -1230,6 +1230,14 @@ class Task(Base):
             "(task_type NOT IN ('call', 'email') OR lead_id IS NOT NULL) IS TRUE",
             name="ck_tasks_lead_context",
         ),
+        CheckConstraint(
+            "account_id IS NOT NULL OR lead_id IS NOT NULL",
+            name="ck_tasks_requires_account_or_lead",
+        ),
+        CheckConstraint(
+            "proposal_id IS NULL OR account_id IS NOT NULL",
+            name="ck_tasks_proposal_requires_account",
+        ),
         CheckConstraint("length(btrim(title)) > 0", name="ck_tasks_title_nonblank"),
         CheckConstraint("octet_length(title) <= 512", name="ck_tasks_title_bounded"),
         CheckConstraint(
@@ -1267,9 +1275,21 @@ class Task(Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
+            ["workspace_id", "lead_id"],
+            ["leads.workspace_id", "leads.id"],
+            name="fk_tasks_workspace_lead",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["workspace_id", "account_id", "completion_activity_id"],
             ["activities.workspace_id", "activities.account_id", "activities.id"],
             name="fk_tasks_workspace_account_completion_activity",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "completion_activity_id"],
+            ["activities.workspace_id", "activities.id"],
+            name="fk_tasks_workspace_completion_activity",
             ondelete="RESTRICT",
         ),
         Index("ix_tasks_account_status_due", "account_id", "status", "due_at"),
@@ -1289,7 +1309,7 @@ class Task(Base):
         ForeignKey("workspaces.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    account_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     proposal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     task_type: Mapped[str] = mapped_column(String(64), nullable=False)

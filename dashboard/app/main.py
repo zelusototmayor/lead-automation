@@ -26,6 +26,7 @@ from dashboard.app.routers.proposals import router as proposals_router
 from dashboard.app.routers.intelligence import router as intelligence_router
 from dashboard.app.routers.agent_events import router as agent_events_router
 from dashboard.app.routers.operations import router as operations_router
+from dashboard.app.routers.pipeline import router as pipeline_router
 from dashboard.app.security import require_crm_principal, require_write_access
 
 SPREADSHEET_ID = os.getenv(
@@ -181,6 +182,7 @@ app.include_router(proposals_router)
 app.include_router(intelligence_router)
 app.include_router(agent_events_router)
 app.include_router(operations_router)
+app.include_router(pipeline_router)
 
 
 @app.get("/up")

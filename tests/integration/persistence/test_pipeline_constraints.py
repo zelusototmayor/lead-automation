@@ -89,6 +89,27 @@ def test_call_task_can_target_a_lead(engine):
         assert task.lead_id == lead_id
 
 
+def test_call_task_can_target_a_lead_without_an_account(engine):
+    with Session(engine) as session, session.begin():
+        workspace = Workspace(slug=f"pre-account-{uuid4().hex}", name="Pre-account")
+        session.add(workspace)
+        session.flush()
+        lead = Lead(workspace_id=workspace.id)
+        session.add(lead)
+        session.flush()
+        task = _task(
+            workspace.id,
+            None,
+            lead_id=lead.id,
+            task_type="call",
+        )
+        session.add(task)
+        session.flush()
+
+        assert task.lead_id == lead.id
+        assert task.account_id is None
+
+
 @pytest.mark.parametrize("task_type", ["call", "email"])
 def test_lead_specific_task_requires_lead_id(engine, task_type):
     workspace_id, account_id, _ = _account_and_lead(engine)
