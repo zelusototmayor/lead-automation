@@ -2123,3 +2123,26 @@ A descoberta externa permaneceu read-only. Produção continua no build pré-rev
 Em 12.602 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `2xx` não-curl ativos nos seis contratos v0: `/api/stats` 27, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 21, `/api/email-followups` 17 e `/api/proposal-followups` 19. Os pedidos mais recentes ocorreram em 2026-07-20T12:59:25Z. A depreciação não destrutiva é, portanto, o único avanço seguro da Tarefa 19 neste momento.
 
 Os gates de conclusão continuam fechados pela realidade externa e temporal: paridade real falsa e conflitos sem resolução/aceitação; validação da amostra pelo owner; políticas oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore real; staging final no proxy/TLS; soak/cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Retirar v0 quebraria tráfego observado. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado nem criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-20T14:15:56Z
+
+A retoma começou no `HEAD` sincronizado `33beead879b6f422cf6bae141fe0a7cf11864896`, na branch esperada, e preservou a criação staged de `tests/__init__.py`. O ficheiro torna o package de testes explícito para impedir que um package externo com o mesmo nome esconda os helpers CRM. A alteração passou Ruff, compileall, diff check e a suite completa antes de ser commitada atomicamente como `b13a157291f6c487987fd72c0711d3e12f3f2461` (`test: make repository tests an explicit package`) e publicada em `origin/feat/crm-accounts-proposals-v1`.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55505`, explicitamente marcado para testes:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 956 passed, 1 skipped em 112.43s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python e no ficheiro preservado, compileall e diff checks: passed
+```
+
+O PR `#1` aponta para `b13a157`, continua draft, mergeable e sem reviews, checks, deployments ou environments GitHub. O único Codespace técnico continua em `Shutdown`, sincronizado e limpo. A produção permanece no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up` e o dashboard legado devolvem `200`, as novas páginas/APIs devolvem `404` e as seis APIs v0 acompanhadas devolvem `200`.
+
+O host live mantém filesystem a 87%, 3.231.012 KiB livres, 3.915 MiB de RAM total, 1.608 MiB disponíveis e 1.452 MiB de swap em uso. Não existem bases CRM/leads nem timers de backup CRM observáveis. A telemetria estruturada das últimas 48 horas confirmou tráfego GET `2xx` não-curl ativo nos seis contratos v0: `/api/stats` 31, `/api/portfolio` 8, `/api/recommendations` 8, `/api/outreach-followups` 23, `/api/email-followups` 19 e `/api/proposal-followups` 21; o pedido mais recente ocorreu em 2026-07-20T14:04:21Z.
+
+A implementação até à Tarefa 18 permanece verde e a depreciação não destrutiva é o único avanço seguro da Tarefa 19. Os gates de conclusão continuam materialmente fechados: paridade real falsa e conflitos sem resolução/aceitação; validação da amostra pelo owner; políticas oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore real; staging final no proxy/TLS; soak/cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Retirar v0 quebraria tráfego observado e improvisar PostgreSQL no host partilhado violaria capacidade, isolamento, restore e rollback. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado nem criação de `.hermes/crm-revamp-complete.json`.
