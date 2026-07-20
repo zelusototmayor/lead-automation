@@ -146,7 +146,14 @@ async def add_security_headers(request: Request, call_next):
     )
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     if request.url.path.startswith(
-        ("/api/", "/contas", "/propostas", "/inteligencia", "/operacoes")
+        (
+            "/api/",
+            "/leads",
+            "/contas",
+            "/propostas",
+            "/inteligencia",
+            "/operacoes",
+        )
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -236,7 +243,7 @@ async def readiness_check():
 )
 async def dashboard(request: Request):
     if crm is None and get_feature_flags().accounts_read_model == "postgres":
-        return RedirectResponse("/contas")
+        return RedirectResponse("/leads")
     return templates.TemplateResponse(
         request,
         "logistics.html",

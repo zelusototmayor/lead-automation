@@ -14,6 +14,33 @@ class EvidenceReference(BaseModel):
     occurred_at: datetime
 
 
+class LeadSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    account_id: UUID | None
+    company: str
+    contact_name: str | None
+    email: str | None
+    phone: str | None
+    stage: str
+    source_stage: str | None
+    priority: str | None
+    proposal_count: int = Field(ge=0)
+    next_action: str | None
+    next_action_due_at: datetime | None
+    updated_at: datetime
+
+
+class LeadPage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    items: tuple[LeadSummary, ...]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+
+
 class AccountSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 

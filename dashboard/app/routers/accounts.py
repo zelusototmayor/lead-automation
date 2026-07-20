@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, true
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
@@ -20,6 +20,8 @@ from dashboard.app.schemas.accounts import (
     AccountPage,
     AccountSummary,
     EvidenceReference,
+    LeadPage,
+    LeadSummary,
 )
 from dashboard.app.security import CRMPrincipal, require_crm_principal
 from src.crm.persistence.models import (
@@ -27,6 +29,7 @@ from src.crm.persistence.models import (
     Activity,
     Contact,
     EmailMessage,
+    Lead,
     Meeting,
     Proposal,
     Task,
@@ -265,6 +268,115 @@ def _account_or_404(context: AccountRequestContext, account_id: UUID):
     if row is None:
         raise HTTPException(status_code=404, detail="Account not found")
     return row
+
+
+def _lead_statement(workspace_id: UUID):
+    proposal_count = (
+        select(func.count(Proposal.id))
+        .where(
+            Proposal.workspace_id == workspace_id,
+            Proposal.lead_id == Lead.id,
+        )
+        .correlate(Lead)
+        .scalar_subquery()
+    )
+    next_task = (
+        select(Task.title, Task.due_at)
+        .where(
+            Task.workspace_id == workspace_id,
+            Task.account_id == Lead.account_id,
+            Task.status.in_(("open", "in_progress")),
+        )
+        .order_by(Task.due_at.asc().nulls_last(), Task.id.asc())
+        .limit(1)
+        .lateral()
+    )
+    return (
+        select(
+            Lead.id,
+            Lead.account_id,
+            func.coalesce(Account.display_name, "Sem conta").label("company"),
+            Contact.full_name.label("contact_name"),
+            Contact.primary_email.label("email"),
+            Contact.phone,
+            Lead.stage,
+            Lead.source_stage_raw.label("source_stage"),
+            Lead.priority,
+            proposal_count.label("proposal_count"),
+            next_task.c.title.label("next_action"),
+            next_task.c.due_at.label("next_action_due_at"),
+            Lead.updated_at,
+        )
+        .outerjoin(
+            Account,
+            (Account.workspace_id == Lead.workspace_id)
+            & (Account.id == Lead.account_id),
+        )
+        .outerjoin(
+            Contact,
+            (Contact.workspace_id == Lead.workspace_id)
+            & (Contact.id == Lead.contact_id),
+        )
+        .outerjoin(next_task, true())
+        .where(Lead.workspace_id == workspace_id)
+    )
+
+
+@router.get("/api/v1/leads", response_model=LeadPage)
+def list_leads(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> LeadPage:
+    workspace_id = context.principal.workspace_id
+    total = context.session.scalar(
+        select(func.count(Lead.id)).where(Lead.workspace_id == workspace_id)
+    )
+    rows = context.session.execute(
+        _lead_statement(workspace_id)
+        .order_by(
+            Lead.highest_stage_rank.desc(),
+            Account.display_name.asc().nulls_last(),
+            Lead.id.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return LeadPage(
+        items=tuple(
+            LeadSummary(
+                id=row.id,
+                account_id=row.account_id,
+                company=row.company,
+                contact_name=row.contact_name,
+                email=str(row.email) if row.email is not None else None,
+                phone=row.phone,
+                stage=row.stage,
+                source_stage=row.source_stage,
+                priority=row.priority,
+                proposal_count=row.proposal_count,
+                next_action=row.next_action,
+                next_action_due_at=row.next_action_due_at,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ),
+        total=total or 0,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/leads", response_class=HTMLResponse)
+def leads_page(
+    request: Request,
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+):
+    return templates.TemplateResponse(
+        request,
+        "leads/index.html",
+        {"request": request, "subject": context.principal.subject},
+    )
 
 
 @router.get("/api/v1/accounts", response_model=AccountPage)

@@ -52,6 +52,35 @@ def test_accounts_list_is_workspace_scoped_paginated_and_aggregate_only(
     assert str(ids["foreign_account_id"]) not in serialized
 
 
+def test_leads_list_exposes_operational_rows_for_the_workspace(account_api_fixture):
+    client, _ids = account_api_fixture
+
+    response = client.get("/api/v1/leads", params={"limit": 100, "offset": 0})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["limit"] == 100
+    assert body["offset"] == 0
+    assert body["items"] == [
+        {
+            "id": body["items"][0]["id"],
+            "account_id": body["items"][0]["account_id"],
+            "company": "Acme Transport",
+            "contact_name": "Ana Silva",
+            "email": "ana@example.test",
+            "phone": None,
+            "stage": "meeting_held",
+            "source_stage": None,
+            "priority": None,
+            "proposal_count": 1,
+            "next_action": "Call buyer",
+            "next_action_due_at": "2026-07-16T10:00:00Z",
+            "updated_at": body["items"][0]["updated_at"],
+        }
+    ]
+
+
 def test_request_input_cannot_select_a_different_workspace(account_api_fixture):
     client, ids = account_api_fixture
 

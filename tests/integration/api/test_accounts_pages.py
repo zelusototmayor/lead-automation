@@ -30,6 +30,26 @@ def test_accounts_index_page_has_loading_empty_error_and_mobile_contract(
     assert 'href="/inteligencia"' in response.text
 
 
+def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixture):
+    client, _ = account_api_fixture
+
+    response = client.get("/leads")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert 'name="viewport"' in response.text
+    assert 'data-state="loading"' in response.text
+    assert 'data-state="empty"' in response.text
+    assert 'data-state="error"' in response.text
+    assert 'data-leads-list' in response.text
+    assert 'data-lead-search' in response.text
+    assert 'data-stage-filter' in response.text
+    assert "/static/leads.js" in response.text
+    assert "Empresa / contacto" in response.text
+    assert "Estado" in response.text
+    assert "Próxima ação" in response.text
+
+
 def test_account_detail_page_is_separate_and_does_not_embed_rich_data(
     account_api_fixture,
 ):

@@ -283,7 +283,7 @@ def test_dashboard_warns_that_protected_legacy_ui_is_read_only_without_exposing_
     assert CSRF_TOKEN not in response.text
 
 
-def test_dashboard_redirects_to_accounts_when_legacy_ui_is_unavailable(
+def test_dashboard_redirects_to_leads_when_legacy_ui_is_unavailable(
     monkeypatch,
 ):
     monkeypatch.setenv("CRM_DB_ENABLED", "true")
@@ -301,7 +301,7 @@ def test_dashboard_redirects_to_accounts_when_legacy_ui_is_unavailable(
     )
 
     assert response.status_code == 307
-    assert response.headers["location"] == "/contas"
+    assert response.headers["location"] == "/leads"
 
 
 def test_protected_dashboard_disables_every_write_trigger():
