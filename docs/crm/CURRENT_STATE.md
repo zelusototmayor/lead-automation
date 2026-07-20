@@ -1972,3 +1972,33 @@ A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, 
 O host live continua sem base/container/timer de backup CRM observável e inadequado para improvisar PostgreSQL canónico: filesystem a 87%, 3.249.508 KiB livres, 3.915 MiB de RAM total, 270 MiB livres e 1.052 MiB de swap em uso no probe atual. Em 1.947 registos JSON parseáveis do `kamal-proxy` nas últimas 48 horas foram observados pedidos `2xx` ativos em `/api/stats` (1), `/api/outreach-followups` (2), `/api/email-followups` (2) e `/api/proposal-followups` (2), com os últimos pedidos em 2026-07-19T16:48Z. A janela atual não contém portfolio/recommendations, mas janelas anteriores continham consumidores e não existe qualquer release pós-cutover.
 
 A primeira tarefa formalmente incompleta permanece a Tarefa 19. Os gates anteriores de dados e cutover continuam fechados: paridade real falsa e conflitos sem resolução ou aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore real; smoke no proxy/TLS final; soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria os gates explícitos do plano; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-19T20:25:08Z
+
+A retoma começou no `HEAD` limpo e sincronizado `9ec148304ee1c1d670f690e96ee5e69fa41bb233`, na branch esperada. O plano canónico, `CURRENT_STATE.md`, commits, staged/unstaged work, testes, migrations, processos, containers, PR, Codespace, produção, telemetria e rollback foram reinspecionados antes de qualquer alteração. Não existia trabalho local por preservar nem processos de worker CRM, reconciler ou outbox publisher ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Três PostgreSQL 16 descartáveis exclusivos foram criados em loopback, explicitamente marcados para testes e removidos no fim. A primeira tentativa de suite incluiu o diretório inexistente `tests/contract` e terminou antes da coleção; a segunda começou sobre uma base vazia e confirmou a pré-condição operacional de migrations. A invocação corrigida aplicou `upgrade head` antes dos testes e passou.
+
+A auditoria do harness encontrou módulos de integração antigos que aceitavam qualquer URL `postgresql+psycopg` quando executados isoladamente. Foi observado RED num subprocesso de coleção com um destino remoto/production-shaped (`returncode=0`). O novo `tests/conftest.py` reutiliza o guard existente antes da coleção de toda a suite; o mesmo teste passou depois da correção e o harness agora exige simultaneamente driver exato, loopback, nome de base contendo `test` e `CRM_DISPOSABLE_TEST_DATABASE=1`, sem revelar a URL rejeitada. A suite completa foi repetida após esta alteração:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 953 passed, 1 skipped em 110.42s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff check e Gitleaks: passed; 0 leaks em 86 commits
+Imagem local: sha256:f3eb4c0b86d2e870e8b3825b5a410d8b9e4e46a983aebd3d6bf69f82430304d6
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+Cleanup: PostgreSQL, dumps, base de restore, container de smoke e imagem removidos; portas 55493, 55494, 55495 e 58018 livres
+```
+
+O export read-only preservado fora do repositório foi verificado sem ler ou imprimir conteúdo: mode `0600`, 502.197 bytes e SHA-256 `f3a92324fc8aa3a9e187e67f2eb8cc0ac1fb5e2dc2bf5d8b12278a89ea74f9e1`.
+
+A descoberta externa permaneceu read-only. O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks, deployments ou environments GitHub. O único Codespace técnico está em `Shutdown`, sincronizado e limpo. Desde o ensaio isolado de staging `e151925`, a aplicação, migrations, configuração, templates e imagem não mudaram; o delta posterior limita-se à documentação e ao guard do harness de testes.
+
+Produção respondeu `/up=200`, dashboard legado `200`, seis APIs v0 acompanhadas `200` e todas as novas páginas/APIs `404`, coerente com o build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. Essa imagem continua disponível localmente no host como rollback. O host live mantém filesystem a 87%, 3.248.864 KiB livres, 3.915 MiB de RAM total, 1.169 MiB disponíveis, 1.050 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM. Em 2.575 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` ativos em `/api/stats` (1), `/api/outreach-followups` (2), `/api/email-followups` (2) e `/api/proposal-followups` (2), com os últimos pedidos em 2026-07-19T16:48Z. Não existiam processos canónicos de worker/reconciler/outbox.
+
+A implementação até à Tarefa 18 permanece verde, mas a Tarefa 19 e a conclusão global continuam bloqueadas pelos gates explícitos do plano: paridade real falsa e conflitos sem resolução ou aceitação; validação da amostra pelo owner; decisões oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; staging persistente no proxy/TLS final; soak e cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. A autorização autónoma não cria evidência humana ou temporal e não torna seguro improvisar PostgreSQL no host partilhado sob pressão de capacidade. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação do sentinel.
