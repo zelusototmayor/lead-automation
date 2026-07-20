@@ -214,6 +214,42 @@ def test_runner_records_minimized_reconciliation_run_in_same_transaction(engine)
         assert run.finished_at >= run.started_at
 
 
+def test_runner_records_window_from_previous_high_watermark(engine):
+    from src.crm.ingestion.reconciler import ConnectorRunConfig, run_connector_page
+
+    workspace_id = _workspace(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    first_at = datetime(2026, 7, 16, 10, tzinfo=UTC)
+    second_at = datetime(2026, 7, 16, 12, tzinfo=UTC)
+    source = FakeSource(
+        [
+            _page("cursor-1", _event("window-first", first_at)),
+            _page("cursor-2", _event("window-second", second_at)),
+        ]
+    )
+    config = ConnectorRunConfig(
+        workspace_id=workspace_id,
+        connector="gmail",
+        source_scope="mailbox:commercial",
+        stream="messages",
+    )
+
+    run_connector_page(factory, source, config)
+    run_connector_page(factory, source, config)
+
+    with Session(engine) as session:
+        runs = tuple(
+            session.scalars(
+                select(ReconciliationRun)
+                .where(ReconciliationRun.workspace_id == workspace_id)
+                .order_by(ReconciliationRun.started_at, ReconciliationRun.id)
+            )
+        )
+    assert len(runs) == 2
+    assert runs[1].window_start_at == first_at
+    assert runs[1].window_end_at == second_at
+
+
 def test_runner_serializes_same_checkpoint_before_fetching_next_page(engine):
     from src.crm.ingestion.reconciler import ConnectorRunConfig, run_connector_page
 
@@ -252,7 +288,7 @@ def test_runner_serializes_same_checkpoint_before_fetching_next_page(engine):
         assert checkpoint.cursor_encrypted == "cursor-2"
 
 
-def test_runner_rolls_back_events_and_checkpoint_when_crashing_before_commit(engine):
+def test_runner_rolls_back_events_and_checkpoint_but_records_failed_run(engine):
     from src.crm.ingestion.reconciler import ConnectorRunConfig, run_connector_page
 
     workspace_id = _workspace(engine)
@@ -290,11 +326,13 @@ def test_runner_rolls_back_events_and_checkpoint_when_crashing_before_commit(eng
             )
             is None
         )
-        assert (
-            session.scalar(
-                select(ReconciliationRun).where(
-                    ReconciliationRun.workspace_id == workspace_id
-                )
+        run = session.scalar(
+            select(ReconciliationRun).where(
+                ReconciliationRun.workspace_id == workspace_id
             )
-            is None
         )
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_count == 1
+        assert run.report == {"error": 1}
+        assert run.finished_at is not None
