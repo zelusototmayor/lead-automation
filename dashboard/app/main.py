@@ -235,6 +235,8 @@ async def readiness_check():
     dependencies=[Depends(require_crm_principal)],
 )
 async def dashboard(request: Request):
+    if crm is None and get_feature_flags().accounts_read_model == "postgres":
+        return RedirectResponse("/contas")
     return templates.TemplateResponse(
         request,
         "logistics.html",

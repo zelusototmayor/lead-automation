@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
 from dashboard.app.config import get_principal_settings, get_settings
+from dashboard.app.feature_flags import get_feature_flags
 
 
 WRITE_TOKEN = "write-token-for-tests"
@@ -126,9 +127,11 @@ def configured_security(monkeypatch):
     monkeypatch.setenv("CRM_PRINCIPAL_IS_ADMIN", "true")
     get_settings.cache_clear()
     get_principal_settings.cache_clear()
+    get_feature_flags.cache_clear()
     yield
     get_settings.cache_clear()
     get_principal_settings.cache_clear()
+    get_feature_flags.cache_clear()
 
 
 @pytest.mark.parametrize("path", WRITE_PATHS)
@@ -278,6 +281,27 @@ def test_dashboard_warns_that_protected_legacy_ui_is_read_only_without_exposing_
     assert "canal autenticado no servidor" in response.text.lower()
     assert WRITE_TOKEN not in response.text
     assert CSRF_TOKEN not in response.text
+
+
+def test_dashboard_redirects_to_accounts_when_legacy_ui_is_unavailable(
+    monkeypatch,
+):
+    monkeypatch.setenv("CRM_DB_ENABLED", "true")
+    monkeypatch.setenv("CRM_ACCOUNTS_READ_MODEL", "postgres")
+    monkeypatch.setenv("CRM_PROPOSALS_READ_MODEL", "postgres")
+    monkeypatch.setenv("CRM_COMMAND_WRITER", "sheet")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://crm@localhost/crm")
+    monkeypatch.setattr(dashboard_main, "crm", None)
+    get_feature_flags.cache_clear()
+
+    response = TestClient(dashboard_main.app).get(
+        "/",
+        auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD),
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/contas"
 
 
 def test_protected_dashboard_disables_every_write_trigger():

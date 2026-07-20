@@ -2271,3 +2271,29 @@ Compare: parity=false, 1 account e 1 lead em falta, 39 conflitos, 0 stage/accoun
 Foi instalado um timer diário de backup custom-format com retenção local de sete dias. O arquivo pós-import foi restaurado numa base aleatória e validado com PostgreSQL 16, schema `0007`, um workspace, todas as tabelas/constraints/indexes exigidas, zero violações e zero órfãos; a base de restore foi removida. Este backup local de staging não substitui backup off-host de produção.
 
 Produção, Sheet e contratos v0 permaneceram inalterados; não foram ativados conectores, workers, outbox, Agent ingress, command writer PostgreSQL ou cutover. Os gates materiais restantes são a resolução/aceitação dos conflitos e paridade falsa, validação humana da amostra, políticas oficiais de `Won` e retenção/scopes, mapping final de produção, backup off-host, soak, cutover faseado, dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders.
+
+---
+
+## Verificação do staging persistente em 2026-07-20T18:19:06Z
+
+A retoma começou no `HEAD` limpo e sincronizado `8c70a591058ba249d8e14ab791871f688d273c1e`, na branch esperada. O plano canónico, este documento, commits, staged/unstaged work, suite, migrations, processos, containers, PR e staging foram reinspecionados. Não existia trabalho local por preservar nem processos de worker CRM, reconciler, outbox publisher ou jobs outbound ativos. Os containers PostgreSQL locais preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 956 passed, 1 skipped em 110.28s, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 101 commits
+```
+
+O staging persistente foi atualizado para uma imagem amd64 construída do SHA exato `8c70a591058ba249d8e14ab791871f688d273c1e`, com image ID remoto `sha256:13b363bf694ac9db84f2ab9f2268eab70c62cccade2b3472f5782b1b57c14e38`. A imagem anterior `36a91fa` permaneceu disponível para rollback. PostgreSQL e aplicação ficaram `healthy`, sem restarts; uma amostra de recursos observou cerca de 83 MiB para a aplicação e 66 MiB para PostgreSQL dentro dos limites de 512 MiB.
+
+O smoke no proxy/TLS final confirmou `/up=200`, rich reads sem credenciais em `401`, Agent ingress por POST desativado em `404`, e Contas, Propostas, Inteligência, Operações e APIs v1 autenticadas em `200` com `Cache-Control: no-store`. O browser smoke Playwright carregou as quatro áreas autenticadas sem erros de consola. Um soak monitorizado de `2026-07-20T17:49:11Z` a `2026-07-20T18:19:06Z` executou 360 pedidos autenticados, manteve aplicação e PostgreSQL healthy e encontrou zero linhas de erro/exception/traceback no log.
+
+O dump custom-format de staging foi copiado off-host para `/Users/max/.hermes/profiles/marketing-max/backups/crm/staging/crm-staging-20260720T173130Z.dump`, com mode `0600`, 195.355 bytes e SHA-256 `910bec28d47d8889b114ae6f5690ea7b68d3579416897e5e8fc74170ad8a5597`. O arquivo exato foi restaurado num segundo PostgreSQL 16 descartável e validado com schema `0007`, 15 tabelas, um workspace e zero violações. O timer diário local do host continua ativo; esta cópia manual off-host ainda não equivale a uma política automática off-host de produção.
+
+As invariantes agregadas do staging permanecem verdes: zero leads com rank 40+ sem account, zero zeros sintéticos em propostas `missing`, zero eventos failed/dead-letter e zero outbox pendente. Foram preparados dois CSVs privados mode `0600` fora do repositório, em `/Users/max/.hermes/profiles/marketing-max/backups/crm/review/`, com 46 linhas de contas e 44 propostas para validação do owner; a engenharia não marcou essa validação humana como concluída.
+
+A implementação e o staging técnico estão verdes, mas o plano global não está completo. A comparação real continua `parity=false` com conflitos não resolvidos/aceites; faltam a validação comercial da amostra, política oficial de `Won` e retenção/scopes, mapping final de produção, PostgreSQL de produção com backup automático off-host e restore real, cutover e soak de produção. A Tarefa 19 exige depois dois releases estáveis, telemetria sem consumidores v0 e aceitação dos stakeholders. Estes gates humanos, de produção e temporais não podem ser fabricados pela autorização autónoma. Produção e Sheet permaneceram inalteradas, e o sentinel não foi criado.
