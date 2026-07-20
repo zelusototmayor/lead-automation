@@ -2297,3 +2297,31 @@ O dump custom-format de staging foi copiado off-host para `/Users/max/.hermes/pr
 As invariantes agregadas do staging permanecem verdes: zero leads com rank 40+ sem account, zero zeros sintéticos em propostas `missing`, zero eventos failed/dead-letter e zero outbox pendente. Foram preparados dois CSVs privados mode `0600` fora do repositório, em `/Users/max/.hermes/profiles/marketing-max/backups/crm/review/`, com 46 linhas de contas e 44 propostas para validação do owner; a engenharia não marcou essa validação humana como concluída.
 
 A implementação e o staging técnico estão verdes, mas o plano global não está completo. A comparação real continua `parity=false` com conflitos não resolvidos/aceites; faltam a validação comercial da amostra, política oficial de `Won` e retenção/scopes, mapping final de produção, PostgreSQL de produção com backup automático off-host e restore real, cutover e soak de produção. A Tarefa 19 exige depois dois releases estáveis, telemetria sem consumidores v0 e aceitação dos stakeholders. Estes gates humanos, de produção e temporais não podem ser fabricados pela autorização autónoma. Produção e Sheet permaneceram inalteradas, e o sentinel não foi criado.
+
+---
+
+## Retoma autónoma e lista operacional de Leads em 2026-07-20T19:00:42Z
+
+A retoma começou no `HEAD` limpo e sincronizado `9b1aec0a030ff8665a1e9456d3e6cda62cca2449`, na branch esperada. O plano canónico, este documento, commits, staged/unstaged work, suite, migrations, processos, containers, PR, staging, produção, backup e telemetria foram reinspecionados antes da alteração. O trabalho intermédio encontrado durante a execução foi preservado e fechado em dois commits atómicos: `0e71274c0a3cea230700a26cbc2e0eba8b0dc687` (`feat: add compact operational leads list`) e `8e71ae751746d7c2301d087f1f76ae56e721a7b6` (`fix: expose lead progress in operational list`).
+
+O novo `GET /api/v1/leads` é protegido pela mesma dependency server-side e pelo mesmo scope de workspace das Contas, pagina a um máximo de 100 registos e devolve apenas os campos operacionais necessários. `GET /leads` apresenta pesquisa local, filtro de estado, estados loading/empty/error, empresa/contacto, fase, contagem de propostas, atualização, próxima ação e ligação para a conta. Quando o adapter legado está indisponível e os reads de Contas usam PostgreSQL, `/` encaminha para `/leads` em vez de servir um dashboard legado sem dados. A página e a API mantêm `Cache-Control: no-store`.
+
+O RED válido foi observado enquanto o tracer bullet estava incompleto: o teste da API recebeu `404` em `/api/v1/leads`; depois da implementação, o teste da página encontrou `TemplateNotFound: leads/index.html`. O candidato completo passou:
+
+```text
+Suite segura completa no SHA final 8e71ae7, com DeprecationWarning como erro: 959 passed, 1 skipped em 114,12 s, exit 0
+Regressão focada pós-commit no SHA 8e71ae7: 77 passed, exit 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Ruff nos ficheiros alterados, node --check, compileall, git diff --check e Gitleaks: passed
+Restore do dump off-host de staging: schema 0007, 15 tabelas, 1 workspace, 0 violações
+```
+
+O staging persistente foi atualizado para a imagem `crm-staging:8e71ae7`, image ID `sha256:e7863ee20fe57398b8f7a537a2f46791bc50f7090e1156c3c42596bfcf007312`, e permaneceu healthy sem restarts. O smoke autenticado no proxy/TLS confirmou `200` em Leads, Contas, Propostas, Inteligência, Operações e APIs v1, todos com `no-store`; a API devolveu 65 leads, 46 contas e 44 propostas. O browser Playwright seguiu `/` até `/leads`, renderizou 65 linhas, quatro colunas e 46 ligações para contas, sem erros de consola ou requests falhados. Um soak adicional do SHA exato executou 90 pedidos a `/up`, `/leads` e `/api/v1/leads`, com 90 sucessos, zero falhas, zero restarts e health verde.
+
+As invariantes agregadas de staging permanecem verdes: 46 contas, 46 contactos, 65 leads, 44 propostas e 44 versões; zero leads com rank 40+ sem conta; zero valores sintéticos em propostas `missing`; zero eventos failed/dead-letter; zero outbox pendente. O timer diário de backup de staging está ativo. A cópia off-host mode `0600`, com 195.355 bytes e SHA-256 `910bec28d47d8889b114ae6f5690ea7b68d3579416897e5e8fc74170ad8a5597`, foi novamente restaurada e validada num PostgreSQL 16 descartável.
+
+Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/` e `/up` devolvem `200`, as novas páginas/APIs devolvem `404` e os contratos v0 continuam ativos. A telemetria normalizada das últimas 48 horas, excluindo `curl`, observou pedidos `2xx` em `/api/stats` (14), `/api/portfolio` (1), `/api/recommendations` (1), `/api/outreach-followups` (12), `/api/email-followups` (11) e `/api/proposal-followups` (12), com tráfego até `2026-07-20T18:39:09Z`.
+
+O candidato local, o staging e o rollback técnico permanecem verdes, mas os gates de conclusão continuam materialmente fechados: `parity=false` e conflitos sem resolução/aceitação; validação da amostra pelo owner; políticas oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção com backup automático off-host e restore real; cutover e soak de produção. A retirada v0 exige ainda dois releases pós-cutover, ausência comprovada de consumidores e aceitação dos stakeholders. Não houve merge, deploy de produção, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
