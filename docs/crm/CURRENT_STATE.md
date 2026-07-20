@@ -2246,3 +2246,28 @@ O export read-only preservado fora do repositório continua mode `0600`, com 502
 A descoberta live permaneceu read-only. Produção continua no container saudável pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/` e `/up` devolvem `200`, as novas páginas/APIs devolvem `404` e as seis APIs v0 acompanhadas devolvem `200`. O host tem agora cerca de 12,3 GB livres no filesystem, 1,8 GB de RAM disponível e 912 MB de swap em uso, mas continua sem base CRM identificável e sem timer de backup CRM. A melhoria de capacidade não satisfaz isolamento, PostgreSQL 16, backup/restore real, staging final ou rollback. A telemetria estruturada das últimas 48 horas continua a mostrar consumo v0 não-probe em `/api/stats` (2 pedidos às `2026-07-20T17:15Z`); portanto não existe evidência de ausência de consumidores.
 
 A implementação até à Tarefa 18 e a depreciação não destrutiva da Tarefa 19 permanecem verdes. A retirada do legado e a conclusão global continuam materialmente bloqueadas por paridade real falsa, conflitos sem resolução/aceitação, validação da amostra pelo owner, políticas oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore real, staging final no proxy/TLS, soak/cutover, dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado nem criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Staging persistente iniciado em 2026-07-20T17:32:21Z
+
+Após autorização explícita, os workloads antigos aprovados foram removidos do host e a capacidade foi revalidada em cerca de 12 GB livres, 52% de filesystem utilizado. As aplicações preservadas continuaram ativas e os seus objetos de imagem permaneceram disponíveis; uma imagem/container de rollback foi mantida para IPIIA, Leads Dashboard e Portfolio.
+
+Foi criado staging logicamente isolado na mesma droplet, sem alterar o serviço de produção `leads-dashboard-web`: PostgreSQL 16 dedicado em `crm-postgres-staging`, rede e volume próprios, bind apenas em loopback, limites de 0,5 CPU/512 MiB e secrets mode `0600`; aplicação `crm-staging-web` com a imagem amd64 construída do código de `36a91fae9a1542778c7ff1a557ebcbb1d7836862`, também limitada a 0,5 CPU/512 MiB. O staging foi publicado com TLS em `https://chat.zelusottomayor.com`, reaproveitando o hostname do N8N retirado. Nenhuma credencial Google foi montada. Os reads de Contas e Propostas usam PostgreSQL; writer permanece `sheet`, projeção Sheets e Agent ingress permanecem desligados.
+
+As migrations aplicaram `base -> 0007`; `alembic current` devolveu `0007 (head)` e `alembic check` não detetou operações pendentes. Foi criado exatamente um workspace de staging. O smoke público confirmou `/up=200`, rotas protegidas sem ou com credenciais erradas em `401`, Contas/Propostas/Inteligência/Operações e APIs v1 autenticadas em `200`, `Cache-Control: no-store`, Agent ingress em `404` e zero linhas de erro de aplicação.
+
+O export read-only preservado foi transformado numa snapshot canónica mode `0600`, com os grupos fallback documentados. A snapshot observada contém 1.247 linhas de input, 1.202 linhas elegíveis, 12 identidades duplicadas e 21 linhas sem identidade. Os backfills foram aplicados exclusivamente ao staging e repetidos com input idêntico:
+
+```text
+Accounts apply #1: 65 imports, 46 accounts criadas/associadas, 52 conflitos
+Accounts apply #2: 0 imports, 65 replay no-op
+Proposals apply #1: 44 imports, 4 contas sem correspondência, 37 conflitos
+Proposals apply #2: 0 imports, 44 replay no-op
+Persistido: 46 accounts, 46 contacts, 65 leads, 44 proposals e 44 proposal_versions
+Compare: parity=false, 1 account e 1 lead em falta, 39 conflitos, 0 stage/account/source-field mismatches
+```
+
+Foi instalado um timer diário de backup custom-format com retenção local de sete dias. O arquivo pós-import foi restaurado numa base aleatória e validado com PostgreSQL 16, schema `0007`, um workspace, todas as tabelas/constraints/indexes exigidas, zero violações e zero órfãos; a base de restore foi removida. Este backup local de staging não substitui backup off-host de produção.
+
+Produção, Sheet e contratos v0 permaneceram inalterados; não foram ativados conectores, workers, outbox, Agent ingress, command writer PostgreSQL ou cutover. Os gates materiais restantes são a resolução/aceitação dos conflitos e paridade falsa, validação humana da amostra, políticas oficiais de `Won` e retenção/scopes, mapping final de produção, backup off-host, soak, cutover faseado, dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders.
