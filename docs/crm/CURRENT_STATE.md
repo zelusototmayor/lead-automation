@@ -2172,3 +2172,27 @@ A produção permanece no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119ed
 O host live mantém filesystem a 87%, 3.230.712 KiB livres, 3.915 MiB de RAM total, 1.636 MiB disponíveis, PostgreSQL 17.7 sem base CRM/leads, zero containers CRM e zero timers de backup CRM observáveis. Em 12.788 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `2xx` não-curl ativos nos seis contratos v0: `/api/stats` 30, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 23, `/api/email-followups` 19 e `/api/proposal-followups` 21. Os pedidos mais recentes ocorreram entre `2026-07-20T12:12:54Z` e `2026-07-20T14:04:21Z`.
 
 A primeira tarefa formalmente incompleta permanece a Tarefa 19. O gate da própria tarefa proíbe retirar contratos com consumidores observados e exige dois releases pós-cutover, export e aceitação. Os gates anteriores de dados e cutover também continuam fechados por paridade real falsa, conflitos sem resolução/aceitação, falta de validação da amostra pelo owner, políticas oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, staging final no proxy/TLS, soak e cutover. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria gates explícitos do plano; nenhuma dessas ações foi executada.
+
+---
+
+## Retoma autónoma em 2026-07-20T15:21:00Z
+
+A retoma começou no `HEAD` limpo e sincronizado `178e77d4f2b244add5397af465e0eb26ba8dcdec`, na branch esperada. Foram reinspecionados o plano canónico, este documento, commits, migrations, PR, Codespace, processos e containers antes de qualquer ação. Não existia trabalho staged, unstaged ou untracked nem processos CRM de worker, reconciler ou outbox publisher. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+A suite sem `DATABASE_URL` passou com `738 passed, 219 skipped`. A primeira invocação com PostgreSQL falhou por erro de preparação do operador: a base descartável estava vazia e as fixtures de API encontraram `relation "workspaces" does not exist`. A base foi removida e o comando correto foi repetido numa instância PostgreSQL 16 descartável exclusiva em `127.0.0.1:55521`, explicitamente marcada para testes, depois de `alembic upgrade head`:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 956 passed, 1 skipped em 112.69s, exit 0
+Alembic lifecycle numa segunda base exclusiva: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff check no delta Python da branch, compileall, diff check e Gitleaks: passed; 0 leaks em 143 commits
+Imagem local exata: sha256:7e18005c1baefeca4c468a766ea8a72783d848d87653dd725e07399f1f59da8e
+Smoke com defaults: /up=200; dashboard e Contas=403; Agent ingress=404; 0 erros de aplicação no log
+Cleanup: bases, dump, containers, imagem e portas 55520-55522/58030 removidos ou livres
+```
+
+O PR `#1` continua draft, mergeable e `CLEAN`, no SHA exato da branch, sem reviews nem checks. O Codespace técnico permanece em `Shutdown`, sincronizado e limpo. A verificação HTTP live confirmou que produção continua no build pré-revamp: `/` e `/up` devolvem `200`, as novas rotas `/contas`, `/propostas`, `/inteligencia` e `/api/v1/accounts` devolvem `404`, e os seis contratos v0 acompanhados devolvem `200`.
+
+A implementação até à Tarefa 18 e a depreciação não destrutiva da Tarefa 19 permanecem verdes. A retirada do legado e o cutover continuam proibidos pelos gates materiais já registados: não existem dois releases pós-cutover nem staging final/soak; produção não tem PostgreSQL CRM isolado com backup automático e restore real; faltam mapping final de principal/papel/workspace, políticas oficiais de `Won` e retenção/scopes, paridade real, resolução/aceitação de conflitos e validação da amostra pelo owner; os contratos v0 continuam ativos. Não houve merge, deploy, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado nem criação do sentinel.
