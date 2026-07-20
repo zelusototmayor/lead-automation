@@ -2097,3 +2097,29 @@ O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks
 O host live mantém filesystem a 87%, cerca de 3,1 GiB livres, 3,8 GiB de RAM, 966 MiB disponíveis, 972 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM observáveis. A telemetria normalizada das últimas 48 horas confirmou tráfego GET `2xx` não-curl ativo nos seis contratos v0: `/api/stats` 21, `/api/portfolio` 6, `/api/recommendations` 6, `/api/outreach-followups` 19, `/api/email-followups` 15 e `/api/proposal-followups` 17; os pedidos mais recentes ocorreram em 2026-07-20T11:13Z.
 
 A implementação até à Tarefa 18 continua verde, mas os gates de conclusão permanecem materialmente fechados: paridade real falsa e conflitos sem resolução/aceitação; validação da amostra pelo owner; política oficial de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore do arquivo real; staging final no proxy/TLS; soak e cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Retirar v0 agora quebraria tráfego observado e improvisar PostgreSQL no host partilhado violaria capacidade, isolamento, restore e rollback. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Retoma autónoma em 2026-07-20T13:18:58Z
+
+A retoma preservou a alteração unstaged em `docs/crm/MIGRATION.md` e o commit local `9e6a95ca79e8f8e53f095b4623da0da878a8cf12` (`feat: mark legacy CRM APIs deprecated`), que ainda não estava no remote. O commit não retira contratos: acrescenta `Deprecation: true` apenas a `/api/*` v0 e telemetria com route template e status, excluindo query strings, paths dinâmicos não reconhecidos, headers e payloads. Não inventa uma data `Sunset` nem altera auth, status ou body. Um RED adicional mostrou que a raiz exata `/api/v1` era indevidamente classificada como legada; o commit atómico `e5dcfa4` corrige a fronteira e mantém a raiz e os descendentes v1 fora da depreciação.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55504`, explicitamente marcado para testes:
+
+```text
+Teste focado de depreciação v0: 3 passed
+Suite segura completa com DeprecationWarning como erro: 956 passed, 1 skipped em 113.25s, exit explícito 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 92 commits
+Imagem local: manifest list sha256:fca9053296bea734ab6d595e796bdb7d1ecd55b7dd02782ee1bef3a1881c7099
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; 0 erros no log
+```
+
+A descoberta externa permaneceu read-only. Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up` e o dashboard legado devolvem `200`, enquanto as novas páginas/APIs devolvem `404`. O host mantém filesystem a 87%, cerca de 3,1 GiB livres, cerca de 1,7 GiB de RAM disponível, zero bases CRM/leads, zero containers CRM e zero timers de backup CRM. O PR `#1` permanece draft, mergeable, sem reviews, checks ou environments; o Codespace técnico continua em `Shutdown`.
+
+Em 12.602 registos JSON parseáveis das últimas 48 horas foram observados pedidos GET `2xx` não-curl ativos nos seis contratos v0: `/api/stats` 27, `/api/portfolio` 7, `/api/recommendations` 7, `/api/outreach-followups` 21, `/api/email-followups` 17 e `/api/proposal-followups` 19. Os pedidos mais recentes ocorreram em 2026-07-20T12:59:25Z. A depreciação não destrutiva é, portanto, o único avanço seguro da Tarefa 19 neste momento.
+
+Os gates de conclusão continuam fechados pela realidade externa e temporal: paridade real falsa e conflitos sem resolução/aceitação; validação da amostra pelo owner; políticas oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção isolado com backup automático e restore real; staging final no proxy/TLS; soak/cutover; dois releases pós-cutover; ausência comprovada de consumidores v0; e aceitação dos stakeholders. Retirar v0 quebraria tráfego observado. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado nem criação do sentinel.
