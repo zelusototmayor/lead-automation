@@ -2042,3 +2042,29 @@ O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks
 A descoberta live permaneceu read-only. Produção continua na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up` e o dashboard legado devolvem `200`, as novas páginas/APIs devolvem `404` e as APIs v0 acompanhadas devolvem `200`. O host mantém filesystem a 87%, 3.235.864 KiB livres, 3.915 MiB de RAM total, 997.308 KiB disponíveis, zero bases CRM/leads e zero timers de backup CRM observáveis. Em 10.182 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` não-curl ativos: `/api/stats` 14, `/api/portfolio` 5, `/api/recommendations` 5, `/api/outreach-followups` 14, `/api/email-followups` 10 e `/api/proposal-followups` 12; os pedidos mais recentes ocorreram durante esta retoma.
 
 A primeira tarefa formalmente incompleta permanece a Tarefa 19, mas remover v0 agora quebraria consumidores observados e violaria os gates de ausência de consumidores, dois releases pós-cutover e aceitação. Os gates anteriores de dados e cutover continuam fechados por paridade real falsa, conflitos sem resolução/aceitação, falta de validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, staging final no proxy/TLS, soak e cutover. A autorização autónoma não permite fabricar evidência humana/temporal nem usar o host partilhado sem capacidade e isolamento. Não houve merge, deploy, migração live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação do sentinel.
+
+---
+
+## Retoma autónoma em 2026-07-20T10:18:12Z
+
+A retoma começou no `HEAD` limpo e sincronizado `f13f61a9d743aa10a45369c7a34da93603e41a51`, na branch esperada. O plano canónico, `CURRENT_STATE.md`, commits, staged/unstaged work, suite, migrations, processos, containers, PR, Codespace, produção, capacidade e telemetria foram reinspecionados antes de qualquer mutação. Não existia trabalho local por preservar, nem processos CRM de worker, reconciler ou outbox publisher ativos. Os containers PostgreSQL preexistentes foram preservados como trabalho desconhecido.
+
+Num PostgreSQL 16 descartável exclusivo em `127.0.0.1:55501`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 953 passed, 1 skipped em 113.07s, exit explícito 0
+Alembic lifecycle: 0007 -> base -> 0007
+Alembic current: 0007 (head)
+Alembic check: No new upgrade operations detected, exit 0
+Backup custom-format restaurado: schema=0007, 15 tabelas, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, diff checks e Gitleaks: passed; 0 leaks em 89 commits
+Cleanup: container, dump e base de restore removidos; porta 55501 livre
+```
+
+O PR `#1` continua draft, mergeable, no SHA exato da branch, sem reviews, checks, deployments ou environments GitHub. O único Codespace técnico continua em `Shutdown`, sincronizado e limpo. Não existem CLIs, variáveis de credencial cloud ou configuração local observáveis para provisionar um staging final ou PostgreSQL gerido isolado. Desde o ensaio técnico de staging, a aplicação e as migrations não mudaram; o delta posterior limita-se ao guard fail-closed do harness e documentação.
+
+A descoberta live permaneceu read-only. Produção continua na imagem pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/up` e o dashboard legado devolvem `200`, as novas páginas/APIs devolvem `404` e as seis APIs v0 acompanhadas devolvem `200`. O host mantém filesystem a 87%, 3.235.244 KiB livres, 3.915 MiB de RAM total, 984 MiB disponíveis, cerca de 980 MiB de swap em uso, zero bases CRM/leads e zero timers de backup CRM observáveis.
+
+Em 10.688 registos JSON parseáveis das últimas 48 horas foram observados pedidos `2xx` não-curl ativos: `/api/stats` 18, `/api/portfolio` 5, `/api/recommendations` 5, `/api/outreach-followups` 18, `/api/email-followups` 14 e `/api/proposal-followups` 16. Os pedidos mais recentes ocorreram durante esta retoma. Retirar ou proteger v0 agora quebraria tráfego observado.
+
+A implementação até à Tarefa 18 permanece verde. A primeira tarefa formalmente incompleta é a Tarefa 19, mas os gates anteriores de dados e cutover continuam fechados por paridade real falsa, conflitos sem resolução/aceitação, falta de validação da amostra pelo owner, decisões oficiais de `Won` e retenção/scopes, mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático e restore do arquivo real, staging final no proxy/TLS, soak e cutover. A retirada do legado exige ainda dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Fazer merge, deploy, migração live, cutover, retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado violaria gates explícitos do plano; nenhuma dessas ações foi executada.
