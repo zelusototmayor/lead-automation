@@ -226,12 +226,16 @@ def test_update_proposal_pipeline_rolls_back_when_outbox_enqueue_fails(
         proposal_operation_service, "enqueue_outbox_event", fail_enqueue
     )
 
-    with pytest.raises(RuntimeError, match="forced outbox failure"):
-        client.post(
-            f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
-            json=_payload(command_id),
-            headers=_headers(command_id),
-        )
+    response = client.post(
+        f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
+        json=_payload(command_id),
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert "forced outbox failure" not in response.text
+    assert response.headers["cache-control"] == "no-store"
 
     with Session(engine) as session:
         proposal = session.get(Proposal, proposal_id)

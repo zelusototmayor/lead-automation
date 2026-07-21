@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -44,6 +46,7 @@ APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Lisbon")
 CALLBACK_CALENDAR_ID = os.getenv("CALLBACK_CALENDAR_ID", "")
 
 crm: PTLogisticsCRM | None = None
+_crm_initialization_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 
@@ -70,31 +73,32 @@ def today_local() -> date:
     return datetime.now(ZoneInfo(APP_TIMEZONE)).date()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global crm
-    flags = get_feature_flags()
-    crm = None
-    legacy_adapter_required = (
+def _legacy_adapter_required(flags) -> bool:
+    return (
         flags.accounts_read_model != "postgres"
         or flags.proposals_read_model != "postgres"
         or flags.command_writer == "sheet"
         or flags.sheets_projection_enabled
     )
-    if not legacy_adapter_required:
-        yield
-        return
-    try:
-        crm = PTLogisticsCRM(
-            credentials_file=CREDENTIALS_FILE,
-            spreadsheet_id=SPREADSHEET_ID,
-            sheet_name=SHEET_NAME,
-            callback_calendar_id=CALLBACK_CALENDAR_ID,
-            app_timezone=APP_TIMEZONE,
-        )
-    except Exception as exc:
-        print(f"Failed to initialize PT Logistics CRM: {exc}")
-        crm = None
+
+
+def _postgres_required(flags) -> bool:
+    return (
+        flags.accounts_read_model != "legacy"
+        or flags.proposals_read_model != "legacy"
+        or flags.command_writer == "postgres"
+        or flags.sheets_projection_enabled
+        or flags.agent_events_enabled
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global crm
+    # Feature configuration is deterministic and import-safe. External adapters are
+    # initialized lazily, after a protected request has authenticated.
+    get_feature_flags()
+    crm = None
     yield
 
 
@@ -106,6 +110,14 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request, _exc: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse({"detail": "Invalid request"}, status_code=422)
+
 
 # Temporary compatibility debt: the current Jinja/Alpine UI uses inline assets,
 # and Alpine's standard CDN build evaluates expressions at runtime.
@@ -127,7 +139,11 @@ CONTENT_SECURITY_POLICY = "; ".join(
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.error("Unhandled request failure")
+        response = JSONResponse({"detail": "Internal server error"}, status_code=500)
     path = request.url.path
     if path.startswith("/api/") and not (
         path == "/api/v1" or path.startswith("/api/v1/")
@@ -149,9 +165,12 @@ async def add_security_headers(request: Request, call_next):
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     )
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
-    if request.url.path.startswith(
+    if path in frozenset(
+        {"/", "/dashboard", "/cold-calling", "/ready"}
+    ) or path.startswith(
         (
             "/api/",
+            "/campaign/",
             "/leads",
             "/contas",
             "/propostas",
@@ -170,8 +189,9 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     static_files = StaticFiles(directory=str(static_dir))
 
-    @app.get(
+    @app.api_route(
         "/static/{path:path}",
+        methods=["GET", "HEAD"],
         name="static",
         dependencies=[Depends(require_crm_principal)],
         include_in_schema=False,
@@ -219,21 +239,12 @@ async def readiness_check():
         )
 
     dependencies: dict[str, str] = {}
-    legacy_required = (
-        flags.accounts_read_model != "postgres"
-        or flags.proposals_read_model != "postgres"
-        or flags.command_writer == "sheet"
-        or flags.sheets_projection_enabled
-    )
-    postgres_required = (
-        flags.accounts_read_model != "legacy"
-        or flags.proposals_read_model != "legacy"
-        or flags.command_writer == "postgres"
-        or flags.sheets_projection_enabled
-        or flags.agent_events_enabled
-    )
+    legacy_required = _legacy_adapter_required(flags)
+    postgres_required = _postgres_required(flags)
     if legacy_required:
-        dependencies["legacy_sheet"] = "ready" if crm is not None else "unavailable"
+        dependencies["legacy_sheet"] = (
+            "ready" if _require_crm() is not None else "unavailable"
+        )
     if postgres_required:
         dependencies["postgres"] = "ready" if _postgres_is_ready() else "unavailable"
 
@@ -279,6 +290,28 @@ async def campaign_redirect(slug: str):
 
 
 def _require_crm() -> PTLogisticsCRM | None:
+    global crm
+    if crm is not None:
+        return crm
+    flags = get_feature_flags()
+    if not _legacy_adapter_required(flags):
+        return None
+    with _crm_initialization_lock:
+        if crm is not None:
+            return crm
+        try:
+            initialized_crm = PTLogisticsCRM(
+                credentials_file=CREDENTIALS_FILE,
+                spreadsheet_id=SPREADSHEET_ID,
+                sheet_name=SHEET_NAME,
+                callback_calendar_id=CALLBACK_CALENDAR_ID,
+                app_timezone=APP_TIMEZONE,
+            )
+        except Exception:
+            logger.warning("PT Logistics CRM initialization failed")
+            return crm
+        if crm is None:
+            crm = initialized_crm
     return crm
 
 
@@ -291,8 +324,8 @@ async def api_stats():
         )
     try:
         return JSONResponse(sheet.get_stats(today_local()))
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/leads", dependencies=[Depends(require_crm_principal)])
@@ -315,8 +348,8 @@ async def api_leads(
         )
         leads = _filter_leads(leads, q=q, priority=priority, stage=stage)
         return JSONResponse({"leads": leads, "count": len(leads), "view": view})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/email-followups", dependencies=[Depends(require_crm_principal)])
@@ -341,8 +374,8 @@ async def api_email_followups(
         )
         tasks = _filter_leads(tasks, q=q, priority=priority, stage=stage)
         return JSONResponse({"tasks": tasks, "count": len(tasks), "view": view})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/outreach-followups", dependencies=[Depends(require_crm_principal)])
@@ -384,8 +417,8 @@ async def api_proposal_followups(
         )
         tasks = _filter_leads(tasks, q=q, priority=priority, stage=stage)
         return JSONResponse({"tasks": tasks, "count": len(tasks), "view": view})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/proposals", dependencies=[Depends(require_crm_principal)])
@@ -407,8 +440,8 @@ async def api_proposals(
                 area="proposal", payload=payload, comparison=_proposal_shadow_comparison
             )
         return JSONResponse(payload)
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/impacted-leads", dependencies=[Depends(require_crm_principal)])
@@ -422,8 +455,8 @@ async def api_impacted_leads(q: str = "", priority: str = "", stage: str = ""):
         leads = sheet.get_impacted_leads(today_local())
         leads = _filter_leads(leads, q=q, priority=priority, stage=stage)
         return JSONResponse({"leads": leads, "count": len(leads)})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/history", dependencies=[Depends(require_crm_principal)])
@@ -435,8 +468,8 @@ async def api_history(days: int = 30):
         )
     try:
         return JSONResponse(sheet.get_activity_history(today_local(), days=days))
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/account-profiles", dependencies=[Depends(require_crm_principal)])
@@ -453,8 +486,8 @@ async def api_account_profiles(stage: str = "Meeting Booked"):
                 area="account", payload=payload, comparison=_account_shadow_comparison
             )
         return JSONResponse(payload)
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/portfolio", dependencies=[Depends(require_crm_principal)])
@@ -466,8 +499,8 @@ async def api_portfolio():
         )
     try:
         return JSONResponse(sheet.get_portfolio_summary(today_local()))
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/recommendations", dependencies=[Depends(require_crm_principal)])
@@ -481,8 +514,8 @@ async def api_recommendations():
         return JSONResponse(
             {"recommendations": sheet.get_recommendations(today_local())}
         )
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.get("/api/stage-timing", dependencies=[Depends(require_crm_principal)])
@@ -494,8 +527,8 @@ async def api_stage_timing(days: int = 120):
         )
     try:
         return JSONResponse(sheet.get_stage_timing(today_local(), days=days))
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/log-call", dependencies=[Depends(require_write_access)])
@@ -531,8 +564,8 @@ async def api_log_call(request: Request):
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
         return JSONResponse({"success": True, "warning": sheet.consume_warning()})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/update-lead", dependencies=[Depends(require_write_access)])
@@ -572,8 +605,8 @@ async def api_update_lead(request: Request):
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
         return JSONResponse({"success": True, "warning": sheet.consume_warning()})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/mark-email-followup", dependencies=[Depends(require_write_access)])
@@ -607,8 +640,8 @@ async def api_mark_email_followup(request: Request):
                 {"error": "Lead or follow-up task not found"}, status_code=404
             )
         return JSONResponse({"success": True})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/mark-proposal-followup", dependencies=[Depends(require_write_access)])
@@ -642,8 +675,8 @@ async def api_mark_proposal_followup(request: Request):
                 {"error": "Lead or proposal follow-up task not found"}, status_code=404
             )
         return JSONResponse({"success": True})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/update-proposal", dependencies=[Depends(require_write_access)])
@@ -681,8 +714,8 @@ async def api_update_proposal(request: Request):
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
         return JSONResponse({"success": True})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/mark-email-sent", dependencies=[Depends(require_write_access)])
@@ -711,8 +744,8 @@ async def api_mark_email_sent(request: Request):
         if not ok:
             return JSONResponse({"error": "Lead not found"}, status_code=404)
         return JSONResponse({"success": True})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 @app.post("/api/refresh", dependencies=[Depends(require_write_access)])
@@ -725,8 +758,8 @@ async def api_refresh():
     try:
         sheet._refresh_cache()
         return JSONResponse({"success": True, "rows": len(sheet._cache)})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 def _filter_leads(
