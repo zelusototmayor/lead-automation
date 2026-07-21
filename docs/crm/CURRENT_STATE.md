@@ -2538,3 +2538,32 @@ logs: 0 marcadores de erro
 ```
 
 Rollback imediato preservado em `crm-staging-web-prev-6f7e1eb`, imagem `crm-staging:6f7e1eb`. O CRM legado continua disponível e não houve migrations, backfill, writes de dados, ativação de conectores/workers, merge em `main`, cutover ou alteração de produção. A validação visual do proprietário permanece pendente e o cutover continua bloqueado até aprovação explícita separada.
+
+---
+
+## Retoma canónica em 2026-07-21T23:29:29Z
+
+A retoma partiu do `HEAD` limpo `6f7e1eb9597eab5e71102ba1baa5fdebf33a329b`, sete commits locais à frente da revisão remota depois da integração. O fix de identidade composta que já estava verificado e publicado no branch isolado de rollout foi integrado sem reimplementação no branch canónico como `ba1e8d6` (`fix: preserve task row after task commands`); a evidência do rollout foi integrada como `437f70d` (`docs: record secure UI staging rollout`). Nenhum trabalho staged, unstaged ou commitado encontrado foi descartado.
+
+Num PostgreSQL 16 descartável exclusivo em loopback, explicitamente marcado para testes e sem dados ou credenciais live:
+
+```text
+Suite Python segura completa no candidato integrado: 1200 passed, 1 skipped, exit 0
+Frontend Node no candidato integrado: 37 passed
+Regressão de páginas protegidas: 9 passed
+Alembic lifecycle: base -> 0013 -> 0011 -> 0013 -> base -> 0013
+Alembic current: 0013 (head)
+Alembic check: No new upgrade operations detected
+Restore custom-format: schema 0013, 15 tabelas obrigatórias, 0 workspaces, 0 violações
+Ruff nos ficheiros Python do delta local, compileall, node --check e git diff --check: passed
+Gitleaks: 146 commits e cerca de 2,09 MB analisados, zero leaks
+Imagem Linux AMD64: manifest list sha256:81b62b50fdd3f8b74a9391b04b82abfc560e61ce011b83182874d96158b31776
+Docker Scout: 131 packages, 0C, 0H, 0M, 0L
+Smoke autenticado local: /up=200; páginas/APIs ricas=200; sem credenciais=401; Cache-Control=no-store; Agent ingress=404; container healthy, 0 restarts e 0 erros no log
+```
+
+O staging real foi revalidado sem mutações. Continua na revisão funcional equivalente `cab1417e2d09a5a65dc00ec5e282f1ad8d7fadb4`, com aplicação e PostgreSQL healthy, zero restarts, schema `0013`, um workspace, 46 contas, 65 leads e 44 propostas. Leads, Contas, Propostas, Inteligência, Operações e APIs v1 autenticadas devolveram `200` com `no-store`; existem zero leads em fases que exigem Account sem associação, zero outbox pendente e zero eventos failed/dead-letter. Não existem workers, reconciler ou outbox publisher ativos. A imagem anterior `crm-staging:6f7e1eb` permanece preservada para rollback.
+
+Produção continua no build pré-revamp: `/` e `/up` devolvem `200`, as novas páginas/APIs devolvem `404` e `/api/stats` continua `200`. A telemetria estruturada das últimas 48 horas ainda mostra consumo GET `2xx` não-curl de `/api/stats`, com o pedido mais recente em `2026-07-21T23:23:18.592462049Z`; portanto não existe evidência de ausência de consumidores v0.
+
+O plano global continua incompleto e o sentinel permanece proibido. O gate de dados continua `parity=false`, com conflitos reais sem resolução ou aceitação e sem validação da amostra pelo owner. Também continuam por fechar as decisões oficiais de `Won`, retenção e scopes, o mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático off-host e restore do arquivo real, cutover e soak de produção. A Tarefa 19 exige depois dois releases estáveis pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. A autorização autónoma não substitui evidência de dados, humana ou temporal, e retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado seria falso.
