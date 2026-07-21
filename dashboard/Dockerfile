@@ -1,13 +1,14 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine@sha256:25976e9d34a0fab1f278cae931f34c8303d97bf0c0d7f85b6b4dcf641d7702a4
 
 WORKDIR /app
 
 # Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
 
-# Install dependencies
+# Install dependencies and keep build tooling above audited security floors.
 COPY dashboard/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade "pip==26.1.2" "setuptools==83.0.0" \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy src modules from parent project
 COPY src/__init__.py ./src/
