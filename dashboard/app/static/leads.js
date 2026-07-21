@@ -342,6 +342,10 @@
     actionTitle: lead.task?.title || "Sem próxima ação",
     due: lead.task?.due_at ? formatDateTime(lead.task.due_at) : "—",
   });
+  const leadNextActionView = (queueItem) => ({
+    title: queueItem?.task?.title || "Sem próxima ação",
+    due: queueItem?.task?.due_at ? formatDateTime(queueItem.task.due_at) : "—",
+  });
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -354,6 +358,7 @@
       priorityLabel,
       queueMetricValues,
       leadRowView,
+      leadNextActionView,
     };
   }
 
@@ -434,7 +439,6 @@
         const row = document.createElement("tr");
         row.className = "lead-row";
         row.dataset.leadId = lead.lead_id;
-        row.tabIndex = 0;
         row.setAttribute("aria-current", String(lead.lead_id === selectedLeadId));
 
         const appendCell = (column, className, text) => {
@@ -446,7 +450,13 @@
           row.appendChild(cell);
           return cell;
         };
-        appendCell("company", "lead-company", view.company);
+        const company = appendCell("company", "lead-company", "");
+        const openButton = document.createElement("button");
+        openButton.type = "button";
+        openButton.className = "lead-open-button";
+        openButton.textContent = view.company;
+        openButton.setAttribute("aria-label", `Abrir lead de ${view.company}`);
+        company.appendChild(openButton);
         appendCell("contact", "lead-contact", view.contact);
         const action = appendCell("due", "lead-action", view.actionTitle);
         appendText(action, "lead-due", view.due);
@@ -458,11 +468,6 @@
 
         const open = () => loadLead(lead.lead_id);
         row.addEventListener("click", open);
-        row.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          open();
-        });
         list.appendChild(row);
       });
       show(root, rows.length ? "ready" : "empty");
@@ -747,12 +752,13 @@
     };
 
     const requestLead = async (leadId) => {
+      const queueItem = queueItems.find((item) => item.lead_id === leadId) || null;
       const [detail, timeline, tasks] = await Promise.all([
         fetchJson(`/api/v1/leads/${leadId}`),
         fetchJson(`/api/v1/leads/${leadId}/timeline?limit=50&offset=0`),
         fetchJson(`/api/v1/leads/${leadId}/tasks?limit=50&offset=0`),
       ]);
-      return { detail, timeline, tasks };
+      return { detail, timeline, tasks, queueItem };
     };
 
     const clearSelection = (leadId) => {
@@ -763,10 +769,10 @@
       root.querySelector("[data-detail-empty]").classList.remove("hidden");
     };
 
-    const commitSelection = (_leadId, { detail, timeline, tasks }) => {
+    const commitSelection = (_leadId, { detail, timeline, tasks, queueItem }) => {
       currentLead = detail;
       const taskItems = Array.isArray(tasks.items) ? tasks.items : [];
-      const nextTask = taskItems.find((task) => task.status === "open") || null;
+      const nextAction = leadNextActionView(queueItem);
       populateCommandForms(detail);
       root.querySelector("[data-detail-company]").textContent = detail.company;
       root.querySelector("[data-detail-contact]").textContent =
@@ -777,8 +783,8 @@
       detailStage.textContent = stageLabel(detail.stage);
       detailStage.dataset.stage = detail.stage || "";
       root.querySelector("[data-detail-priority]").textContent = priorityLabel(detail.priority);
-      root.querySelector("[data-detail-next-action]").textContent = nextTask?.title || "Sem próxima ação";
-      root.querySelector("[data-detail-next-due]").textContent = nextTask ? formatDateTime(nextTask.due_at) : "—";
+      root.querySelector("[data-detail-next-action]").textContent = nextAction.title;
+      root.querySelector("[data-detail-next-due]").textContent = nextAction.due;
       renderContactActions(detail);
       renderTasks(taskItems);
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
