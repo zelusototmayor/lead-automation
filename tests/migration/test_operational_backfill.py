@@ -441,24 +441,33 @@ def test_canonical_apply_types_due_work_and_links_proposal_follow_up():
         assert report.tasks_created == 4
         assert report.activities_created == 3
         with Session(engine) as session:
-            tasks = {
-                task.source_rule: task
-                for task in session.scalars(
-                    select(Task).where(Task.workspace_id == workspace_id)
-                )
-            }
-            assert tasks["legacy_sheet:due"].task_type in {"email", "call"}
-            assert {task.task_type for task in tasks.values()} == {
+            tasks = list(
+                session.scalars(select(Task).where(Task.workspace_id == workspace_id))
+            )
+            assert any(
+                task.source_rule == "legacy_sheet:due"
+                and task.task_type in {"email", "call"}
+                for task in tasks
+            )
+            assert {task.task_type for task in tasks} == {
                 "email",
                 "call",
                 "follow_up",
             }
-            proposal_task = tasks["legacy_sheet:proposal_next_action_due"]
+            proposal_task = next(
+                task
+                for task in tasks
+                if task.source_rule == "legacy_sheet:proposal_next_action_due"
+            )
             proposal = session.scalar(
                 select(Proposal).where(Proposal.workspace_id == workspace_id)
             )
             assert proposal_task.proposal_id == proposal.id
-            assert tasks["legacy_sheet:outreach_fu2_due"].task_type == "email"
+            assert any(
+                task.source_rule == "legacy_sheet:outreach_fu2_due"
+                and task.task_type == "email"
+                for task in tasks
+            )
             activities = list(
                 session.scalars(
                     select(Activity).where(

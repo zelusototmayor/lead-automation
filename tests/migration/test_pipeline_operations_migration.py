@@ -320,6 +320,8 @@ def test_0009_downgrade_aborts_before_losing_pre_account_task_context() -> None:
     workspace_id = str(uuid4())
     lead_id = str(uuid4())
     task_id = str(uuid4())
+    original_revision = _current_revision(database_url)
+    assert original_revision is not None
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
@@ -362,7 +364,7 @@ def test_0009_downgrade_aborts_before_losing_pre_account_task_context() -> None:
                 connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
-                == "0010"
+                == original_revision
             )
             assert (
                 connection.execute(

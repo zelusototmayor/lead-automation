@@ -8,7 +8,8 @@ import sys
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,11 @@ from src.crm.persistence.models import (
     Task,
     Workspace,
 )
-from scripts.crm_verify_backup import _smoke_restored_database, validate_safe_target
+from scripts.crm_verify_backup import (
+    BackupVerificationError,
+    _smoke_restored_database,
+    validate_safe_target,
+)
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
 
@@ -57,6 +62,52 @@ def engine():
         for workspace_id in created_workspace_ids:
             cleanup_workspace(value, workspace_id)
         value.dispose()
+
+
+@pytest.fixture
+def backup_invariant_database_url():
+    source_url = require_disposable_postgres()
+    parsed = make_url(source_url)
+    database_name = f"crm_backup_invariant_test_{uuid4().hex}"
+    database_url = parsed.set(database=database_name).render_as_string(
+        hide_password=False
+    )
+    maintenance_url = parsed.set(database="postgres").render_as_string(
+        hide_password=False
+    )
+    maintenance_engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
+    try:
+        with maintenance_engine.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+        env = {**os.environ, "DATABASE_URL": database_url, "PYTHONPATH": str(REPO_ROOT)}
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "alembic",
+                "-c",
+                str(ALEMBIC_CONFIG),
+                "upgrade",
+                "head",
+            ],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        yield database_url
+    finally:
+        with maintenance_engine.connect() as connection:
+            connection.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+                ),
+                {"database_name": database_name},
+            )
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+        maintenance_engine.dispose()
 
 
 def test_email_message_identity_is_unique_per_mailbox_and_workspace(engine):
@@ -135,8 +186,56 @@ def test_backup_smoke_accepts_valid_canonical_mailbox_identity(engine):
     result = _smoke_restored_database(target, target.database)
 
     assert result["status"] == "verified"
-    assert result["schema_revision"] == "0010"
+    assert result["schema_revision"] == "0011"
     assert result["invariant_violations"] == 0
+
+
+def test_backup_smoke_roots_stage_account_invariant_at_accountless_leads(
+    backup_invariant_database_url,
+):
+    database_url = backup_invariant_database_url
+    workspace_id = uuid4()
+    lead_id = uuid4()
+    target = validate_safe_target(database_url, disposable_marker=True)
+    isolated_engine = create_engine(database_url)
+    try:
+        with isolated_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE leads DROP CONSTRAINT ck_leads_stage_requires_account"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO workspaces (id, slug, name) "
+                    "VALUES (:id, :slug, 'Invalid accountless stage')"
+                ),
+                {"id": workspace_id, "slug": f"invalid-accountless-{workspace_id}"},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO leads "
+                    "(id, workspace_id, stage, highest_stage_rank) "
+                    "VALUES (:id, :workspace_id, 'meeting_booked', 40)"
+                ),
+                {"id": lead_id, "workspace_id": workspace_id},
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE leads ADD CONSTRAINT "
+                    "ck_leads_stage_requires_account CHECK ("
+                    "account_id IS NOT NULL OR stage NOT IN ("
+                    "'meeting_booked', 'meeting_held', 'proposal_requested', "
+                    "'proposal_sent', 'negotiation', 'won')) NOT VALID"
+                )
+            )
+
+        with pytest.raises(
+            BackupVerificationError, match="^restored CRM invariants failed$"
+        ):
+            _smoke_restored_database(target, target.database)
+    finally:
+        isolated_engine.dispose()
 
 
 def test_meeting_occurrence_identity_is_unique_and_status_is_explicit(engine):

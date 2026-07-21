@@ -731,6 +731,12 @@ class Lead(Base):
     __table_args__ = (
         CheckConstraint(_in_check("stage", LEAD_STAGES), name="ck_leads_stage"),
         CheckConstraint(
+            "account_id IS NOT NULL OR stage NOT IN "
+            "('meeting_booked', 'meeting_held', 'proposal_requested', "
+            "'proposal_sent', 'negotiation', 'won')",
+            name="ck_leads_stage_requires_account",
+        ),
+        CheckConstraint(
             "contact_id IS NULL OR account_id IS NOT NULL",
             name="ck_leads_contact_requires_account",
         ),

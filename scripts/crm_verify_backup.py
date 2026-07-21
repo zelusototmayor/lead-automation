@@ -25,7 +25,7 @@ from psycopg import sql
 
 _DISPOSABLE_MARKER = "CRM_DISPOSABLE_TEST_DATABASE"
 _RESTORE_PREFIX = "crm_restore_verify_"
-EXPECTED_SCHEMA_REVISION = "0010"
+EXPECTED_SCHEMA_REVISION = "0011"
 REQUIRED_TABLES = frozenset(
     {
         "workspaces",
@@ -64,6 +64,7 @@ REQUIRED_CONSTRAINTS = frozenset(
         "ck_activities_stage_transition_pair",
         "ck_activities_stage_transition_type",
         "ck_activities_stage_transition_values",
+        "ck_leads_stage_requires_account",
         "uq_evidence_workspace_account_id_type",
         "uq_source_identities_workspace_id_semantics",
     }
@@ -246,13 +247,21 @@ def _smoke_restored_database(target: SafeTarget, database: str) -> dict[str, obj
             connection.execute(
                 """
                 SELECT count(*)
-                FROM accounts a
-                WHERE a.merged_into_account_id IS NULL
-                  AND EXISTS (
-                    SELECT 1 FROM leads l
-                    WHERE l.workspace_id = a.workspace_id
-                      AND l.account_id = a.id
-                      AND l.highest_stage_rank > a.highest_stage_rank
+                FROM leads l
+                LEFT JOIN accounts a
+                  ON a.workspace_id = l.workspace_id
+                 AND a.id = l.account_id
+                WHERE (
+                    l.account_id IS NULL
+                    AND l.stage IN (
+                        'meeting_booked', 'meeting_held', 'proposal_requested',
+                        'proposal_sent', 'negotiation', 'won'
+                    )
+                  )
+                   OR (
+                    l.account_id IS NOT NULL
+                    AND a.merged_into_account_id IS NULL
+                    AND l.highest_stage_rank > a.highest_stage_rank
                   )
                 """
             ).fetchone()[0]
@@ -356,10 +365,14 @@ def verify_backup(
         raise BackupVerificationError("backup verification failed") from None
     finally:
         if created:
+            primary_error = sys.exc_info()[1]
             try:
                 _drop_restore_database(target, restore_database)
             except (BackupVerificationError, psycopg.Error):
-                raise BackupVerificationError("backup cleanup failed") from None
+                if primary_error is not None:
+                    primary_error.add_note("backup cleanup also failed")
+                else:
+                    raise BackupVerificationError("backup cleanup failed") from None
 
 
 def _parser() -> argparse.ArgumentParser:

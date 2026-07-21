@@ -107,14 +107,14 @@ def create_ingest_event(engine, workspace_id, event_id):
         )
 
 
-def test_migration_has_expected_schema_constraints_and_no_stage_account_check(engine):
+def test_migration_has_expected_schema_constraints(engine):
     inspector = inspect(engine)
     assert {"accounts", "contacts", "leads", "activities"} <= set(
         inspector.get_table_names()
     )
     lead_checks = {c["name"] for c in inspector.get_check_constraints("leads")}
-    assert not any("account" in name and "stage" in name for name in lead_checks)
     assert {
+        "ck_leads_stage_requires_account",
         "ck_leads_contact_requires_account",
         "ck_leads_source_stage_raw_nonblank",
         "ck_leads_priority_nonblank",
