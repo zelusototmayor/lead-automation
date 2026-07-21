@@ -218,7 +218,7 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
     assert summary.json()["queues"] == {
         "calls_overdue": 0,
         "calls_today": 1,
-        "calls_future": 1,
+        "calls_future": 2,
         "emails_overdue": 1,
         "emails_today": 1,
         "emails_future": 1,
@@ -227,6 +227,19 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "touched_today": 1,
         "untouched": 1,
         "all": 2,
+    }
+    assert summary.json()["queue_units"] == {
+        "calls_overdue": "task",
+        "calls_today": "task",
+        "calls_future": "task",
+        "emails_overdue": "task",
+        "emails_today": "task",
+        "emails_future": "task",
+        "proposal_followups_overdue": "task",
+        "proposal_followups_today": "task",
+        "touched_today": "lead",
+        "untouched": "lead",
+        "all": "lead",
     }
     assert calls_today.status_code == emails_overdue.status_code == 200
     assert calls_today.json()["total"] == emails_overdue.json()["total"] == 1
@@ -257,7 +270,7 @@ def test_future_call_and_email_queues_are_strict_scoped_and_pagination_safe(
     emails = client.get("/api/v1/pipeline/items?queue=emails_future")
 
     assert summary.status_code == 200
-    assert summary.json()["queues"]["calls_future"] == 1
+    assert summary.json()["queues"]["calls_future"] == 2
     assert summary.json()["queues"]["emails_future"] == 1
     assert (
         first_call.status_code == second_call.status_code == emails.status_code == 200

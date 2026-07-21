@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -21,6 +21,7 @@ PipelineQueue = Literal[
     "all",
 ]
 PipelinePriority = Literal["low", "medium", "high"]
+PipelineQueueUnit = Literal["task", "lead"]
 
 
 class PipelineTask(BaseModel):
@@ -62,6 +63,55 @@ class PipelineSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     queues: dict[PipelineQueue, int]
+    queue_units: dict[PipelineQueue, PipelineQueueUnit]
+    generated_at: datetime
+
+
+class AnalyticsPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    days: int = Field(ge=1, le=120)
+
+
+class AnalyticsDay(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    date: date
+    activity_types: dict[str, int]
+    outcomes: dict[str, int]
+    distinct_touched_leads: int = Field(ge=0)
+
+
+class AnalyticsCountBreakdown(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    by_status: dict[str, int]
+    total: int = Field(ge=0)
+
+
+class AnalyticsTaskBreakdown(AnalyticsCountBreakdown):
+    open_by_type: dict[str, int]
+
+
+class AnalyticsQueueBreakdown(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    counts: dict[str, int]
+    unit: Literal["task"] = "task"
+
+
+class PipelineAnalytics(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    period: AnalyticsPeriod
+    daily: tuple[AnalyticsDay, ...]
+    stages: AnalyticsCountBreakdown
+    proposals: AnalyticsCountBreakdown
+    tasks: AnalyticsTaskBreakdown
+    queues: AnalyticsQueueBreakdown
+    time_in_stage: Literal["not_available"] = "not_available"
     generated_at: datetime
 
 
