@@ -91,8 +91,56 @@ def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
         assert f'<option value="{priority}">' in response.text
     assert 'searchParams.set("priority", selectedPriority)' in script
     assert 'priorityFilter.addEventListener("change",' in script
-    assert 'search.addEventListener("input", applyFilters)' in script
-    assert 'stageFilter.addEventListener("change", applyFilters)' in script
+    assert 'search.addEventListener("input", () =>' in script
+    assert 'stageFilter.addEventListener("change", () =>' in script
+    assert "queueBehavior.invalidateNavigation()" in script
+
+
+def test_leads_page_exposes_save_and_next_and_skip_controls(
+    account_api_fixture, monkeypatch
+):
+    _, ids = account_api_fixture
+    for name, value in {
+        "CRM_DB_ENABLED": "true",
+        "CRM_ACCOUNTS_READ_MODEL": "postgres",
+        "CRM_PROPOSALS_READ_MODEL": "postgres",
+        "CRM_COMMAND_WRITER": "postgres",
+        "CRM_SHEETS_PROJECTION_ENABLED": "false",
+        "CRM_AGENT_EVENTS_ENABLED": "false",
+        "CRM_CSRF_TOKEN": "fake-ui-csrf-token",
+        "CRM_ALLOWED_WRITE_ORIGINS": "https://testserver",
+        "CRM_ENV": "test",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    get_feature_flags.cache_clear()
+
+    def writer_context():
+        with Session(ids["engine"]) as session:
+            yield AccountRequestContext(
+                principal=CRMPrincipal(
+                    workspace_id=ids["workspace_id"],
+                    actor_id=uuid4(),
+                    subject="writer",
+                    permissions=frozenset({"crm:read", "crm:lead:edit"}),
+                ),
+                session=session,
+            )
+
+    dashboard_main.app.dependency_overrides[get_account_request_context] = (
+        writer_context
+    )
+    try:
+        response = TestClient(dashboard_main.app, base_url="https://testserver").get(
+            "/leads"
+        )
+    finally:
+        get_settings.cache_clear()
+        get_feature_flags.cache_clear()
+    assert response.status_code == 200
+    assert "data-skip-lead" in response.text
+    assert "data-advance-after-save" in response.text
+    assert "Guardar e seguinte" in response.text
 
 
 def test_leads_page_only_exposes_csrf_to_authorized_postgres_writer(
@@ -162,11 +210,11 @@ def test_leads_javascript_uses_canonical_pipeline_and_task_command_contracts():
     assert "/api/v1/leads/${leadId}/timeline" in script
     assert "/api/v1/leads/${leadId}/tasks" in script
     assert "/api/v1/commands/tasks/${task.id}/${action}" in script
-    assert "/api/v1/commands/leads/${selectedLeadId}/edit" in script
-    assert "/api/v1/commands/leads/${selectedLeadId}/transition-stage" in script
-    assert "/api/v1/commands/leads/${selectedLeadId}/log-call" in script
-    assert "/api/v1/commands/leads/${selectedLeadId}/log-email" in script
-    assert "/api/v1/commands/leads/${selectedLeadId}/schedule-next-action" in script
+    assert "/api/v1/commands/leads/${leadId}/edit" in script
+    assert "/api/v1/commands/leads/${leadId}/transition-stage" in script
+    assert "/api/v1/commands/leads/${leadId}/log-call" in script
+    assert "/api/v1/commands/leads/${leadId}/log-email" in script
+    assert "/api/v1/commands/leads/${leadId}/schedule-next-action" in script
     assert "data-lead-edit-form" in script
     assert "data-stage-transition-form" in script
     assert "data-call-log-form" in script

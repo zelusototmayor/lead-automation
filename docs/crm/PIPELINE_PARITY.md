@@ -47,8 +47,8 @@ Estados:
 | Notas e histórico | partial | notas de chamada/email e timeline operacional existem; nota livre autónoma ainda não |
 | Concluir/reagendar tarefa | implemented | comandos e UI complete/reschedule/cancel têm versão, idempotência, activity, audit e outbox atómicos |
 | Definir próxima ação e data/hora | implemented | comando e UI criam tarefa aberta tenant-safe e auditada |
-| Guardar e abrir lead seguinte | missing | sem controlo explícito de avanço após commit |
-| Saltar lead sem alteração | missing | sem controlo explícito de skip/avanço |
+| Guardar e abrir lead seguinte | implemented | `tests/frontend/test_leads_queue.js` prova captura de lead/versão/sucessor antes do POST, avanço só após sucesso, precedência de navegação/filtros mais recentes e separação entre sucesso da mutação e falhas de refresh |
+| Saltar lead sem alteração | implemented | `tests/frontend/test_leads_queue.js` prova avanço local sem POST/refresh e no-op explícito no último lead, sem wrap |
 | Editar empresa e contacto | partial | comando protegido existe para leads com account/contact; leads pré-conta ainda não são editáveis |
 | Alterar fase | implemented | endpoint e UI protegidos usam política canónica, expected version e correção revista |
 | Alterar prioridade | partial | incluída no comando de edição, mas ainda acoplada a account/contact existentes |

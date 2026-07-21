@@ -84,6 +84,7 @@
         <div class="task-actions" data-detail-contact-actions>
           <a class="btn hidden" data-detail-phone-link>Telefonar</a>
           <a class="btn hidden" data-detail-email-link>Enviar email</a>
+          <button class="btn" type="button" data-skip-lead>Saltar</button>
         </div>
         {% if writable %}
         <div class="detail-section" data-lead-commands>
@@ -95,7 +96,10 @@
             <label>Contacto<input name="contact_name" maxlength="512" required></label>
             <label>Email<input name="contact_email" type="email" maxlength="320" required></label>
             <label>Telefone completo<input name="contact_phone" maxlength="64" required autocomplete="tel"></label>
-            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Guardar dados</button></div>
+            <div class="command-form-actions">
+              <button class="btn" type="submit">Guardar dados</button>
+              <button class="btn btn-primary" type="submit" data-advance-after-save="true">Guardar e seguinte</button>
+            </div>
           </form>
           {% endif %}
           {% if can_transition_stage %}

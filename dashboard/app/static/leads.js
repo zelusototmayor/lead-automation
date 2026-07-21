@@ -1,6 +1,84 @@
 (() => {
   "use strict";
 
+  const createLeadQueueBehavior = ({
+    getVisibleLeadIds,
+    getSelection,
+    clearSelection,
+    requestLead,
+    commitSelection,
+    postLead,
+    refresh,
+    onLoad = () => {},
+    onRefreshError = () => {},
+  }) => {
+    let loadSequence = 0;
+
+    const nextVisibleLeadId = (leadId) => {
+      const visibleLeadIds = getVisibleLeadIds();
+      const currentIndex = visibleLeadIds.indexOf(leadId);
+      return currentIndex >= 0 ? visibleLeadIds[currentIndex + 1] || null : null;
+    };
+
+    const loadLead = async (leadId) => {
+      if (!leadId) return false;
+      const requestSequence = ++loadSequence;
+      clearSelection(leadId);
+      onLoad(leadId);
+      let result;
+      try {
+        result = await requestLead(leadId);
+      } catch (error) {
+        if (requestSequence !== loadSequence) return false;
+        throw error;
+      }
+      if (requestSequence !== loadSequence) return false;
+      commitSelection(leadId, result);
+      return true;
+    };
+
+    const skip = () => {
+      const { leadId } = getSelection();
+      const nextLeadId = nextVisibleLeadId(leadId);
+      return nextLeadId ? loadLead(nextLeadId) : Promise.resolve(false);
+    };
+
+    const invalidateNavigation = () => {
+      loadSequence += 1;
+    };
+
+    const save = async (operation, payload, advanceAfterSave) => {
+      const { leadId, lead } = getSelection();
+      if (!leadId || !lead) return false;
+      const navigationSequence = loadSequence;
+      const nextLeadId = advanceAfterSave ? nextVisibleLeadId(leadId) : null;
+      await postLead({ operation, leadId, lead, payload });
+      if (navigationSequence !== loadSequence) return true;
+      clearSelection(leadId);
+      try {
+        await refresh();
+      } catch (error) {
+        onRefreshError("queue", error);
+      }
+      if (navigationSequence !== loadSequence) return true;
+      const targetLeadId = advanceAfterSave ? nextLeadId : leadId;
+      if (targetLeadId) {
+        try {
+          await loadLead(targetLeadId);
+        } catch (error) {
+          onRefreshError("detail", error);
+        }
+      }
+      return true;
+    };
+
+    return { invalidateNavigation, loadLead, save, skip };
+  };
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { createLeadQueueBehavior };
+  }
+
   const stageLabel = (value) => String(value || "sem estado").replaceAll("_", " ");
   const formatDateTime = (value) => {
     if (!value) return "Sem data";
@@ -42,6 +120,7 @@
     const search = root.querySelector("[data-lead-search]");
     const stageFilter = root.querySelector("[data-stage-filter]");
     const priorityFilter = root.querySelector("[data-priority-filter]");
+    const skipButton = root.querySelector("[data-skip-lead]");
     const writable = root.dataset.writable === "true";
     const canWriteTasks = root.dataset.canWriteTasks === "true";
     const csrfToken = root.dataset.csrfToken || "";
@@ -167,17 +246,17 @@
       await Promise.all([loadSummary(), loadQueue(), loadLead(selectedLeadId)]);
     };
 
-    const leadCommandPath = (operation) => ({
-      edit: `/api/v1/commands/leads/${selectedLeadId}/edit`,
-      "transition-stage": `/api/v1/commands/leads/${selectedLeadId}/transition-stage`,
-      "log-call": `/api/v1/commands/leads/${selectedLeadId}/log-call`,
-      "log-email": `/api/v1/commands/leads/${selectedLeadId}/log-email`,
-      "schedule-next-action": `/api/v1/commands/leads/${selectedLeadId}/schedule-next-action`,
+    const leadCommandPath = (leadId, operation) => ({
+      edit: `/api/v1/commands/leads/${leadId}/edit`,
+      "transition-stage": `/api/v1/commands/leads/${leadId}/transition-stage`,
+      "log-call": `/api/v1/commands/leads/${leadId}/log-call`,
+      "log-email": `/api/v1/commands/leads/${leadId}/log-email`,
+      "schedule-next-action": `/api/v1/commands/leads/${leadId}/schedule-next-action`,
     })[operation];
 
-    const postLeadCommand = async (operation, payload) => {
-      if (!writable || !csrfToken || !selectedLeadId || !currentLead) return;
-      const path = leadCommandPath(operation);
+    const postLeadCommand = async ({ operation, leadId, lead, payload }) => {
+      if (!writable || !csrfToken || !leadId || !lead) return;
+      const path = leadCommandPath(leadId, operation);
       if (!path) throw new Error("Unsupported command");
       const commandId = crypto.randomUUID();
       await fetchJson(path, {
@@ -189,11 +268,10 @@
         },
         body: JSON.stringify({
           command_id: commandId,
-          expected_version: currentLead.version,
+          expected_version: lead.version,
           ...payload,
         }),
       });
-      await Promise.all([loadSummary(), loadQueue(), loadLead(selectedLeadId)]);
       window.notify("Alteração guardada.");
     };
 
@@ -207,14 +285,15 @@
       editForm?.addEventListener("submit", async (event) => {
         event.preventDefault();
         const data = new FormData(editForm);
+        const advanceAfterSave = event.submitter?.dataset.advanceAfterSave === "true";
         try {
-          await postLeadCommand("edit", {
+          await queueBehavior.save("edit", {
             priority: data.get("priority"),
             company_name: String(data.get("company_name") || "").trim(),
             contact_name: String(data.get("contact_name") || "").trim(),
             contact_email: String(data.get("contact_email") || "").trim(),
             contact_phone: String(data.get("contact_phone") || "").trim(),
-          });
+          }, advanceAfterSave);
         } catch (_error) {
           window.notify("Não foi possível guardar os dados.", "err");
         }
@@ -225,10 +304,10 @@
         event.preventDefault();
         const data = new FormData(stageForm);
         try {
-          await postLeadCommand("transition-stage", {
+          await queueBehavior.save("transition-stage", {
             target_stage: data.get("target_stage"),
             reviewed_correction: data.get("reviewed_correction") === "on",
-          });
+          }, false);
         } catch (_error) {
           window.notify("Não foi possível alterar a fase.", "err");
         }
@@ -239,10 +318,10 @@
         event.preventDefault();
         const data = new FormData(callForm);
         try {
-          await postLeadCommand("log-call", {
+          await queueBehavior.save("log-call", {
             outcome_code: data.get("outcome_code"),
             summary: optionalText(callForm, "summary"),
-          });
+          }, false);
           callForm.reset();
         } catch (_error) {
           window.notify("Não foi possível registar a chamada.", "err");
@@ -254,10 +333,10 @@
         event.preventDefault();
         const data = new FormData(emailForm);
         try {
-          await postLeadCommand("log-email", {
+          await queueBehavior.save("log-email", {
             direction: data.get("direction"),
             summary: optionalText(emailForm, "summary"),
-          });
+          }, false);
           emailForm.reset();
         } catch (_error) {
           window.notify("Não foi possível registar o email.", "err");
@@ -274,11 +353,11 @@
           return;
         }
         try {
-          await postLeadCommand("schedule-next-action", {
+          await queueBehavior.save("schedule-next-action", {
             task_type: data.get("task_type"),
             title: String(data.get("title") || "").trim(),
             due_at: dueAt.toISOString(),
-          });
+          }, false);
           nextActionForm.reset();
         } catch (_error) {
           window.notify("Não foi possível marcar a próxima ação.", "err");
@@ -359,15 +438,24 @@
       if (detail.email) emailLink.href = `mailto:${detail.email}`;
     };
 
-    const loadLead = async (leadId) => {
-      if (!leadId) return;
-      selectedLeadId = leadId;
-      applyFilters();
+    const requestLead = async (leadId) => {
       const [detail, timeline, tasks] = await Promise.all([
         fetchJson(`/api/v1/leads/${leadId}`),
         fetchJson(`/api/v1/leads/${leadId}/timeline?limit=50&offset=0`),
         fetchJson(`/api/v1/leads/${leadId}/tasks?limit=50&offset=0`),
       ]);
+      return { detail, timeline, tasks };
+    };
+
+    const clearSelection = (leadId) => {
+      selectedLeadId = leadId;
+      currentLead = null;
+      applyFilters();
+      root.querySelector("[data-detail-ready]").classList.add("hidden");
+      root.querySelector("[data-detail-empty]").classList.remove("hidden");
+    };
+
+    const commitSelection = (_leadId, { detail, timeline, tasks }) => {
       currentLead = detail;
       populateCommandForms(detail);
       root.querySelector("[data-detail-company]").textContent = detail.company;
@@ -382,12 +470,42 @@
       root.querySelector("[data-detail-ready]").classList.remove("hidden");
     };
 
-    root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
-      button.addEventListener("click", () => loadQueue(button.dataset.pipelineQueue).catch(() => show(root, "error")));
+    const queueBehavior = createLeadQueueBehavior({
+      getVisibleLeadIds: () => [...list.querySelectorAll(".lead-row[data-lead-id]")].map(
+        (row) => row.dataset.leadId,
+      ),
+      getSelection: () => ({ leadId: selectedLeadId, lead: currentLead }),
+      clearSelection,
+      requestLead,
+      commitSelection,
+      postLead: postLeadCommand,
+      refresh: () => Promise.all([loadSummary(), loadQueue()]),
+      onRefreshError: () => window.notify(
+        "Alteração guardada, mas não foi possível atualizar a vista.",
+        "err",
+      ),
     });
-    search.addEventListener("input", applyFilters);
-    stageFilter.addEventListener("change", applyFilters);
-    priorityFilter.addEventListener("change", () => loadQueue().catch(() => show(root, "error")));
+    const loadLead = queueBehavior.loadLead;
+
+    root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
+      button.addEventListener("click", () => {
+        queueBehavior.invalidateNavigation();
+        loadQueue(button.dataset.pipelineQueue).catch(() => show(root, "error"));
+      });
+    });
+    search.addEventListener("input", () => {
+      queueBehavior.invalidateNavigation();
+      applyFilters();
+    });
+    stageFilter.addEventListener("change", () => {
+      queueBehavior.invalidateNavigation();
+      applyFilters();
+    });
+    priorityFilter.addEventListener("change", () => {
+      queueBehavior.invalidateNavigation();
+      loadQueue().catch(() => show(root, "error"));
+    });
+    skipButton.addEventListener("click", () => queueBehavior.skip().catch(() => show(root, "error")));
     bindCommandForms();
 
     Promise.all([loadSummary(), loadQueue()]).catch(() => show(root, "error"));
