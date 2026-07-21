@@ -2486,3 +2486,55 @@ Backfill operacional real em dry-run: 1.247 linhas, 38 tarefas candidatas, 269 n
 ```
 
 A falha inicial de três testes transacionais resultou de executar módulos independentes numa ordem que deixou Activities append-only de outros módulos na mesma base. A repetição exclusiva do módulo numa base nova passou; a suite completa canónica, também exclusiva e criada de raiz, passou integralmente. Nenhum worker CRM, reconciler, outbox publisher ou job outbound estava ativo. O candidato ainda necessita congelamento final, revisão independente, commit/publicação e validação no staging persistente antes de qualquer decisão de cutover. O sentinel permanece ausente.
+
+---
+
+## Rollout visual seguro no staging em 2026-07-21T23:02:13Z
+
+Após autorização explícita do proprietário para atualizar o link de teste, a correção visual foi integrada sobre a revisão segura realmente publicada `6f7e1eb`, que já continha o refresh das dependências de runtime. O candidato exato é `cab1417e2d09a5a65dc00ec5e282f1ad8d7fadb4`, publicado na branch remota `feat/crm-ui-staging-rollout-secure` e na imagem Linux AMD64 `crm-staging:cab1417`.
+
+A revisão independente encontrou e bloqueou uma tentativa anterior porque ações em duas tarefas do mesmo Lead podiam reabrir a primeira row após refresh. O staging foi revertido antes desta correção. O candidato final resolve primeiro a identidade composta `lead_id:task_id`, usa fallback por Lead apenas quando a tarefa desaparece e mantém as proteções de seleção e intenção de view mais recentes. Duas revisões independentes do delta corrigido terminaram com `PASS` e sem blockers.
+
+Gates relevantes:
+
+```text
+Suite Python da base integrada segura: 1200 passed, 1 skipped
+Regressão de páginas no candidato exato: 9 passed
+Frontend Node no candidato exato: 37 passed
+node --check, compileall, git diff --check: passed
+Gitleaks no delta 6f7e1eb..cab1417: zero leaks
+Docker Scout da imagem final: 0C, 0H, 0M, 0L; 131 packages
+Browser sintético: desktop 1440, tablet 768, mobile 390 e 320 passed
+Imagem AMD64 local: healthy, 0 restarts, 0 erros de log
+```
+
+Backup imediatamente anterior ao deploy:
+
+```text
+remoto: /root/.crm-staging/backups/crm-staging-20260721T225904Z.dump
+local: /Users/max/.hermes/profiles/marketing-max/backups/crm/staging/crm-staging-20260721T225904Z-pre-cab1417.dump
+modo: 0600
+tamanho: 200589 bytes
+sha256: dcf78ff7d844a0836666eb09cce3405e43af1c361afdead24a7bb033866a5d2a
+restore: 0013, 22 tabelas, 1 workspace, 0 violações da invariante de Account
+```
+
+Estado pós-deploy:
+
+```text
+URL: https://chat.zelusottomayor.com
+imagem: crm-staging:cab1417
+revisão: cab1417e2d09a5a65dc00ec5e282f1ad8d7fadb4
+app: healthy, 0 restarts
+database: healthy, 0 restarts
+migration: 0013 (head)
+workers/outbox/reconcilers: 0
+projeção Sheets e Agent ingress: desligados
+Leads, Contas, Propostas, Inteligência, Operações e APIs autenticadas: 200
+conteúdo protegido: Cache-Control no-store
+browser público sem screenshots: quatro viewports passed; 0 overflow, 0 erros de consola, 0 pedidos falhados
+soak read-only: 90 pedidos, 0 falhas, p95 162,8 ms, máximo 182,4 ms
+logs: 0 marcadores de erro
+```
+
+Rollback imediato preservado em `crm-staging-web-prev-6f7e1eb`, imagem `crm-staging:6f7e1eb`. O CRM legado continua disponível e não houve migrations, backfill, writes de dados, ativação de conectores/workers, merge em `main`, cutover ou alteração de produção. A validação visual do proprietário permanece pendente e o cutover continua bloqueado até aprovação explícita separada.
