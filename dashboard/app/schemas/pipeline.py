@@ -10,14 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 PipelineQueue = Literal[
     "calls_overdue",
     "calls_today",
+    "calls_future",
     "emails_overdue",
     "emails_today",
+    "emails_future",
     "proposal_followups_overdue",
     "proposal_followups_today",
     "touched_today",
     "untouched",
     "all",
 ]
+PipelinePriority = Literal["low", "medium", "high"]
 
 
 class PipelineTask(BaseModel):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,7 +23,13 @@ from tests.migration._postgres import cleanup_workspace, require_disposable_post
 def pipeline_api(monkeypatch):
     engine = create_engine(require_disposable_postgres())
     workspace_id, other_workspace_id = uuid4(), uuid4()
-    account_id, contact_id, lead_id = uuid4(), uuid4(), uuid4()
+    account_id, contact_id, lead_id, low_priority_lead_id = (
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+    )
+    other_account_id, other_lead_id = uuid4(), uuid4()
     now = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
     with Session(engine) as session, session.begin():
         session.add_all(
@@ -43,13 +49,21 @@ def pipeline_api(monkeypatch):
             ]
         )
         session.flush()
-        session.add(
-            Account(
-                id=account_id,
-                workspace_id=workspace_id,
-                display_name="Acme Logistics",
-                normalized_name="acme logistics",
-            )
+        session.add_all(
+            [
+                Account(
+                    id=account_id,
+                    workspace_id=workspace_id,
+                    display_name="Acme Logistics",
+                    normalized_name="acme logistics",
+                ),
+                Account(
+                    id=other_account_id,
+                    workspace_id=other_workspace_id,
+                    display_name="Foreign Logistics",
+                    normalized_name="foreign logistics",
+                ),
+            ]
         )
         session.flush()
         session.add(
@@ -63,15 +77,31 @@ def pipeline_api(monkeypatch):
             )
         )
         session.flush()
-        session.add(
-            Lead(
-                id=lead_id,
-                workspace_id=workspace_id,
-                account_id=account_id,
-                contact_id=contact_id,
-                priority="high",
-                stage="contacted",
-            )
+        session.add_all(
+            [
+                Lead(
+                    id=lead_id,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                    priority="high",
+                    stage="contacted",
+                ),
+                Lead(
+                    id=low_priority_lead_id,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    priority="low",
+                    stage="new",
+                ),
+                Lead(
+                    id=other_lead_id,
+                    workspace_id=other_workspace_id,
+                    account_id=other_account_id,
+                    priority="high",
+                    stage="contacted",
+                ),
+            ]
         )
         session.flush()
         session.add_all(
@@ -92,6 +122,54 @@ def pipeline_api(monkeypatch):
                     task_type="email",
                     title="Email overdue",
                     due_at=now - timedelta(days=1),
+                    owner_user_id=uuid4(),
+                ),
+                Task(
+                    id=UUID(int=1),
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    lead_id=lead_id,
+                    task_type="call",
+                    title="First future call",
+                    due_at=now + timedelta(days=1),
+                    owner_user_id=uuid4(),
+                ),
+                Task(
+                    id=UUID(int=2),
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    lead_id=lead_id,
+                    task_type="call",
+                    title="Second future call",
+                    due_at=now + timedelta(days=1),
+                    owner_user_id=uuid4(),
+                ),
+                Task(
+                    id=UUID(int=3),
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    lead_id=lead_id,
+                    task_type="email",
+                    title="Future email",
+                    due_at=now + timedelta(days=2),
+                    owner_user_id=uuid4(),
+                ),
+                Task(
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    lead_id=lead_id,
+                    task_type="email",
+                    title="Email at local day end",
+                    due_at=datetime(2026, 7, 20, 22, 59, 59, 999999, tzinfo=UTC),
+                    owner_user_id=uuid4(),
+                ),
+                Task(
+                    workspace_id=other_workspace_id,
+                    account_id=other_account_id,
+                    lead_id=other_lead_id,
+                    task_type="email",
+                    title="Foreign future email",
+                    due_at=now + timedelta(days=1),
                     owner_user_id=uuid4(),
                 ),
                 Activity(
@@ -137,16 +215,18 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
     emails_overdue = client.get("/api/v1/pipeline/items?queue=emails_overdue")
 
     assert summary.status_code == 200
-    assert summary.json()["queues"] | {"all": 1} == {
+    assert summary.json()["queues"] == {
         "calls_overdue": 0,
         "calls_today": 1,
+        "calls_future": 1,
         "emails_overdue": 1,
-        "emails_today": 0,
+        "emails_today": 1,
+        "emails_future": 1,
         "proposal_followups_overdue": 0,
         "proposal_followups_today": 0,
         "touched_today": 1,
-        "untouched": 0,
-        "all": 1,
+        "untouched": 1,
+        "all": 2,
     }
     assert calls_today.status_code == emails_overdue.status_code == 200
     assert calls_today.json()["total"] == emails_overdue.json()["total"] == 1
@@ -162,12 +242,56 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
     assert item["task"]["version"] == 1
 
 
+def test_future_call_and_email_queues_are_strict_scoped_and_pagination_safe(
+    pipeline_api,
+):
+    client, lead_id = pipeline_api
+
+    summary = client.get("/api/v1/pipeline/summary")
+    first_call = client.get(
+        "/api/v1/pipeline/items?queue=calls_future&limit=1&offset=0"
+    )
+    second_call = client.get(
+        "/api/v1/pipeline/items?queue=calls_future&limit=1&offset=1"
+    )
+    emails = client.get("/api/v1/pipeline/items?queue=emails_future")
+
+    assert summary.status_code == 200
+    assert summary.json()["queues"]["calls_future"] == 1
+    assert summary.json()["queues"]["emails_future"] == 1
+    assert (
+        first_call.status_code == second_call.status_code == emails.status_code == 200
+    )
+    assert first_call.json()["total"] == second_call.json()["total"] == 2
+    assert emails.json()["total"] == 1
+    assert [
+        first_call.json()["items"][0]["task"]["id"],
+        second_call.json()["items"][0]["task"]["id"],
+    ] == [str(UUID(int=1)), str(UUID(int=2))]
+    assert {item["lead_id"] for item in emails.json()["items"]} == {str(lead_id)}
+    assert emails.json()["items"][0]["task"]["title"] == "Future email"
+
+
 def test_pipeline_queue_names_and_pagination_are_strict(pipeline_api):
     client, _ = pipeline_api
 
     assert client.get("/api/v1/pipeline/items?queue=unknown").status_code == 422
     assert client.get("/api/v1/pipeline/items?queue=all&limit=101").status_code == 422
     assert client.get("/api/v1/pipeline/items?queue=all&offset=-1").status_code == 422
+
+
+def test_pipeline_priority_filter_is_strict_and_applied_before_count(pipeline_api):
+    client, lead_id = pipeline_api
+
+    high = client.get("/api/v1/pipeline/items?queue=all&priority=high")
+    low = client.get("/api/v1/pipeline/items?queue=all&priority=low")
+
+    assert high.status_code == low.status_code == 200
+    assert high.json()["total"] == low.json()["total"] == 1
+    assert [item["lead_id"] for item in high.json()["items"]] == [str(lead_id)]
+    assert client.get("/api/v1/pipeline/items?priority=urgent").status_code == 422
+    assert client.get("/api/v1/pipeline/items?priority=HIGH").status_code == 422
+    assert client.get("/api/v1/pipeline/items?priority=").status_code == 422
 
 
 def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_api):
@@ -201,5 +325,5 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "direction": "outbound",
         "occurred_at": "2026-07-20T09:00:00Z",
     }
-    assert tasks.json()["total"] == 2
+    assert tasks.json()["total"] == 6
     assert {item["type"] for item in tasks.json()["items"]} == {"call", "email"}

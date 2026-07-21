@@ -507,8 +507,10 @@ def leads_page(
             "pipeline_queues": (
                 ("calls_overdue", "Chamadas em atraso"),
                 ("calls_today", "Chamadas hoje"),
+                ("calls_future", "Chamadas futuras"),
                 ("emails_overdue", "Emails em atraso"),
                 ("emails_today", "Emails hoje"),
+                ("emails_future", "Emails futuros"),
                 ("proposal_followups_overdue", "Propostas em atraso"),
                 ("proposal_followups_today", "Propostas hoje"),
                 ("touched_today", "Contactados hoje"),

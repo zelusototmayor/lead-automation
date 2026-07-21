@@ -31,13 +31,13 @@ Estados:
 | Capacidade | Estado | Evidência/lacuna atual |
 |---|---|---|
 | Workspace diária | implemented | `/leads` apresenta filas canónicas, resumo, lista e detalhe lado a lado |
-| Chamadas vencidas/hoje/futuras | partial | filas vencidas/hoje implementadas; vista futura agregada ainda não existe |
-| Emails vencidos/hoje/futuros | partial | filas vencidas/hoje implementadas; vista futura agregada ainda não existe |
+| Chamadas vencidas/hoje/futuras | implemented | filas canónicas vencidas/hoje/futuras usam o fim do dia local do workspace e paginação determinística |
+| Emails vencidos/hoje/futuros | implemented | filas canónicas vencidas/hoje/futuras usam o fim do dia local do workspace e paginação determinística |
 | Follow-ups de proposta vencidos/hoje | implemented | filas canónicas vencidas/hoje e tarefas no detalhe |
 | Leads tocados hoje | implemented | fila `touched_today` baseada em atividades canónicas |
 | Leads ainda não trabalhados | implemented | fila `untouched` baseada na ausência de atividade qualificante |
 | Contadores por fase que abrem filas | implemented | resumo do pipeline devolve contagens e os botões abrem cada fila |
-| Filtro por prioridade | partial | prioridade é visível/editável, mas o filtro dedicado ainda não existe |
+| Filtro por prioridade | implemented | `/leads` envia o filtro dedicado validado server-side (`low`, `medium`, `high`) antes da contagem e paginação |
 | Pesquisa empresa/contacto/telefone/email/cidade | partial | pesquisa cobre empresa, contacto, telefone e email; cidade não existe no modelo canónico |
 | Lista compacta desktop | implemented | fila compacta e detalhe persistente na mesma página |
 | Lista compacta mobile | implemented | layout responsivo mantém fila, detalhe e comandos numa coluna |
@@ -81,8 +81,10 @@ Filas obrigatórias:
 ```text
 calls_overdue
 calls_today
+calls_future
 emails_overdue
 emails_today
+emails_future
 proposal_followups_overdue
 proposal_followups_today
 touched_today

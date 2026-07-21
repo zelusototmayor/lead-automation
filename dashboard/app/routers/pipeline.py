@@ -18,6 +18,7 @@ from dashboard.app.schemas.pipeline import (
     LeadTaskPage,
     PipelineItem,
     PipelinePage,
+    PipelinePriority,
     PipelineQueue,
     PipelineSummary,
     PipelineTask,
@@ -38,13 +39,20 @@ router = APIRouter()
 _QUEUES: tuple[PipelineQueue, ...] = (
     "calls_overdue",
     "calls_today",
+    "calls_future",
     "emails_overdue",
     "emails_today",
+    "emails_future",
     "proposal_followups_overdue",
     "proposal_followups_today",
     "touched_today",
     "untouched",
     "all",
+)
+_TASK_QUEUES = frozenset(
+    queue
+    for queue in _QUEUES
+    if queue.startswith(("calls_", "emails_", "proposal_followups_"))
 )
 _QUALIFYING_ACTIVITY_TYPES = (
     "call",
@@ -90,11 +98,12 @@ def _task_filter(queue: PipelineQueue, start: datetime, end: datetime):
             Task.proposal_id.is_not(None),
             Task.task_type.in_(("follow_up", "proposal_followup")),
         )
-    due_filter = (
-        Task.due_at < start
-        if queue.endswith("_overdue")
-        else Task.due_at.between(start, end)
-    )
+    if queue.endswith("_overdue"):
+        due_filter = Task.due_at < start
+    elif queue.endswith("_future"):
+        due_filter = Task.due_at > end
+    else:
+        due_filter = Task.due_at.between(start, end)
     return and_(Task.status == "open", type_filter, due_filter)
 
 
@@ -141,8 +150,7 @@ def _pipeline_statement(
         )
         .where(Lead.workspace_id == workspace_id)
     )
-    task_queues = _QUEUES[:6]
-    if queue in task_queues:
+    if queue in _TASK_QUEUES:
         return statement.add_columns(
             Task.id.label("task_id"),
             Task.task_type.label("task_type"),
@@ -236,18 +244,22 @@ def pipeline_summary(
 def pipeline_items(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
     queue: Annotated[PipelineQueue, Query()] = "all",
+    priority: Annotated[PipelinePriority | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PipelinePage:
     start, end = _day_bounds(context, _utc_now())
     statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
+    if priority is not None:
+        statement = statement.where(Lead.priority == priority)
     rows = statement.subquery()
     total = int(context.session.scalar(select(func.count()).select_from(rows)) or 0)
     page_rows = context.session.execute(
         statement.order_by(
             Task.due_at.asc().nulls_last()
-            if queue in _QUEUES[:6]
+            if queue in _TASK_QUEUES
             else Lead.updated_at.desc(),
+            Task.id.asc() if queue in _TASK_QUEUES else Lead.id.asc(),
             Lead.id.asc(),
         )
         .limit(limit)

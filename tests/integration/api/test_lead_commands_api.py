@@ -12,7 +12,13 @@ from dashboard.app.config import get_settings
 from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.routers import accounts as accounts_router
 from dashboard.app.security import CRMPrincipal, require_crm_principal
-from src.crm.persistence.models import Activity, AuditEvent, Lead, OutboxEvent, Workspace
+from src.crm.persistence.models import (
+    Activity,
+    AuditEvent,
+    Lead,
+    OutboxEvent,
+    Workspace,
+)
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
 
@@ -108,9 +114,15 @@ def test_stage_command_is_atomic_audited_and_idempotent(lead_command_api):
     assert replay.json() == first.json() | {"replayed": True}
     with Session(engine) as session:
         lead = session.get(Lead, lead_id)
-        audit = session.scalar(select(AuditEvent))
-        outbox = session.scalar(select(OutboxEvent))
-        activity = session.scalar(select(Activity))
+        audit = session.scalar(
+            select(AuditEvent).where(AuditEvent.workspace_id == workspace_id)
+        )
+        outbox = session.scalar(
+            select(OutboxEvent).where(OutboxEvent.workspace_id == workspace_id)
+        )
+        activity = session.scalar(
+            select(Activity).where(Activity.workspace_id == workspace_id)
+        )
         assert (lead.stage, lead.version) == ("contacted", 2)
         assert activity.activity_type == "stage_change"
         assert activity.lead_id == lead_id
@@ -119,9 +131,30 @@ def test_stage_command_is_atomic_audited_and_idempotent(lead_command_api):
         assert audit.actor_id == actor_id
         assert audit.workspace_id == outbox.workspace_id == workspace_id
         assert audit.command_id == outbox.command_id == command_id
-        assert session.scalar(select(func.count(Activity.id))) == 1
-        assert session.scalar(select(func.count(AuditEvent.id))) == 1
-        assert session.scalar(select(func.count(OutboxEvent.id))) == 1
+        assert (
+            session.scalar(
+                select(func.count(Activity.id)).where(
+                    Activity.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(OutboxEvent.id)).where(
+                    OutboxEvent.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
 
 
 def test_stage_command_requires_matching_idempotency_key(lead_command_api):
@@ -231,7 +264,9 @@ def test_stage_command_requires_actor_and_exact_permission(lead_command_api):
             permissions=frozenset({"crm:read", "crm:lead:edit"}),
         ),
     ):
-        dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: principal
+        dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+            principal
+        )
         command_id = uuid4()
         response = client.put(
             f"/api/v1/leads/{lead_id}/stage",

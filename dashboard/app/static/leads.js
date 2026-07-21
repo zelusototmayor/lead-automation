@@ -41,6 +41,7 @@
     const list = root.querySelector("[data-leads-list]");
     const search = root.querySelector("[data-lead-search]");
     const stageFilter = root.querySelector("[data-stage-filter]");
+    const priorityFilter = root.querySelector("[data-priority-filter]");
     const writable = root.dataset.writable === "true";
     const canWriteTasks = root.dataset.canWriteTasks === "true";
     const csrfToken = root.dataset.csrfToken || "";
@@ -127,7 +128,10 @@
       activeQueue = queue;
       selectQueueButton();
       show(root, "loading");
-      const page = await fetchJson(`/api/v1/pipeline/items?queue=${encodeURIComponent(queue)}&limit=100&offset=0`);
+      const searchParams = new URLSearchParams({ queue, limit: "100", offset: "0" });
+      const selectedPriority = priorityFilter.value;
+      if (selectedPriority) searchParams.set("priority", selectedPriority);
+      const page = await fetchJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
       queueItems = Array.isArray(page.items) ? page.items : [];
       root.querySelector("[data-lead-total]").textContent = String(page.total ?? queueItems.length);
       refreshStageOptions();
@@ -383,6 +387,7 @@
     });
     search.addEventListener("input", applyFilters);
     stageFilter.addEventListener("change", applyFilters);
+    priorityFilter.addEventListener("change", () => loadQueue().catch(() => show(root, "error")));
     bindCommandForms();
 
     Promise.all([loadSummary(), loadQueue()]).catch(() => show(root, "error"));

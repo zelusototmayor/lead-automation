@@ -73,6 +73,28 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert "Próxima ação" in response.text
 
 
+def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
+    account_api_fixture,
+):
+    client, _ = account_api_fixture
+
+    response = client.get("/leads")
+    script = (
+        Path(__file__).parents[3] / "dashboard" / "app" / "static" / "leads.js"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'data-pipeline-queue="calls_future"' in response.text
+    assert 'data-pipeline-queue="emails_future"' in response.text
+    assert "data-priority-filter" in response.text
+    for priority in ("low", "medium", "high"):
+        assert f'<option value="{priority}">' in response.text
+    assert 'searchParams.set("priority", selectedPriority)' in script
+    assert 'priorityFilter.addEventListener("change",' in script
+    assert 'search.addEventListener("input", applyFilters)' in script
+    assert 'stageFilter.addEventListener("change", applyFilters)' in script
+
+
 def test_leads_page_only_exposes_csrf_to_authorized_postgres_writer(
     account_api_fixture, monkeypatch
 ):
