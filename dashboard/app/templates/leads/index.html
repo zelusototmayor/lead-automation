@@ -1,40 +1,145 @@
 {% extends "base.html" %}
-{% block title %}Leads · CRM{% endblock %}
+{% block title %}Trabalho diário · CRM{% endblock %}
 {% block extra_styles %}
-  .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr); gap: 10px; margin-bottom: 14px; }
+  .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, .9fr); gap: 16px; align-items: start; }
+  .queue-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
+  .queue-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 7px 10px; color: var(--ink); font-size: 11px; font-weight: 700; }
+  .queue-btn[aria-pressed="true"] { color: white; background: var(--dark); border-color: var(--dark); }
+  .queue-count { margin-left: 5px; opacity: .72; }
+  .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr); gap: 10px; margin-bottom: 12px; }
   .lead-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
-  .lead-tools input, .lead-tools select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-  .state, .leads-list { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .lead-tools input, .lead-tools select, .task-form input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .state, .leads-list, .detail-panel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .state { padding: 24px; color: var(--muted); }
-  .lead-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) minmax(150px, 1fr) minmax(190px, 1.4fr); gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .lead-row { display: grid; grid-template-columns: minmax(190px, 2fr) minmax(110px, 1fr) minmax(170px, 1.4fr); gap: 12px; width: 100%; padding: 13px 15px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: transparent; color: inherit; }
   .lead-row:last-child { border-bottom: 0; }
+  .lead-row:hover, .lead-row[aria-current="true"] { background: var(--accent-soft); }
   .lead-head { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
   .lead-company { font-weight: 800; }
-  .lead-contact { margin-top: 3px; color: var(--muted); font-size: 12px; }
-  .lead-stage { display: inline-block; width: fit-content; padding: 4px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); font-size: 11px; font-weight: 700; }
-  .lead-action { font-size: 12px; }
-  @media (max-width: 640px) {
+  .lead-contact, .lead-action { margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .lead-stage { display: inline-block; width: fit-content; padding: 4px 8px; border-radius: 999px; background: var(--accent-soft); font-size: 11px; font-weight: 700; }
+  .detail-panel { position: sticky; top: 16px; padding: 16px; }
+  .detail-section { padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--line); }
+  .detail-section h3 { margin-bottom: 8px; font-size: 13px; }
+  .detail-contact, .timeline-item, .task-item { color: var(--muted); font-size: 12px; }
+  .timeline-item, .task-item { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .timeline-item:last-child, .task-item:last-child { border-bottom: 0; }
+  .task-title { color: var(--ink); font-weight: 700; }
+  .task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .task-form { display: flex; gap: 6px; margin-top: 7px; }
+  .task-form input { min-width: 0; }
+  .command-form { display: grid; gap: 7px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .command-form:last-child { border-bottom: 0; }
+  .command-form label { display: grid; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 700; }
+  .command-form input, .command-form select, .command-form textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+  .command-form input[type="checkbox"] { width: auto; padding: 0; }
+  .command-form textarea { min-height: 68px; resize: vertical; }
+  .command-form-actions { display: flex; justify-content: flex-end; }
+  @media (max-width: 820px) {
     .shell { padding: 18px 14px 36px; }
+    .pipeline-layout { grid-template-columns: 1fr; }
+    .detail-panel { position: static; }
+  }
+  @media (max-width: 560px) {
     .lead-tools { grid-template-columns: 1fr; }
     .lead-head { display: none; }
-    .lead-row { grid-template-columns: 1fr; gap: 8px; }
+    .lead-row { grid-template-columns: 1fr; gap: 6px; }
   }
 {% endblock %}
 {% block content %}
-<section id="leads-app" aria-live="polite">
+<section id="leads-app" aria-live="polite"
+  data-writable="{{ 'true' if writable else 'false' }}"
+  data-can-edit-lead="{{ 'true' if can_edit_lead else 'false' }}"
+  data-can-transition-stage="{{ 'true' if can_transition_stage else 'false' }}"
+  data-can-log-call="{{ 'true' if can_log_call else 'false' }}"
+  data-can-log-email="{{ 'true' if can_log_email else 'false' }}"
+  data-can-write-tasks="{{ 'true' if can_write_tasks else 'false' }}"{% if csrf_token %}
+  data-csrf-token="{{ csrf_token }}"{% endif %}>
   <header class="topbar">
-    <div><p class="eyebrow">CRM</p><h1>Leads</h1><p class="subtle"><span data-lead-total>—</span> leads · contactos, estado e próximas ações.</p></div>
+    <div><p class="eyebrow">CRM</p><h1>Trabalho diário</h1><p class="subtle"><span data-lead-total>—</span> leads na fila selecionada.</p></div>
   </header>
+  <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
+    {% for value, label in pipeline_queues %}
+      <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
+    {% endfor %}
+  </nav>
   <div class="lead-tools">
     <label>Pesquisar<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
     <label>Estado<select data-stage-filter><option value="">Todos</option></select></label>
   </div>
-  <div class="state" data-state="loading">A carregar leads…</div>
-  <div class="state hidden" data-state="empty">Ainda não existem leads neste workspace.</div>
-  <div class="state hidden" data-state="error">Não foi possível carregar os leads.</div>
-  <div class="leads-list hidden" data-state="ready" data-leads-list>
-    <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>O que foi feito</span><span>Próxima ação</span></div>
+  <div class="pipeline-layout">
+    <div>
+      <div class="state" data-state="loading">A carregar fila…</div>
+      <div class="state hidden" data-state="empty">Não existem leads nesta fila.</div>
+      <div class="state hidden" data-state="error">Não foi possível carregar a fila.</div>
+      <div class="leads-list hidden" data-state="ready" data-leads-list>
+        <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>Próxima ação</span></div>
+      </div>
+    </div>
+    <aside class="detail-panel" data-lead-detail-panel>
+      <div data-detail-empty><p class="eyebrow">Lead</p><p class="subtle">Selecione um lead para abrir o contexto operacional.</p></div>
+      <div class="hidden" data-detail-ready>
+        <p class="eyebrow">Lead</p><h2 data-detail-company></h2><p class="detail-contact" data-detail-contact></p>
+        <div class="task-actions" data-detail-contact-actions>
+          <a class="btn hidden" data-detail-phone-link>Telefonar</a>
+          <a class="btn hidden" data-detail-email-link>Enviar email</a>
+        </div>
+        {% if writable %}
+        <div class="detail-section" data-lead-commands>
+          <h3>Registar trabalho</h3>
+          {% if can_edit_lead %}
+          <form class="command-form" data-lead-edit-form>
+            <label>Prioridade<select name="priority" required><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+            <label>Empresa<input name="company_name" maxlength="512" required></label>
+            <label>Contacto<input name="contact_name" maxlength="512" required></label>
+            <label>Email<input name="contact_email" type="email" maxlength="320" required></label>
+            <label>Telefone completo<input name="contact_phone" maxlength="64" required autocomplete="tel"></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Guardar dados</button></div>
+          </form>
+          {% endif %}
+          {% if can_transition_stage %}
+          <form class="command-form" data-stage-transition-form>
+            <label>Fase<select name="target_stage" required><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
+            <label><span><input name="reviewed_correction" type="checkbox"> Correção revista de estado terminal</span></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Alterar fase</button></div>
+          </form>
+          {% endif %}
+          {% if can_log_call %}
+          <form class="command-form" data-call-log-form>
+            <label>Resultado<select name="outcome_code" required><option value="connected">Atendeu</option><option value="no_answer">Não atendeu</option><option value="voicemail">Voice mail</option><option value="wrong_number">Número errado</option><option value="not_interested">Sem interesse</option><option value="follow_up">Follow-up</option></select></label>
+            <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar chamada</button></div>
+          </form>
+          {% endif %}
+          {% if can_log_email %}
+          <form class="command-form" data-email-log-form>
+            <label>Direção<select name="direction" required><option value="outbound">Enviado</option><option value="inbound">Recebido</option></select></label>
+            <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar email</button></div>
+          </form>
+          {% endif %}
+          {% if can_write_tasks %}
+          <form class="command-form" data-next-action-form>
+            <label>Tipo<select name="task_type" required><option value="call">Chamada</option><option value="email">Email</option><option value="follow_up">Follow-up</option></select></label>
+            <label>Próxima ação<input name="title" maxlength="512" required></label>
+            <label>Data e hora<input name="due_at" type="datetime-local" required></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Marcar próxima ação</button></div>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+        <div class="detail-section"><h3>Próximas tarefas</h3><div data-lead-tasks></div></div>
+        <div class="detail-section"><h3>Histórico</h3><div data-lead-timeline></div></div>
+      </div>
+    </aside>
   </div>
+  <template data-task-actions-template>
+    <div class="task-actions">
+      <button class="btn btn-primary" type="button" data-task-complete>Concluir</button>
+      <button class="btn" type="button" data-task-reschedule>Reagendar</button>
+      <button class="btn" type="button" data-task-cancel>Cancelar</button>
+    </div>
+  </template>
 </section>
 {% endblock %}
 {% block scripts %}<script defer src="/static/leads.js"></script>{% endblock %}

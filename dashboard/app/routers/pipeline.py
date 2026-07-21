@@ -61,11 +61,11 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _day_bounds(context: AccountRequestContext, now: datetime) -> tuple[datetime, datetime]:
+def _day_bounds(
+    context: AccountRequestContext, now: datetime
+) -> tuple[datetime, datetime]:
     timezone_name = context.session.scalar(
-        select(Workspace.timezone).where(
-            Workspace.id == context.principal.workspace_id
-        )
+        select(Workspace.timezone).where(Workspace.id == context.principal.workspace_id)
     )
     try:
         timezone = ZoneInfo(timezone_name)
@@ -90,11 +90,17 @@ def _task_filter(queue: PipelineQueue, start: datetime, end: datetime):
             Task.proposal_id.is_not(None),
             Task.task_type.in_(("follow_up", "proposal_followup")),
         )
-    due_filter = Task.due_at < start if queue.endswith("_overdue") else Task.due_at.between(start, end)
+    due_filter = (
+        Task.due_at < start
+        if queue.endswith("_overdue")
+        else Task.due_at.between(start, end)
+    )
     return and_(Task.status == "open", type_filter, due_filter)
 
 
-def _activity_exists(workspace_id, start: datetime | None = None, end: datetime | None = None):
+def _activity_exists(
+    workspace_id, start: datetime | None = None, end: datetime | None = None
+):
     conditions = [
         Activity.workspace_id == workspace_id,
         Activity.lead_id == Lead.id,
@@ -125,11 +131,13 @@ def _pipeline_statement(
         select(*base_columns)
         .outerjoin(
             Account,
-            (Account.workspace_id == Lead.workspace_id) & (Account.id == Lead.account_id),
+            (Account.workspace_id == Lead.workspace_id)
+            & (Account.id == Lead.account_id),
         )
         .outerjoin(
             Contact,
-            (Contact.workspace_id == Lead.workspace_id) & (Contact.id == Lead.contact_id),
+            (Contact.workspace_id == Lead.workspace_id)
+            & (Contact.id == Lead.contact_id),
         )
         .where(Lead.workspace_id == workspace_id)
     )
@@ -218,7 +226,8 @@ def pipeline_summary(
             context.principal.workspace_id, queue, start, end
         ).subquery()
         counts[queue] = int(
-            context.session.scalar(select(func.count(func.distinct(rows.c.lead_id)))) or 0
+            context.session.scalar(select(func.count(func.distinct(rows.c.lead_id))))
+            or 0
         )
     return PipelineSummary(queues=counts, generated_at=now)
 
@@ -231,14 +240,14 @@ def pipeline_items(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PipelinePage:
     start, end = _day_bounds(context, _utc_now())
-    statement = _pipeline_statement(
-        context.principal.workspace_id, queue, start, end
-    )
+    statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
     rows = statement.subquery()
     total = int(context.session.scalar(select(func.count()).select_from(rows)) or 0)
     page_rows = context.session.execute(
         statement.order_by(
-            Task.due_at.asc().nulls_last() if queue in _QUEUES[:6] else Lead.updated_at.desc(),
+            Task.due_at.asc().nulls_last()
+            if queue in _QUEUES[:6]
+            else Lead.updated_at.desc(),
             Lead.id.asc(),
         )
         .limit(limit)
@@ -268,11 +277,13 @@ def _lead_detail_row(context: AccountRequestContext, lead_id: UUID):
         )
         .outerjoin(
             Account,
-            (Account.workspace_id == Lead.workspace_id) & (Account.id == Lead.account_id),
+            (Account.workspace_id == Lead.workspace_id)
+            & (Account.id == Lead.account_id),
         )
         .outerjoin(
             Contact,
-            (Contact.workspace_id == Lead.workspace_id) & (Contact.id == Lead.contact_id),
+            (Contact.workspace_id == Lead.workspace_id)
+            & (Contact.id == Lead.contact_id),
         )
         .where(
             Lead.workspace_id == context.principal.workspace_id,
@@ -296,7 +307,7 @@ def lead_detail(
         company=row.company,
         contact_name=row.contact_name,
         email=str(row.email) if row.email is not None else None,
-        phone=_redact_phone(row.phone),
+        phone=str(row.phone) if row.phone is not None else None,
         stage=row.stage,
         priority=row.priority,
         version=row.version,
@@ -315,7 +326,9 @@ def lead_timeline(
         Activity.workspace_id == context.principal.workspace_id,
         Activity.lead_id == lead_id,
     )
-    total = int(context.session.scalar(select(func.count(Activity.id)).where(*filters)) or 0)
+    total = int(
+        context.session.scalar(select(func.count(Activity.id)).where(*filters)) or 0
+    )
     rows = context.session.execute(
         select(
             Activity.id,
@@ -362,7 +375,9 @@ def lead_tasks(
         Task.workspace_id == context.principal.workspace_id,
         Task.lead_id == lead_id,
     )
-    total = int(context.session.scalar(select(func.count(Task.id)).where(*filters)) or 0)
+    total = int(
+        context.session.scalar(select(func.count(Task.id)).where(*filters)) or 0
+    )
     rows = context.session.execute(
         select(Task)
         .where(*filters)

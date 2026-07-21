@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine, func, select, true
 from sqlalchemy.orm import Session, sessionmaker
 
+from dashboard.app.config import get_settings
 from dashboard.app.db import create_database_engine, create_session_factory
 from dashboard.app.feature_flags import (
     get_feature_flags,
@@ -466,10 +467,55 @@ def leads_page(
     request: Request,
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
 ):
+    try:
+        settings = get_settings()
+        flags = get_feature_flags()
+    except ValueError:
+        settings = None
+        flags = None
+    request_origin = str(request.base_url).rstrip("/")
+    write_ready = bool(
+        settings is not None
+        and flags is not None
+        and flags.command_writer == "postgres"
+        and settings.csrf_token
+        and request_origin in settings.allowed_write_origins
+        and context.principal.actor_id is not None
+    )
+    command_permissions = {
+        "can_edit_lead": "crm:lead:edit",
+        "can_transition_stage": "crm:lead-stage:write",
+        "can_log_call": "crm:call:log",
+        "can_log_email": "crm:email:log",
+        "can_write_tasks": "crm:task:write",
+    }
+    capabilities = {
+        name: write_ready and permission in context.principal.permissions
+        for name, permission in command_permissions.items()
+    }
+    writable = any(capabilities.values())
+    csrf_token = settings.csrf_token if settings is not None and writable else None
     return templates.TemplateResponse(
         request,
         "leads/index.html",
-        {"request": request, "subject": context.principal.subject},
+        {
+            "request": request,
+            "subject": context.principal.subject,
+            "writable": writable,
+            "csrf_token": csrf_token,
+            **capabilities,
+            "pipeline_queues": (
+                ("calls_overdue", "Chamadas em atraso"),
+                ("calls_today", "Chamadas hoje"),
+                ("emails_overdue", "Emails em atraso"),
+                ("emails_today", "Emails hoje"),
+                ("proposal_followups_overdue", "Propostas em atraso"),
+                ("proposal_followups_today", "Propostas hoje"),
+                ("touched_today", "Contactados hoje"),
+                ("untouched", "Sem contacto"),
+                ("all", "Todos"),
+            ),
+        },
     )
 
 

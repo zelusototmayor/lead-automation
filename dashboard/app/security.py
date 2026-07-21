@@ -132,6 +132,59 @@ async def require_crm_command_access(
     return principal
 
 
+async def _require_command_permission(
+    request: Request,
+    principal: CRMPrincipal,
+    permission: str,
+) -> CRMPrincipal:
+    try:
+        settings = get_settings()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN
+        ) from None
+    valid_csrf = _matches(request.headers.get("x-csrf-token"), settings.csrf_token)
+    origin = request.headers.get("origin")
+    valid_origin = origin is not None and origin in settings.allowed_write_origins
+    valid_principal = (
+        type(principal) is CRMPrincipal
+        and type(principal.actor_id) is UUID
+        and type(principal.permissions) is frozenset
+        and permission in principal.permissions
+    )
+    if not (valid_csrf and valid_origin and valid_principal):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
+    return principal
+
+
+async def require_lead_edit_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:lead:edit")
+
+
+async def require_call_log_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:call:log")
+
+
+async def require_email_log_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:email:log")
+
+
+async def require_next_action_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:task:write")
+
+
 async def require_task_command_access(
     request: Request,
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],

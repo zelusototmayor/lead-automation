@@ -30,39 +30,39 @@ Estados:
 
 | Capacidade | Estado | Evidência/lacuna atual |
 |---|---|---|
-| Workspace diária | missing | `/leads` é uma lista de validação, não uma fila diária |
-| Chamadas vencidas/hoje/futuras | missing | sem read model por tarefas e timezone comercial |
-| Emails vencidos/hoje/futuros | missing | sem filas operacionais equivalentes |
-| Follow-ups de proposta vencidos/hoje | partial | histórico relacional existe, sem fila diária completa |
-| Leads tocados hoje | missing | sem projeção operacional baseada em atividades |
-| Leads ainda não trabalhados | partial | lista existe; sem semântica canónica de atividade qualificante |
-| Contadores por fase que abrem filas | missing | sem resumo transacional do pipeline |
-| Filtro por prioridade | missing | lista temporária não oferece o fluxo completo |
-| Pesquisa empresa/contacto/telefone/email/cidade | partial | pesquisa temporária cobre apenas parte dos campos |
-| Lista compacta desktop | partial | lista temporária sem workspace diária/detalhe persistente |
-| Lista compacta mobile | partial | renderização existe; contrato operacional mobile não está provado |
-| Detalhe sem perder a fila | missing | navegação não preserva fila, filtros e posição |
-| Click-to-call e click-to-email | missing | não existem no workspace PostgreSQL operacional |
-| Registar resultado de chamada | missing | sem comando HTTP PostgreSQL |
-| Notas e histórico | partial | modelos existem; fluxo de captura e timeline operacional incompleto |
-| Concluir/reagendar tarefa | partial | comandos HTTP protegidos complete/reschedule/cancel têm versão, idempotência, activity, audit e outbox atómicos; UI ainda pendente |
-| Definir próxima ação e data/hora | missing | sem comando operacional por lead |
-| Guardar e abrir lead seguinte | missing | sem fluxo atómico/estado de fila |
-| Saltar lead sem alteração | missing | sem controlo de fila |
-| Editar empresa e contacto | missing | sem comandos estreitos PostgreSQL |
-| Alterar fase | partial | `HumanCommandService` existe; sem endpoint/browser seguro |
-| Alterar prioridade | missing | sem comando PostgreSQL |
-| Registar email manual | missing | sem comando PostgreSQL |
-| Concluir follow-up de outreach | missing | sem comando PostgreSQL |
+| Workspace diária | implemented | `/leads` apresenta filas canónicas, resumo, lista e detalhe lado a lado |
+| Chamadas vencidas/hoje/futuras | partial | filas vencidas/hoje implementadas; vista futura agregada ainda não existe |
+| Emails vencidos/hoje/futuros | partial | filas vencidas/hoje implementadas; vista futura agregada ainda não existe |
+| Follow-ups de proposta vencidos/hoje | implemented | filas canónicas vencidas/hoje e tarefas no detalhe |
+| Leads tocados hoje | implemented | fila `touched_today` baseada em atividades canónicas |
+| Leads ainda não trabalhados | implemented | fila `untouched` baseada na ausência de atividade qualificante |
+| Contadores por fase que abrem filas | implemented | resumo do pipeline devolve contagens e os botões abrem cada fila |
+| Filtro por prioridade | partial | prioridade é visível/editável, mas o filtro dedicado ainda não existe |
+| Pesquisa empresa/contacto/telefone/email/cidade | partial | pesquisa cobre empresa, contacto, telefone e email; cidade não existe no modelo canónico |
+| Lista compacta desktop | implemented | fila compacta e detalhe persistente na mesma página |
+| Lista compacta mobile | implemented | layout responsivo mantém fila, detalhe e comandos numa coluna |
+| Detalhe sem perder a fila | implemented | detalhe abre no painel lateral sem abandonar a fila ou filtros locais |
+| Click-to-call e click-to-email | implemented | detalhe protegido cria links `tel:` e `mailto:` apenas a partir dos dados da API |
+| Registar resultado de chamada | implemented | comando protegido persiste outcome, nota, activity, audit e outbox atomicamente |
+| Notas e histórico | partial | notas de chamada/email e timeline operacional existem; nota livre autónoma ainda não |
+| Concluir/reagendar tarefa | implemented | comandos e UI complete/reschedule/cancel têm versão, idempotência, activity, audit e outbox atómicos |
+| Definir próxima ação e data/hora | implemented | comando e UI criam tarefa aberta tenant-safe e auditada |
+| Guardar e abrir lead seguinte | missing | sem controlo explícito de avanço após commit |
+| Saltar lead sem alteração | missing | sem controlo explícito de skip/avanço |
+| Editar empresa e contacto | partial | comando protegido existe para leads com account/contact; leads pré-conta ainda não são editáveis |
+| Alterar fase | implemented | endpoint e UI protegidos usam política canónica, expected version e correção revista |
+| Alterar prioridade | partial | incluída no comando de edição, mas ainda acoplada a account/contact existentes |
+| Registar email manual | implemented | comando protegido regista atividade manual sem enviar email |
+| Concluir follow-up de outreach | partial | tarefas genéricas podem ser concluídas; sem contrato específico de outreach/proposta |
 | Atualizar estado/outcome da proposta | missing | leitura existe; sem comando operacional |
 | Atualizar próxima ação da proposta | missing | leitura existe; sem comando operacional |
 | Motivo de perda | partial | modelo parcial, sem fluxo completo |
 | Valor/probabilidade/forecast com evidência | partial | domínio existe; edição operacional protegida não existe |
-| Timeline imutável | partial | persistência existe; UI operacional incompleta |
+| Timeline imutável | implemented | detalhe lista atividades append-only e os comandos operacionais acrescentam nova evidência |
 | Analytics de atividade diária | missing | sem equivalente canónico |
 | Tempo por fase | partial | histórico existe parcialmente; analytics operacional ausente |
-| Writes autenticados e auditados | partial | fundações de comando/audit/outbox existem; cobertura funcional insuficiente |
-| Proteção contra edições concorrentes | partial | domínio usa versões; endpoints operacionais ainda ausentes |
+| Writes autenticados e auditados | partial | comandos de lead/tarefa estão protegidos e auditados; proposta/outreach ainda incompletos |
+| Proteção contra edições concorrentes | partial | comandos de lead/tarefa usam expected version; superfícies restantes ainda ausentes |
 
 ## Contratos mínimos
 

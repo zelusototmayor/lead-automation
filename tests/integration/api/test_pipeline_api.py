@@ -117,7 +117,9 @@ def pipeline_api(monkeypatch):
             )
 
     monkeypatch.setattr(pipeline_router, "_utc_now", lambda: now)
-    dashboard_main.app.dependency_overrides[get_account_request_context] = override_context
+    dashboard_main.app.dependency_overrides[get_account_request_context] = (
+        override_context
+    )
     try:
         yield TestClient(dashboard_main.app), lead_id
     finally:
@@ -152,6 +154,7 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
     assert item["lead_id"] == str(lead_id)
     assert item["company"] == "Acme Logistics"
     assert item["contact_name"] == "Ana Silva"
+    assert item["phone"] == "+351****0000"
     assert item["priority"] == "high"
     assert item["task"]["type"] == "call"
     assert item["task"]["title"] == "Call today"
@@ -182,7 +185,7 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "company": "Acme Logistics",
         "contact_name": "Ana Silva",
         "email": "ana@example.test",
-        "phone": "+351****0000",
+        "phone": "+351210000000",
         "stage": "contacted",
         "priority": "high",
         "version": 1,
