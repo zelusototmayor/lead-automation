@@ -298,17 +298,22 @@
     return true;
   };
 
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = {
-      createLatestQueueLoader,
-      createLeadQueueBehavior,
-      createLeadAnalyticsBehavior,
-      renderLeadAnalytics,
-      revealDetailOnMobile,
-    };
-  }
-
-  const stageLabel = (value) => String(value || "sem estado").replaceAll("_", " ");
+  const STAGE_LABELS = Object.freeze({
+    new: "Novo",
+    contacted: "Contactado",
+    qualified: "Qualificado",
+    meeting_booked: "Reunião marcada",
+    meeting_held: "Reunião feita",
+    proposal_requested: "Proposta pedida",
+    proposal_sent: "Proposta enviada",
+    negotiation: "Negociação",
+    won: "Ganho",
+    lost: "Perdido",
+    not_a_fit: "Sem fit",
+  });
+  const PRIORITY_LABELS = Object.freeze({ high: "Alta", medium: "Média", low: "Baixa" });
+  const stageLabel = (value) => STAGE_LABELS[value] || String(value || "Sem estado").replaceAll("_", " ");
+  const priorityLabel = (value) => PRIORITY_LABELS[value] || "Sem prioridade";
   const formatDateTime = (value) => {
     if (!value) return "Sem data";
     const date = new Date(value);
@@ -316,6 +321,41 @@
       ? "Sem data"
       : date.toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
   };
+  const queueMetricValues = (summary) => {
+    const queues = summary?.queues || {};
+    const count = (name) => Math.max(0, Number(queues[name]) || 0);
+    return {
+      all: count("all"),
+      touchedToday: count("touched_today"),
+      callsDue: count("calls_overdue") + count("calls_today"),
+      emailsDue: count("emails_overdue") + count("emails_today"),
+      proposalFollowupsDue: count("proposal_followups_overdue") + count("proposal_followups_today"),
+    };
+  };
+  const leadRowView = (lead) => ({
+    company: lead.company || "Sem empresa",
+    contact: lead.contact_name || "—",
+    phone: lead.phone || "—",
+    email: lead.email || "—",
+    stage: stageLabel(lead.stage),
+    priority: priorityLabel(lead.priority),
+    actionTitle: lead.task?.title || "Sem próxima ação",
+    due: lead.task?.due_at ? formatDateTime(lead.task.due_at) : "—",
+  });
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      createLatestQueueLoader,
+      createLeadQueueBehavior,
+      createLeadAnalyticsBehavior,
+      renderLeadAnalytics,
+      revealDetailOnMobile,
+      stageLabel,
+      priorityLabel,
+      queueMetricValues,
+      leadRowView,
+    };
+  }
 
   const show = (root, state) => {
     root.querySelectorAll("[data-state]").forEach((element) => {
@@ -360,10 +400,20 @@
     let queueItems = [];
     let selectedLeadId = null;
     let currentLead = null;
+    let currentSummary = { queues: {} };
 
     const renderSummary = (summary) => {
+      currentSummary = summary;
       root.querySelectorAll("[data-queue-count]").forEach((element) => {
         element.textContent = String(summary.queues?.[element.dataset.queueCount] ?? 0);
+      });
+      const metrics = queueMetricValues(summary);
+      root.querySelectorAll("[data-metric-value]").forEach((element) => {
+        element.textContent = String(metrics[element.dataset.metricValue] ?? 0);
+      });
+      root.querySelectorAll("[data-metric-targets]").forEach((button) => {
+        const targets = button.dataset.metricTargets.split(",");
+        button.setAttribute("aria-pressed", String(targets.includes(activeQueue)));
       });
     };
 
@@ -371,37 +421,48 @@
       root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.pipelineQueue === activeQueue));
       });
+      root.querySelectorAll("[data-metric-targets]").forEach((button) => {
+        const targets = button.dataset.metricTargets.split(",");
+        button.setAttribute("aria-pressed", String(targets.includes(activeQueue)));
+      });
     };
 
     const renderRows = (rows) => {
-      list.querySelectorAll(".lead-row:not(.lead-head)").forEach((row) => row.remove());
+      list.querySelectorAll(".lead-row").forEach((row) => row.remove());
       rows.forEach((lead) => {
-        const row = document.createElement("button");
-        row.type = "button";
+        const view = leadRowView(lead);
+        const row = document.createElement("tr");
         row.className = "lead-row";
         row.dataset.leadId = lead.lead_id;
+        row.tabIndex = 0;
         row.setAttribute("aria-current", String(lead.lead_id === selectedLeadId));
 
-        const identity = document.createElement("div");
-        appendText(identity, "lead-company", lead.company);
-        appendText(
-          identity,
-          "lead-contact",
-          [lead.contact_name, lead.email, lead.phone].filter(Boolean).join(" · ") || "Sem contacto",
-        );
+        const appendCell = (column, className, text) => {
+          const cell = document.createElement("td");
+          cell.dataset.column = column;
+          cell.dataset.label = column;
+          cell.className = className;
+          cell.textContent = text;
+          row.appendChild(cell);
+          return cell;
+        };
+        appendCell("company", "lead-company", view.company);
+        appendCell("contact", "lead-contact", view.contact);
+        const action = appendCell("due", "lead-action", view.actionTitle);
+        appendText(action, "lead-due", view.due);
+        appendCell("phone", "lead-phone", view.phone);
+        appendCell("email", "lead-email", view.email);
+        const stage = appendCell("stage", "lead-stage", view.stage);
+        stage.dataset.stage = lead.stage || "";
+        appendCell("priority", "lead-priority", view.priority);
 
-        const stage = document.createElement("span");
-        stage.className = "lead-stage";
-        stage.textContent = stageLabel(lead.stage);
-
-        const action = document.createElement("div");
-        action.className = "lead-action";
-        action.textContent = lead.task
-          ? `${lead.task.title} · ${formatDateTime(lead.task.due_at)}`
-          : "Sem próxima ação";
-
-        row.append(identity, stage, action);
-        row.addEventListener("click", () => loadLead(lead.lead_id));
+        const open = () => loadLead(lead.lead_id);
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          open();
+        });
         list.appendChild(row);
       });
       show(root, rows.length ? "ready" : "empty");
@@ -704,14 +765,22 @@
 
     const commitSelection = (_leadId, { detail, timeline, tasks }) => {
       currentLead = detail;
+      const taskItems = Array.isArray(tasks.items) ? tasks.items : [];
+      const nextTask = taskItems.find((task) => task.status === "open") || null;
       populateCommandForms(detail);
       root.querySelector("[data-detail-company]").textContent = detail.company;
       root.querySelector("[data-detail-contact]").textContent =
-        [detail.contact_name, detail.email, detail.phone, stageLabel(detail.stage)]
+        [detail.contact_name, detail.email, detail.phone]
           .filter(Boolean)
           .join(" · ") || "Sem contacto";
+      const detailStage = root.querySelector("[data-detail-stage]");
+      detailStage.textContent = stageLabel(detail.stage);
+      detailStage.dataset.stage = detail.stage || "";
+      root.querySelector("[data-detail-priority]").textContent = priorityLabel(detail.priority);
+      root.querySelector("[data-detail-next-action]").textContent = nextTask?.title || "Sem próxima ação";
+      root.querySelector("[data-detail-next-due]").textContent = nextTask ? formatDateTime(nextTask.due_at) : "—";
       renderContactActions(detail);
-      renderTasks(Array.isArray(tasks.items) ? tasks.items : []);
+      renderTasks(taskItems);
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
       root.querySelector("[data-detail-empty]").classList.add("hidden");
       root.querySelector("[data-detail-ready]").classList.remove("hidden");
@@ -764,6 +833,14 @@
       },
     });
 
+    root.querySelectorAll("[data-metric-targets]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const targets = button.dataset.metricTargets.split(",");
+        const queue = targets.find((target) => Number(currentSummary.queues?.[target] || 0) > 0)
+          || targets[targets.length - 1];
+        loadQueue({ queue, stage: "", offset: 0 }).catch(() => show(root, "error"));
+      });
+    });
     root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
       button.addEventListener("click", () => loadQueue({
         queue: button.dataset.pipelineQueue,

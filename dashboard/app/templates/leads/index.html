@@ -1,9 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Trabalho diário · CRM{% endblock %}
 {% block extra_styles %}
-  .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, .9fr); gap: 16px; align-items: start; }
+  .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1fr) 386px; gap: 10px; align-items: start; }
   .pipeline-layout > *, .leads-list, .lead-row > * { min-width: 0; }
   .lead-company, .lead-contact, .lead-action, .detail-contact, .task-title { overflow-wrap: anywhere; }
+  .metric-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: hidden; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .metric-card { min-height: 66px; padding: 9px 12px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
+  .metric-card:last-child { border-right: 0; }
+  .metric-card:hover, .metric-card[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+  .metric-label { color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
+  .metric-value { display: block; margin-top: 4px; font-size: 24px; font-weight: 900; line-height: 1; }
+  .metric-note { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
+  .metric-card[data-metric="touchedToday"] .metric-value { color: var(--green); }
+  .metric-card[data-metric="callsDue"] .metric-value { color: var(--red); }
+  .metric-card[data-metric="emailsDue"] .metric-value { color: var(--amber); }
+  .metric-card[data-metric="proposalFollowupsDue"] .metric-value { color: var(--blue); }
   .queue-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
   .queue-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 7px 10px; color: var(--ink); font-size: 11px; font-weight: 700; }
   .queue-btn[aria-pressed="true"] { color: white; background: var(--dark); border-color: var(--dark); }
@@ -29,23 +40,48 @@
   .analytics-metric-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
   .analytics-unavailable { margin: 10px 0 0; }
   .analytics-stage-dwell { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 11px; }
-  .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
   .lead-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
   .lead-tools input, .lead-tools select, .task-form input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-  .state, .leads-list, .detail-panel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .state, .leads-list, .detail-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
   .state { padding: 24px; color: var(--muted); }
-  .lead-row { display: grid; grid-template-columns: minmax(190px, 2fr) minmax(110px, 1fr) minmax(170px, 1.4fr); gap: 12px; width: 100%; padding: 13px 15px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: transparent; color: inherit; }
+  .leads-list { max-height: calc(100vh - 340px); overflow: auto; box-shadow: var(--shadow); }
+  [data-leads-table] { display: block; width: 100%; border-collapse: collapse; }
+  [data-leads-table] thead, [data-leads-table] tbody { display: block; width: 100%; }
+  [data-leads-table] th { text-align: left; }
+  .lead-row { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(100px, 1fr) minmax(150px, 1.35fr) minmax(94px, .8fr) minmax(150px, 1.25fr) minmax(100px, .8fr) minmax(70px, .55fr); gap: 10px; align-items: center; width: 100%; min-height: 44px; padding: 7px 10px; border: 0; border-bottom: 1px solid rgba(221,211,196,.72); text-align: left; background: transparent; color: inherit; font-size: 11px; }
   .lead-row:last-child { border-bottom: 0; }
   .lead-row:hover, .lead-row[aria-current="true"] { background: var(--accent-soft); }
-  .lead-head { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
-  .lead-company { font-weight: 800; }
-  .lead-contact, .lead-action { margin-top: 3px; color: var(--muted); font-size: 12px; }
-  .lead-stage { display: inline-block; width: fit-content; padding: 4px 8px; border-radius: 999px; background: var(--accent-soft); font-size: 11px; font-weight: 700; }
+  .lead-row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--accent); }
+  .lead-head { position: sticky; top: 0; z-index: 2; min-height: 34px; background: var(--panel-2); color: var(--muted); font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+  .lead-company { overflow: hidden; font-size: 12px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+  .lead-contact, .lead-phone, .lead-email, .lead-priority { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .lead-action { overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+  .lead-due { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; font-weight: 600; }
+  .lead-stage { display: inline-flex; align-items: center; justify-self: start; width: auto; max-width: 100%; min-height: 22px; padding: 0 7px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lead-stage[data-stage="won"] { background: var(--green-soft); color: var(--green); }
+  .lead-stage[data-stage="lost"], .lead-stage[data-stage="not_a_fit"] { background: var(--red-soft); color: var(--red); }
+  .lead-stage[data-stage="proposal_requested"], .lead-stage[data-stage="proposal_sent"], .lead-stage[data-stage="negotiation"] { background: var(--amber-soft); color: var(--amber); }
   .queue-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
   .queue-pagination [data-page-range] { color: var(--muted); font-size: 11px; font-weight: 700; }
-  .detail-panel { position: sticky; top: 16px; padding: 16px; }
-  .detail-section { padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--line); }
+  .detail-panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding: 13px; border-left: 3px solid var(--accent); box-shadow: var(--shadow); }
+  .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .detail-head h2 { margin: 0; font-size: 19px; line-height: 1.1; }
+  .detail-badges { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  .detail-priority { display: inline-flex; align-items: center; min-height: 22px; padding: 0 7px; border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 9px; font-weight: 900; text-transform: uppercase; }
+  .detail-summary { margin-top: 8px; padding: 9px; border-radius: 8px; background: var(--page-bg); }
+  .detail-summary-line { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--muted); font-size: 11px; }
+  .detail-summary-line strong { color: var(--ink); text-align: right; overflow-wrap: anywhere; }
+  .detail-section { padding-top: 11px; margin-top: 11px; border-top: 1px solid var(--line); }
   .detail-section h3 { margin-bottom: 8px; font-size: 13px; }
+  details.detail-section > summary, details.command-disclosure > summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
+  details.detail-section > summary::-webkit-details-marker, details.command-disclosure > summary::-webkit-details-marker { display: none; }
+  details.detail-section > summary::after, details.command-disclosure > summary::after { content: '+'; color: var(--accent); font-size: 16px; }
+  details[open].detail-section > summary::after, details[open].command-disclosure > summary::after { content: '−'; }
+  .command-stack { display: grid; gap: 0; }
+  .command-disclosure { border-bottom: 1px solid var(--line); padding: 9px 0; }
+  .command-disclosure:last-child { border-bottom: 0; }
+  .command-disclosure .command-form { padding-bottom: 0; border-bottom: 0; }
   .detail-contact, .timeline-item, .task-item { color: var(--muted); font-size: 12px; }
   .timeline-item, .task-item { padding: 9px 0; border-bottom: 1px solid var(--line); }
   .timeline-item:last-child, .task-item:last-child { border-bottom: 0; }
@@ -60,11 +96,18 @@
   .command-form input[type="checkbox"] { width: auto; padding: 0; }
   .command-form textarea { min-height: 68px; resize: vertical; }
   .command-form-actions { display: flex; justify-content: flex-end; }
+  @media (max-width: 1040px) {
+    .metric-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .metric-card { border-bottom: 1px solid var(--line); }
+    .pipeline-layout { grid-template-columns: 1fr; }
+    .detail-panel { position: static; max-height: none; }
+    .leads-list { max-height: none; }
+  }
   @media (max-width: 820px) {
     .shell { padding: 18px 14px 36px; }
+    .metric-strip { display: flex; gap: 8px; overflow-x: auto; border: 0; border-radius: 0; background: transparent; scroll-snap-type: x mandatory; }
+    .metric-card { flex: 0 0 132px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); scroll-snap-align: start; }
     .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .pipeline-layout { grid-template-columns: 1fr; }
-    .detail-panel { position: static; }
   }
   @media (max-width: 560px) {
     .primary-nav { gap: 6px; overflow-x: auto; }
@@ -76,7 +119,14 @@
     .analytics-days { grid-auto-columns: minmax(138px, 82vw); }
     .lead-tools { grid-template-columns: 1fr; }
     .lead-head { display: none; }
-    .lead-row { grid-template-columns: 1fr; gap: 6px; }
+    .lead-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; min-height: 0; padding: 10px 11px; }
+    .lead-company { grid-column: 1; grid-row: 1; font-size: 14px; }
+    .lead-stage { grid-column: 2; grid-row: 1; }
+    .lead-contact { grid-column: 1; grid-row: 2; }
+    .lead-priority { grid-column: 2; grid-row: 2; text-align: right; }
+    .lead-action { grid-column: 1 / -1; grid-row: 3; white-space: normal; }
+    .lead-phone { grid-column: 1 / -1; grid-row: 4; }
+    .lead-email { display: none; }
   }
 {% endblock %}
 {% block content %}
@@ -92,6 +142,23 @@
   <header class="topbar">
     <div><p class="eyebrow">CRM</p><h1>Trabalho diário</h1><p class="subtle"><span data-lead-total>—</span> leads na fila selecionada.</p></div>
   </header>
+  <section class="metric-strip" data-queue-metrics aria-label="Resumo operacional">
+    <button class="metric-card" type="button" data-metric="all" data-metric-targets="all">
+      <span class="metric-label">Total de leads</span><strong class="metric-value" data-metric-value="all">—</strong><span class="metric-note">Base atual</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="touchedToday" data-metric-targets="touched_today">
+      <span class="metric-label">Contactados hoje</span><strong class="metric-value" data-metric-value="touchedToday">—</strong><span class="metric-note">Leads trabalhados</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="callsDue" data-metric-targets="calls_overdue,calls_today">
+      <span class="metric-label">Chamadas pendentes</span><strong class="metric-value" data-metric-value="callsDue">—</strong><span class="metric-note">Atrasadas + hoje</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="emailsDue" data-metric-targets="emails_overdue,emails_today">
+      <span class="metric-label">Emails pendentes</span><strong class="metric-value" data-metric-value="emailsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="proposalFollowupsDue" data-metric-targets="proposal_followups_overdue,proposal_followups_today">
+      <span class="metric-label">Follow-ups de proposta</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
+    </button>
+  </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
       <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
@@ -107,8 +174,21 @@
       <div class="state" data-state="loading">A carregar fila…</div>
       <div class="state hidden" data-state="empty">Não existem leads nesta fila.</div>
       <div class="state hidden" data-state="error">Não foi possível carregar a fila.</div>
-      <div class="leads-list hidden" data-state="ready" data-leads-list>
-        <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>Próxima ação</span></div>
+      <div class="leads-list hidden" data-state="ready" data-leads-table-scroll>
+        <table data-leads-table>
+          <thead>
+            <tr class="lead-row lead-head">
+              <th scope="col" data-column="company">Empresa</th>
+              <th scope="col" data-column="contact">Contacto</th>
+              <th scope="col" data-column="due">Prazo / ação</th>
+              <th scope="col" data-column="phone">Telefone</th>
+              <th scope="col" data-column="email">Email</th>
+              <th scope="col" data-column="stage">Fase</th>
+              <th scope="col" data-column="priority">Prioridade</th>
+            </tr>
+          </thead>
+          <tbody data-leads-list></tbody>
+        </table>
       </div>
       <nav class="queue-pagination" aria-label="Paginação da fila">
         <button class="btn" type="button" data-page-previous disabled>Anterior</button>
@@ -119,16 +199,27 @@
     <aside class="detail-panel" data-lead-detail-panel>
       <div data-detail-empty><p class="eyebrow">Lead</p><p class="subtle">Selecione um lead para abrir o contexto operacional.</p></div>
       <div class="hidden" data-detail-ready>
-        <p class="eyebrow">Lead</p><h2 data-detail-company></h2><p class="detail-contact" data-detail-contact></p>
+        <div class="detail-head">
+          <div><p class="eyebrow">Lead</p><h2 data-detail-company></h2></div>
+          <div class="detail-badges"><span class="lead-stage" data-detail-stage></span><span class="detail-priority" data-detail-priority></span></div>
+        </div>
+        <p class="detail-contact" data-detail-contact></p>
+        <div class="detail-summary" data-detail-summary>
+          <div class="detail-summary-line"><span>Próxima ação</span><strong data-detail-next-action>Sem próxima ação</strong></div>
+          <div class="detail-summary-line"><span>Prazo</span><strong data-detail-next-due>—</strong></div>
+        </div>
         <div class="task-actions" data-detail-contact-actions>
-          <a class="btn hidden" data-detail-phone-link>Telefonar</a>
+          <a class="btn btn-primary hidden" data-detail-phone-link>Telefonar</a>
           <a class="btn hidden" data-detail-email-link>Enviar email</a>
           <button class="btn" type="button" data-skip-lead>Saltar</button>
         </div>
         {% if writable %}
         <div class="detail-section" data-lead-commands>
           <h3>Registar trabalho</h3>
+          <div class="command-stack">
           {% if can_edit_lead %}
+          <details class="command-disclosure">
+            <summary>Editar dados</summary>
           <form class="command-form" data-lead-edit-form>
             <label>Prioridade<select name="priority" required><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
             <label>Empresa<input name="company_name" maxlength="512" required></label>
@@ -140,27 +231,37 @@
               <button class="btn btn-primary" type="submit" data-advance-after-save="true">Guardar e seguinte</button>
             </div>
           </form>
+          </details>
           {% endif %}
           {% if can_transition_stage %}
+          <details class="command-disclosure">
+            <summary>Alterar fase</summary>
           <form class="command-form" data-stage-transition-form>
             <label>Fase<select name="target_stage" required><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
             <label><span><input name="reviewed_correction" type="checkbox"> Correção revista de estado terminal</span></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Alterar fase</button></div>
           </form>
+          </details>
           {% endif %}
           {% if can_log_call %}
+          <details class="command-disclosure" open>
+            <summary>Registar chamada</summary>
           <form class="command-form" data-call-log-form>
             <label>Resultado<select name="outcome_code" required><option value="connected">Atendeu</option><option value="no_answer">Não atendeu</option><option value="voicemail">Voice mail</option><option value="wrong_number">Número errado</option><option value="not_interested">Sem interesse</option><option value="follow_up">Follow-up</option></select></label>
             <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar chamada</button></div>
           </form>
+          </details>
           {% endif %}
           {% if can_log_email %}
+          <details class="command-disclosure">
+            <summary>Registar email</summary>
           <form class="command-form" data-email-log-form>
             <label>Direção<select name="direction" required><option value="outbound">Enviado</option><option value="inbound">Recebido</option></select></label>
             <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar email</button></div>
           </form>
+          </details>
           {% endif %}
           {% if can_add_note %}
           <form class="command-form" data-note-form>
@@ -169,17 +270,21 @@
           </form>
           {% endif %}
           {% if can_write_tasks %}
+          <details class="command-disclosure">
+            <summary>Marcar próxima ação</summary>
           <form class="command-form" data-next-action-form>
             <label>Tipo<select name="task_type" required><option value="call">Chamada</option><option value="email">Email</option><option value="follow_up">Follow-up</option></select></label>
             <label>Próxima ação<input name="title" maxlength="512" required></label>
             <label>Data e hora<input name="due_at" type="datetime-local" required></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Marcar próxima ação</button></div>
           </form>
+          </details>
           {% endif %}
+          </div>
         </div>
         {% endif %}
-        <div class="detail-section"><h3>Próximas tarefas</h3><div data-lead-tasks></div></div>
-        <div class="detail-section"><h3>Histórico</h3><div data-lead-timeline></div></div>
+        <details class="detail-section" open><summary>Próximas tarefas</summary><div data-lead-tasks></div></details>
+        <details class="detail-section"><summary>Histórico</summary><div data-lead-timeline></div></details>
       </div>
     </aside>
   </div>
