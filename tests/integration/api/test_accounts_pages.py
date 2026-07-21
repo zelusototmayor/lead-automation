@@ -143,8 +143,9 @@ def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
         assert f'<option value="{priority}">' in response.text
     assert 'searchParams.set("priority", requestState.priority)' in script
     assert 'priorityFilter.addEventListener("change",' in script
-    assert 'search.addEventListener("input", applyFilters)' in script
-    assert 'stageFilter.addEventListener("change", () => loadQueue({' in script
+    assert 'search.addEventListener("input", () =>' in script
+    assert "markViewIntent();\n      applyFilters();" in script
+    assert 'stageFilter.addEventListener("change", () => {' in script
 
 
 def test_leads_page_exposes_save_and_next_and_skip_controls(

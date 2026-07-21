@@ -4,6 +4,7 @@
   const createLeadQueueBehavior = ({
     getVisibleLeadIds,
     getVisibleLeadRows,
+    getViewIntentGeneration = () => 0,
     getSelection,
     clearSelection,
     requestLead,
@@ -55,6 +56,7 @@
       const { leadId, rowKey, lead } = getSelection();
       if (!leadId || !lead) return false;
       const saveSequence = loadSequence;
+      const saveViewIntentGeneration = getViewIntentGeneration();
       const nextLead = advanceAfterSave ? nextVisibleLead(leadId, rowKey) : null;
       await postLead({ operation, leadId, lead, payload });
 
@@ -62,7 +64,10 @@
         refreshSummary().catch((error) => onReadFailure("summary", error)),
         refreshQueue().catch((error) => onReadFailure("queue", error)),
       ]);
-      if (saveSequence !== loadSequence) return true;
+      if (
+        saveSequence !== loadSequence
+        || saveViewIntentGeneration !== getViewIntentGeneration()
+      ) return true;
 
       const capturedTarget = advanceAfterSave
         ? nextLead
@@ -423,8 +428,10 @@
     let queueItems = [];
     let selectedLeadId = null;
     let selectedRowKey = null;
+    let viewIntentGeneration = 0;
     let currentLead = null;
     let currentSummary = { queues: {} };
+    const markViewIntent = () => { viewIntentGeneration += 1; };
 
     const renderSummary = (summary) => {
       currentSummary = summary;
@@ -541,6 +548,7 @@
       if (!canWriteTasks || !csrfToken || task.status !== "open") return;
       const commandLeadId = selectedLeadId;
       const commandRowKey = selectedRowKey;
+      const commandViewIntentGeneration = viewIntentGeneration;
       const commandId = crypto.randomUUID();
       const body = { command_id: commandId, expected_version: task.version };
       if (action === "reschedule") {
@@ -566,7 +574,11 @@
         body: JSON.stringify(body),
       });
       await Promise.all([loadSummary(), loadQueue()]);
-      if (selectedLeadId !== commandLeadId || selectedRowKey !== commandRowKey) return;
+      if (
+        selectedLeadId !== commandLeadId
+        || selectedRowKey !== commandRowKey
+        || viewIntentGeneration !== commandViewIntentGeneration
+      ) return;
       const refreshedItem = queueItems.find((item) => item.lead_id === commandLeadId) || null;
       if (refreshedItem) {
         await loadLead(commandLeadId, leadRowKey(refreshedItem));
@@ -834,6 +846,7 @@
       getVisibleLeadRows: () => [...list.querySelectorAll(".lead-row[data-lead-id]")].map(
         (row) => ({ leadId: row.dataset.leadId, rowKey: row.dataset.rowKey }),
       ),
+      getViewIntentGeneration: () => viewIntentGeneration,
       getSelection: () => ({ leadId: selectedLeadId, rowKey: selectedRowKey, lead: currentLead }),
       clearSelection,
       requestLead,
@@ -858,6 +871,7 @@
         ...actions,
       }),
       filterByStage: async (stage) => {
+        markViewIntent();
         try {
           await loadQueue({ stage, offset: 0 });
           stageFilter.focus();
@@ -865,7 +879,10 @@
           show(root, "error");
         }
       },
-      openQueue: (queue) => loadQueue({ queue, stage: "", offset: 0 }).catch(() => show(root, "error")),
+      openQueue: (queue) => {
+        markViewIntent();
+        return loadQueue({ queue, stage: "", offset: 0 }).catch(() => show(root, "error"));
+      },
       onFailure: (message) => {
         root.querySelector("[data-analytics-loading]")?.classList.add("hidden");
         analyticsWarning.textContent = message;
@@ -875,6 +892,7 @@
 
     root.querySelectorAll("[data-metric-targets]").forEach((button) => {
       button.addEventListener("click", () => {
+        markViewIntent();
         const targets = button.dataset.metricTargets.split(",");
         const queue = targets.find((target) => Number(currentSummary.queues?.[target] || 0) > 0)
           || targets[targets.length - 1];
@@ -882,23 +900,41 @@
       });
     });
     root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
-      button.addEventListener("click", () => loadQueue({
-        queue: button.dataset.pipelineQueue,
-        stage: "",
-        offset: 0,
-      }).catch(() => show(root, "error")));
+      button.addEventListener("click", () => {
+        markViewIntent();
+        loadQueue({
+          queue: button.dataset.pipelineQueue,
+          stage: "",
+          offset: 0,
+        }).catch(() => show(root, "error"));
+      });
     });
-    search.addEventListener("input", applyFilters);
-    stageFilter.addEventListener("change", () => loadQueue({
-      stage: stageFilter.value,
-      offset: 0,
-    }).catch(() => show(root, "error")));
-    priorityFilter.addEventListener("change", () => loadQueue({
-      priority: priorityFilter.value,
-      offset: 0,
-    }).catch(() => show(root, "error")));
-    previousPageButton.addEventListener("click", () => queueLoader.previous().catch(() => show(root, "error")));
-    nextPageButton.addEventListener("click", () => queueLoader.next().catch(() => show(root, "error")));
+    search.addEventListener("input", () => {
+      markViewIntent();
+      applyFilters();
+    });
+    stageFilter.addEventListener("change", () => {
+      markViewIntent();
+      loadQueue({
+        stage: stageFilter.value,
+        offset: 0,
+      }).catch(() => show(root, "error"));
+    });
+    priorityFilter.addEventListener("change", () => {
+      markViewIntent();
+      loadQueue({
+        priority: priorityFilter.value,
+        offset: 0,
+      }).catch(() => show(root, "error"));
+    });
+    previousPageButton.addEventListener("click", () => {
+      markViewIntent();
+      queueLoader.previous().catch(() => show(root, "error"));
+    });
+    nextPageButton.addEventListener("click", () => {
+      markViewIntent();
+      queueLoader.next().catch(() => show(root, "error"));
+    });
     skipButton.addEventListener("click", () => queueBehavior.skip().catch(() => show(root, "error")));
     bindCommandForms();
 
