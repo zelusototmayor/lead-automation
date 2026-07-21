@@ -64,6 +64,30 @@ test("save refreshes the queue before reloading the selected canonical row", asy
   assert.equal(events[0], "post");
 });
 
+test("newer queue or filter intent suppresses stale save-and-next navigation", async () => {
+  let releasePost;
+  let viewIntentGeneration = 0;
+  const postGate = new Promise((resolve) => { releasePost = resolve; });
+  const loads = [];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => ["A", "B"],
+    getSelection: () => ({ leadId: "A", lead: { version: 1 } }),
+    getViewIntentGeneration: () => viewIntentGeneration,
+    clearSelection: () => {},
+    requestLead: async (leadId) => { loads.push(leadId); return { detail: { lead_id: leadId } }; },
+    commitSelection: () => {},
+    postLead: async () => postGate,
+    refreshSummary: async () => {},
+    refreshQueue: async () => {},
+  });
+
+  const pendingSave = behavior.save("edit", {}, true);
+  viewIntentGeneration += 1;
+  releasePost();
+  assert.equal(await pendingSave, true);
+  assert.deepEqual(loads, []);
+});
+
 test("save and next never overwrites a newer selection while its POST is pending", async () => {
   let selection = { leadId: "A", lead: { version: 7 } };
   let visibleIds = ["A", "B", "C"];
