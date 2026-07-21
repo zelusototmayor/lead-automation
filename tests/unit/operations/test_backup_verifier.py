@@ -15,7 +15,7 @@ from scripts.crm_verify_backup import (
 
 
 def test_backup_verifier_contract_tracks_canonical_engagement_schema():
-    assert EXPECTED_SCHEMA_REVISION == "0009"
+    assert EXPECTED_SCHEMA_REVISION == "0010"
     assert {
         "email_messages",
         "meetings",

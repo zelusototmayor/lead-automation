@@ -18,7 +18,7 @@ WORKSPACE_ID = UUID("11111111-2222-4333-8444-555555555555")
 ACTOR_ID = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
 USERNAME = "crm-reviewer"
 PASSWORD = "correct horse battery staple"
-PERMISSIONS = frozenset({"crm:read", "crm:lead-stage:write"})
+PERMISSIONS = frozenset({"crm:read", "crm:lead-stage:write", "crm:note:write"})
 PRINCIPAL_ENV_NAMES = (
     "CRM_PRINCIPAL_USERNAME",
     "CRM_PRINCIPAL_PASSWORD",

@@ -122,7 +122,9 @@ def test_leads_page_exposes_save_and_next_and_skip_controls(
                     workspace_id=ids["workspace_id"],
                     actor_id=uuid4(),
                     subject="writer",
-                    permissions=frozenset({"crm:read", "crm:lead:edit"}),
+                    permissions=frozenset(
+                        {"crm:read", "crm:lead:edit", "crm:note:write"}
+                    ),
                 ),
                 session=session,
             )
@@ -141,6 +143,7 @@ def test_leads_page_exposes_save_and_next_and_skip_controls(
     assert "data-skip-lead" in response.text
     assert "data-advance-after-save" in response.text
     assert "Guardar e seguinte" in response.text
+    assert "data-note-form" in response.text
 
 
 def test_leads_page_only_exposes_csrf_to_authorized_postgres_writer(
@@ -214,11 +217,13 @@ def test_leads_javascript_uses_canonical_pipeline_and_task_command_contracts():
     assert "/api/v1/commands/leads/${leadId}/transition-stage" in script
     assert "/api/v1/commands/leads/${leadId}/log-call" in script
     assert "/api/v1/commands/leads/${leadId}/log-email" in script
+    assert "/api/v1/commands/leads/${leadId}/add-note" in script
     assert "/api/v1/commands/leads/${leadId}/schedule-next-action" in script
     assert "data-lead-edit-form" in script
     assert "data-stage-transition-form" in script
     assert "data-call-log-form" in script
     assert "data-email-log-form" in script
+    assert "data-note-form" in script
     assert "data-next-action-form" in script
     assert "crypto.randomUUID()" in script
     assert '"X-CSRF-Token"' in script
