@@ -2325,3 +2325,28 @@ As invariantes agregadas de staging permanecem verdes: 46 contas, 46 contactos, 
 Produção continua no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/` e `/up` devolvem `200`, as novas páginas/APIs devolvem `404` e os contratos v0 continuam ativos. A telemetria normalizada das últimas 48 horas, excluindo `curl`, observou pedidos `2xx` em `/api/stats` (14), `/api/portfolio` (1), `/api/recommendations` (1), `/api/outreach-followups` (12), `/api/email-followups` (11) e `/api/proposal-followups` (12), com tráfego até `2026-07-20T18:39:09Z`.
 
 O candidato local, o staging e o rollback técnico permanecem verdes, mas os gates de conclusão continuam materialmente fechados: `parity=false` e conflitos sem resolução/aceitação; validação da amostra pelo owner; políticas oficiais de `Won` e retenção/scopes; mapping final de principal/papel/workspace; PostgreSQL de produção com backup automático off-host e restore real; cutover e soak de produção. A retirada v0 exige ainda dois releases pós-cutover, ausência comprovada de consumidores e aceitação dos stakeholders. Não houve merge, deploy de produção, migração/backfill live, ativação de workers/conectores/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Filas futuras e filtro de prioridade em 2026-07-21T07:29:00Z
+
+A retoma preservou nove ficheiros staged/unstaged sobre `1245172a94f519d5a8672990a264cafe0697cfb3`, verificou o candidato exato e publicou-o atomicamente como `84796c305047b69b5e9fe2c0320a91d8e39c7da7` (`feat: complete future pipeline queues and priority filter`).
+
+O pipeline operacional acrescenta filas `calls_future` e `emails_future`, definidas estritamente depois do fim do dia local da workspace. As filas de hoje continuam a incluir o limite do fim do dia. O resumo conta leads distintos, enquanto a listagem preserva tarefas individuais e pagina de forma determinística por prazo, task ID e lead ID. O filtro server-side de prioridade aceita apenas `low`, `medium` ou `high`, é aplicado antes da contagem/paginação e a UI envia-o sem alterar a pesquisa e o filtro de fase locais. O isolamento por workspace e a autenticação existente foram preservados.
+
+Evidência local num PostgreSQL 16 descartável, migrado de raiz até `0009`:
+
+```text
+Suite segura completa com DeprecationWarning como erro: 1047 passed, 1 skipped em 170,36 s
+Regressão focada pós-commit: 21 passed
+Alembic lifecycle: 0009 -> base -> 0009
+Alembic current: 0009 (head)
+Alembic check: No new upgrade operations detected
+Ruff, format check, node --check, compileall, diff checks e Gitleaks: passed
+```
+
+O backup custom-format de staging anterior ao deploy foi copiado off-host para `/Users/max/.hermes/profiles/marketing-max/backups/crm/staging/crm-staging-20260721T072609Z-pre-84796c3.dump`, com mode `0600`, 197.794 bytes e SHA-256 `fe957af8c2edc454acab3c690796931b874343169fa4516cf16308d88ec0565f`. O arquivo exato foi restaurado num PostgreSQL 16 descartável e validado com schema `0009`, 15 tabelas, uma workspace e zero violações.
+
+O staging persistente foi atualizado para `crm-staging:84796c3`, com revisão exata `84796c305047b69b5e9fe2c0320a91d8e39c7da7`; a imagem anterior `crm-staging:1245172` permanece disponível para rollback. Aplicação e PostgreSQL ficaram healthy, sem restarts. O proxy/TLS confirmou `/up=200`, rotas ricas sem credenciais em `401`, páginas/APIs autenticadas em `200` com `no-store`, filas futuras disponíveis e Agent ingress desligado. O browser smoke confirmou os dois controlos de fila e um request server-side com `priority=high`, sem erros de consola ou requests falhados. O soak executou 360/360 pedidos com sucesso, zero restarts e zero linhas de erro de aplicação.
+
+A matriz ainda contém capacidades operacionais `partial`/`missing`, e os gates globais continuam fechados por `parity=false`, conflitos reais sem resolução/aceitação, validação humana da amostra, políticas oficiais de `Won` e retenção/scopes, mapping final de produção, PostgreSQL/backup automático off-host de produção, cutover/soak de produção, dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Não houve deploy de produção, migração live, outbound, retirada do legado ou criação do sentinel.
