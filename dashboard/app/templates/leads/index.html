@@ -111,12 +111,12 @@
     .metric-strip { display: flex; gap: 8px; overflow-x: auto; border: 0; border-radius: 0; background: transparent; scroll-snap-type: x mandatory; }
     .metric-card { flex: 0 0 132px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); scroll-snap-align: start; }
     .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 560px) {
-    .primary-nav { gap: 6px; overflow-x: auto; }
     .primary-nav a, .queue-btn, .analytics-metric-btn, .queue-pagination .btn, .detail-actions .btn, .task-actions .btn, .command-form-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
     .lead-tools input, .lead-tools select, .task-form input, .command-form input:not([type="checkbox"]), .command-form select { min-height: 44px; }
     details.detail-section > summary, details.command-disclosure > summary { min-height: 44px; }
+  }
+  @media (max-width: 560px) {
+    .primary-nav { gap: 6px; overflow-x: auto; }
     .analytics-panel { padding: 10px; }
     .analytics-grid { grid-template-columns: minmax(0, 1fr); }
     .analytics-card-wide { grid-column: auto; }
@@ -165,7 +165,7 @@
   </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
-      <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
+      <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ 'Trabalhados hoje' if value == 'touched_today' else label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
     {% endfor %}
   </nav>
   <div class="lead-tools">

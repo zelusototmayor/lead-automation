@@ -115,6 +115,7 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert "data-detail-stage" in response.text
     assert "data-detail-priority" in response.text
     assert "Trabalhados hoje" in response.text
+    assert "Contactados hoje" not in response.text
     assert 'data-metric-targets="calls_overdue,calls_today"' not in response.text
     assert 'data-metric-targets="emails_overdue,emails_today"' not in response.text
     assert (
