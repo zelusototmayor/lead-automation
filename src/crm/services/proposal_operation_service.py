@@ -106,7 +106,6 @@ class ProposalOperationService:
             or type(command.expected_version) is not int
             or command.expected_version < 1
             or command.status not in PROPOSAL_STATUSES
-            or command.status == "won"
         ):
             raise _conflict() from None
         probability = self._probability(command.probability)
@@ -136,8 +135,7 @@ class ProposalOperationService:
         if proposal is None or proposal.version != command.expected_version:
             raise _conflict() from None
         if command.status in PROPOSAL_SENT_OR_LATER_STATUSES:
-            if proposal.sent_at is None or proposal.sent_verification_state is None:
-                raise _conflict() from None
+            self._validate_confirmed_evidence(proposal, command.status)
         elif proposal.sent_at is not None:
             raise _conflict() from None
 
@@ -213,6 +211,65 @@ class ProposalOperationService:
             )
         )
         return ProposalOperationResult(command.command_id, proposal.id, version, False)
+
+    def _validate_confirmed_evidence(self, proposal, status: str) -> None:
+        if (
+            proposal.sent_at is None
+            or proposal.sent_verification_state != "verified"
+            or proposal.sent_evidence_id is None
+            or proposal.selected_version_id is None
+        ):
+            raise _conflict() from None
+        sent_evidence = self.uow.evidence.get(
+            proposal.workspace_id, proposal.sent_evidence_id
+        )
+        version = self.uow.proposal_versions.get_for_proposal(
+            proposal.id, proposal.selected_version_id
+        )
+        expected_thread = (
+            str(proposal.thread_source_identity_id)
+            if proposal.thread_source_identity_id is not None
+            else None
+        )
+        if (
+            sent_evidence is None
+            or sent_evidence.account_id != proposal.account_id
+            or sent_evidence.evidence_type != "email_message"
+            or expected_thread is None
+            or sent_evidence.metadata_json.get("thread_source_identity_id")
+            != expected_thread
+            or version is None
+            or version.source_document_evidence_id is None
+            or version.confirmed_by is None
+            or version.confirmed_at is None
+        ):
+            raise _conflict() from None
+        version_evidence = self.uow.evidence.get(
+            proposal.workspace_id, version.source_document_evidence_id
+        )
+        if (
+            version_evidence is None
+            or version_evidence.account_id != proposal.account_id
+            or version_evidence.evidence_type != "attachment"
+            or version_evidence.metadata_json.get("thread_source_identity_id")
+            != expected_thread
+        ):
+            raise _conflict() from None
+        if status == "won":
+            valid_state = (
+                version.status == "accepted" and proposal.value_state == "confirmed"
+            )
+        elif status in {"lost", "withdrawn", "expired"}:
+            valid_state = (
+                version.status == "rejected" and proposal.value_state == "rejected"
+            )
+        else:
+            valid_state = (
+                version.status in {"sent", "accepted"}
+                and proposal.value_state == "confirmed"
+            )
+        if not valid_state:
+            raise _conflict() from None
 
     @staticmethod
     def _probability(value: object) -> Decimal | None:

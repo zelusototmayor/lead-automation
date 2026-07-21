@@ -73,6 +73,7 @@ class ProposalDiscoveryService:
                 metadata={
                     "direction": command.direction,
                     "classification": command.classification,
+                    "thread_source_identity_id": str(command.thread_source_identity_id),
                 },
             )
         )
@@ -93,7 +94,10 @@ class ProposalDiscoveryService:
                 evidence_type="attachment",
                 content_hash=command.attachment_content_hash,
                 captured_at=command.occurred_at,
-                metadata={"filename": command.attachment_name},
+                metadata={
+                    "filename": command.attachment_name,
+                    "thread_source_identity_id": str(command.thread_source_identity_id),
+                },
             )
         )
         proposal = self.uow.proposals.by_thread(
