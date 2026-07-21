@@ -22,6 +22,7 @@ from src.crm.persistence.models import (
     ProposalVersion,
     ReviewCandidate,
     SourceIdentity,
+    Task,
 )
 
 
@@ -96,6 +97,11 @@ class ContactRepository(Repository[Contact]):
 class LeadRepository(Repository[Lead]):
     def __init__(self, session: Session):
         super().__init__(session, Lead)
+
+
+class TaskRepository(Repository[Task]):
+    def __init__(self, session: Session):
+        super().__init__(session, Task)
 
 
 class ActivityRepository(Repository[Activity]):

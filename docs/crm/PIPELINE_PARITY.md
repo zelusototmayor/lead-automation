@@ -45,7 +45,7 @@ Estados:
 | Click-to-call e click-to-email | missing | não existem no workspace PostgreSQL operacional |
 | Registar resultado de chamada | missing | sem comando HTTP PostgreSQL |
 | Notas e histórico | partial | modelos existem; fluxo de captura e timeline operacional incompleto |
-| Concluir/reagendar tarefa | missing | sem comandos HTTP e UI |
+| Concluir/reagendar tarefa | partial | comandos HTTP protegidos complete/reschedule/cancel têm versão, idempotência, activity, audit e outbox atómicos; UI ainda pendente |
 | Definir próxima ação e data/hora | missing | sem comando operacional por lead |
 | Guardar e abrir lead seguinte | missing | sem fluxo atómico/estado de fila |
 | Saltar lead sem alteração | missing | sem controlo de fila |

@@ -130,3 +130,29 @@ async def require_crm_command_access(
     if not (valid_csrf and valid_origin and valid_principal):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
     return principal
+
+
+async def require_task_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    """Require task-write permission before command code can open the database."""
+
+    try:
+        settings = get_settings()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN
+        ) from None
+    valid_csrf = _matches(request.headers.get("x-csrf-token"), settings.csrf_token)
+    origin = request.headers.get("origin")
+    valid_origin = origin is not None and origin in settings.allowed_write_origins
+    valid_principal = (
+        type(principal) is CRMPrincipal
+        and type(principal.actor_id) is UUID
+        and type(principal.permissions) is frozenset
+        and "crm:task:write" in principal.permissions
+    )
+    if not (valid_csrf and valid_origin and valid_principal):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN)
+    return principal

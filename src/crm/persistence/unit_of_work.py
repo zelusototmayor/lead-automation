@@ -32,6 +32,7 @@ from src.crm.persistence.repositories import (
     ProposalVersionRepository,
     ReviewCandidateRepository,
     SourceIdentityRepository,
+    TaskRepository,
 )
 
 
@@ -49,6 +50,7 @@ class SqlAlchemyUnitOfWork:
         self.accounts = AccountRepository(self.session)
         self.contacts = ContactRepository(self.session)
         self.leads = LeadRepository(self.session)
+        self.tasks = TaskRepository(self.session)
         self.activities = ActivityRepository(self.session)
         self.proposals = ProposalRepository(self.session)
         self.proposal_versions = ProposalVersionRepository(self.session)
