@@ -208,7 +208,7 @@ test("time-in-stage rendering reports available aggregates and coverage safely",
   });
 
   assert.match(root.textContent, /Tempo em fase/);
-  assert.match(root.textContent, /contacted/);
+  assert.match(root.textContent, /Contactado/);
   assert.match(root.textContent, /12[,.]5 h/);
   assert.match(root.textContent, /1 intervalo concluído/);
   assert.match(root.textContent, /Cobertura 1 de 2 transições estruturadas/);

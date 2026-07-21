@@ -54,6 +54,12 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert 'data-state="error"' in response.text
     assert "data-leads-list" in response.text
     assert "data-pipeline-summary" in response.text
+    assert "data-queue-metrics" in response.text
+    assert 'data-metric-value="all"' in response.text
+    assert 'data-metric-value="touchedToday"' in response.text
+    assert 'data-metric-value="callsDue"' in response.text
+    assert 'data-metric-value="emailsDue"' in response.text
+    assert 'data-metric-value="proposalFollowupsDue"' in response.text
     assert 'data-pipeline-queue="calls_overdue"' in response.text
     assert 'data-pipeline-queue="proposal_followups_today"' in response.text
     assert 'data-pipeline-queue="untouched"' in response.text
@@ -82,9 +88,32 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert 'data-writable="false"' in response.text
     assert "data-csrf-token" not in response.text
     assert "/static/leads.js" in response.text
-    assert "Empresa / contacto" in response.text
-    assert "Estado" in response.text
-    assert "Próxima ação" in response.text
+    for heading in (
+        "Empresa",
+        "Contacto",
+        "Prazo / ação",
+        "Telefone",
+        "Email",
+        "Fase",
+        "Prioridade",
+    ):
+        assert heading in response.text
+    assert "data-leads-table-scroll" in response.text
+    assert "<table data-leads-table>" in response.text
+    assert "<tbody data-leads-list></tbody>" in response.text
+    for column in (
+        "company",
+        "contact",
+        "due",
+        "phone",
+        "email",
+        "stage",
+        "priority",
+    ):
+        assert f'<th scope="col" data-column="{column}">' in response.text
+    assert "data-detail-summary" in response.text
+    assert "data-detail-stage" in response.text
+    assert "data-detail-priority" in response.text
 
 
 def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
@@ -157,6 +186,8 @@ def test_leads_page_exposes_save_and_next_and_skip_controls(
     assert "data-advance-after-save" in response.text
     assert "Guardar e seguinte" in response.text
     assert "data-note-form" in response.text
+    assert "<summary>Editar dados</summary>" in response.text
+    assert 'class="command-disclosure"' in response.text
 
 
 def test_leads_page_only_exposes_csrf_to_authorized_postgres_writer(
