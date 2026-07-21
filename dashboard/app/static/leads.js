@@ -354,6 +354,11 @@
   const leadRowKey = (lead) => (
     lead?.task?.id ? `${lead.lead_id}:${lead.task.id}` : String(lead?.lead_id || "")
   );
+  const resolveRefreshedLeadRow = (rows, leadId, rowKey) => (
+    rows.find((item) => leadRowKey(item) === rowKey)
+    || rows.find((item) => item.lead_id === leadId)
+    || null
+  );
   const leadRowView = (lead) => ({
     company: lead.company || "Sem empresa",
     contact: lead.contact_name || "—",
@@ -382,6 +387,7 @@
       leadRowKey,
       leadRowView,
       leadNextActionView,
+      resolveRefreshedLeadRow,
     };
   }
 
@@ -579,7 +585,11 @@
         || selectedRowKey !== commandRowKey
         || viewIntentGeneration !== commandViewIntentGeneration
       ) return;
-      const refreshedItem = queueItems.find((item) => item.lead_id === commandLeadId) || null;
+      const refreshedItem = resolveRefreshedLeadRow(
+        queueItems,
+        commandLeadId,
+        commandRowKey,
+      );
       if (refreshedItem) {
         await loadLead(commandLeadId, leadRowKey(refreshedItem));
       } else {
