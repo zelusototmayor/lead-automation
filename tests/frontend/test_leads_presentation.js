@@ -9,6 +9,7 @@ const {
   priorityLabel,
   queueMetricValues,
   leadRowView,
+  leadNextActionView,
 } = require("../../dashboard/app/static/leads.js");
 
 test("stage and priority values are presented as Portuguese operational labels", () => {
@@ -76,4 +77,17 @@ test("lead row view exposes dense existing fields without inventing missing data
   assert.equal(missing.email, "—");
   assert.equal(missing.actionTitle, "Sem próxima ação");
   assert.equal(missing.due, "—");
+});
+
+test("detail next action uses the canonical task embedded in the selected queue item", () => {
+  const next = leadNextActionView({
+    task: { title: "Ligar depois da reunião", due_at: "2026-07-22T09:00:00Z" },
+  });
+  assert.equal(next.title, "Ligar depois da reunião");
+  assert.match(next.due, /22\/07\/26/);
+
+  assert.deepEqual(leadNextActionView({ task: null }), {
+    title: "Sem próxima ação",
+    due: "—",
+  });
 });

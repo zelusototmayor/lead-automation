@@ -114,6 +114,14 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert "data-detail-summary" in response.text
     assert "data-detail-stage" in response.text
     assert "data-detail-priority" in response.text
+    assert "Trabalhados hoje" in response.text
+    assert 'data-metric-targets="calls_overdue,calls_today"' not in response.text
+    assert 'data-metric-targets="emails_overdue,emails_today"' not in response.text
+    assert (
+        'data-metric-targets="proposal_followups_overdue,proposal_followups_today"'
+        not in response.text
+    )
+    assert "<caption>Leads da fila selecionada</caption>" in response.text
 
 
 def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
