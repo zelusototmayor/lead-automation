@@ -53,16 +53,16 @@ Estados:
 | Alterar fase | implemented | endpoint e UI protegidos usam política canónica, expected version e correção revista |
 | Alterar prioridade | implemented | comando protegido e idempotente atualiza prioridade com optimistic locking, incluindo Leads pré-conta |
 | Registar email manual | implemented | comando protegido regista atividade manual sem enviar email |
-| Concluir follow-up de outreach | partial | tarefas genéricas podem ser concluídas; sem contrato específico de outreach/proposta |
+| Concluir follow-up de outreach | implemented | follow-ups importados preservam `source_rule` e vínculo de proposta; o comando tenant-safe de tarefa conclui a tarefa selecionada com versão, idempotência, activity, audit e outbox atómicos |
 | Atualizar estado/outcome da proposta | implemented | comando e formulário protegidos atualizam estado, probabilidade e forecast com expected_version, idempotência, activity, audit e outbox atómicos; `won` permanece fail-closed até existir prova oficial |
 | Atualizar próxima ação da proposta | implemented | o mesmo comando protegido atualiza ação e prazo de forma atómica e rejeita prazo sem ação |
 | Motivo de perda | implemented | o fluxo operacional exige motivo não vazio para `lost`, persiste-o e limpa estados terminais incompatíveis |
 | Valor/probabilidade/forecast com evidência | partial | probabilidade e forecast têm edição manual auditada; confirmação de valor e alterações consequentes com evidência comercial continuam dependentes da política aprovada |
 | Timeline imutável | implemented | detalhe lista atividades append-only e os comandos operacionais acrescentam nova evidência |
-| Analytics de atividade diária | missing | sem equivalente canónico |
-| Tempo por fase | partial | histórico existe parcialmente; analytics operacional ausente |
-| Writes autenticados e auditados | partial | comandos de lead, tarefa e proposta estão protegidos e auditados; outreach específico ainda está incompleto |
-| Proteção contra edições concorrentes | partial | comandos de lead, tarefa e proposta usam expected version; superfícies restantes ainda estão ausentes |
+| Analytics de atividade diária | implemented | `/api/v1/pipeline/analytics` e o workspace de Leads apresentam agregados diários bounded e workspace-safe, com drill-down operacional sem PII |
+| Tempo por fase | implemented | analytics usa apenas transições estruturadas contíguas do mesmo Lead, publica cobertura e mantém histórico legado sem factos como explicitamente não coberto |
+| Writes autenticados e auditados | implemented | todos os comandos browser expostos para Leads, tarefas e Propostas exigem principal server-side, CSRF/origin, permissão, idempotência e audit/outbox transacionais |
+| Proteção contra edições concorrentes | implemented | todos os comandos browser expostos usam `expected_version`; a UI preserva intenção mais recente e separa commit do write das leituras de reconciliação |
 
 ## Contratos mínimos
 

@@ -2567,3 +2567,33 @@ O staging real foi revalidado sem mutações. Continua na revisão funcional equ
 Produção continua no build pré-revamp: `/` e `/up` devolvem `200`, as novas páginas/APIs devolvem `404` e `/api/stats` continua `200`. A telemetria estruturada das últimas 48 horas ainda mostra consumo GET `2xx` não-curl de `/api/stats`, com o pedido mais recente em `2026-07-21T23:23:18.592462049Z`; portanto não existe evidência de ausência de consumidores v0.
 
 O plano global continua incompleto e o sentinel permanece proibido. O gate de dados continua `parity=false`, com conflitos reais sem resolução ou aceitação e sem validação da amostra pelo owner. Também continuam por fechar as decisões oficiais de `Won`, retenção e scopes, o mapping final de principal/papel/workspace, PostgreSQL de produção isolado com backup automático off-host e restore do arquivo real, cutover e soak de produção. A Tarefa 19 exige depois dois releases estáveis pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. A autorização autónoma não substitui evidência de dados, humana ou temporal, e retirar o legado ou criar `.hermes/crm-revamp-complete.json` neste estado seria falso.
+
+---
+
+## Retoma autónoma em 2026-07-21T23:52:54Z
+
+A retoma começou no `HEAD` limpo e sincronizado `3f8349197c2817d35cd526eeac1359e2c04b19d6`, na branch esperada. O plano canónico, commits, testes, migrations, documentação, processos, containers, PR, staging, produção, backups, rollback e telemetria foram reinspecionados antes de qualquer alteração. Não existia trabalho staged, unstaged ou untracked nem processos locais de worker CRM, reconciler ou outbox publisher ativos. Recursos preexistentes desconhecidos foram preservados.
+
+Dois PostgreSQL 16 descartáveis e exclusivos foram criados em loopback, explicitamente marcados para testes e removidos no fim:
+
+```text
+Suite Python segura completa: 1200 passed, 1 skipped em 303,89 s, exit 0
+Frontend Node: 37 passed, exit 0
+Alembic lifecycle: base -> 0013 -> 0011 -> 0013 -> base -> 0013
+Alembic current: 0013 (head)
+Alembic check: No new upgrade operations detected
+Restore de dump local: schema 0013, 15 tabelas obrigatórias, 0 violações
+Restore do backup off-host exato de staging: schema 0013, 15 tabelas obrigatórias, 1 workspace, 0 violações
+Ruff no delta Python, compileall, node --check, git diff --check e Gitleaks: passed; 0 leaks em 147 commits
+Cleanup: containers descartáveis removidos; portas 55950 e 55951 livres
+```
+
+A documentação foi reconciliada com o código e o staging: migrations atuais são `0013`; o command writer humano de staging usa PostgreSQL; analytics diário, tempo em fase, conclusão de tarefas de outreach, writes auditados e proteção de concorrência já estão implementados e exercitados. A confirmação de valor comercial com evidência continua corretamente `partial` até existir a política aprovada; nenhum estado parcial foi promovido artificialmente para satisfazer a matriz.
+
+O staging real continua no candidato funcional `cab1417e2d09a5a65dc00ec5e282f1ad8d7fadb4`; o delta funcional para o `HEAD` limita-se a documentação. Aplicação e PostgreSQL estão `healthy`, com zero restarts e zero marcadores de erro nas duas horas observadas. O proxy/TLS devolveu `200` autenticado para Leads, Contas, Propostas, Inteligência, Operações e APIs v1; sem credenciais devolveu `401`; Agent ingress desativado devolveu `404`. Um soak adicional executou 90/90 pedidos com sucesso. O schema é `0013`, com 1 workspace, 46 contas, 46 contactos, 65 leads, 44 propostas e 44 versões; existem zero violações da invariante de Account, zero zeros sintéticos em valores `missing`, zero eventos failed/dead-letter e zero outbox pendente. O timer de backup está enabled/active e o último serviço terminou com sucesso. A imagem `crm-staging:6f7e1eb` e outras revisões anteriores permanecem disponíveis para rollback.
+
+O backup imediatamente anterior ao rollout continua disponível off-host com mode `0600`, 200.589 bytes e SHA-256 `dcf78ff7d844a0836666eb09cce3405e43af1c361afdead24a7bb033866a5d2a`; o arquivo exato foi novamente restore-verificado nesta retoma.
+
+Produção permaneceu inalterada no build `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/` e `/up` devolvem `200`, novas páginas/APIs devolvem `404` e os seis contratos v0 acompanhados devolvem `200`. Nas 48 horas observáveis continuavam pedidos GET `2xx` não-curl em `/api/stats`, incluindo cinco pedidos na janela atual e o mais recente em `2026-07-21T23:23:18.592462049Z`. Produção não tem base/container/timer de backup CRM nem mapping do principal canónico.
+
+Os gates de produção, dados, humanos e temporais continuam fechados: comparação real `parity=false`; conflitos sem resolução ou aceitação; amostra sem validação do owner; política oficial de `Won`, retenção e scopes por decidir; mapping final de produção ausente; sem PostgreSQL de produção com backup automático off-host e restore real; sem cutover ou soak de produção. A Tarefa 19 exige depois dois releases estáveis pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Não houve merge, deploy/migração de produção, ativação de conectores/workers/outbox, cutover, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.

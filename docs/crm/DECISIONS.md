@@ -4,7 +4,7 @@ This record separates approved implementation boundaries from business and opera
 
 ## ADR-001: CRM exposure
 
-Status: implemented fail-closed; deployment mapping not configured
+Status: implemented fail-closed; staging mapping configured, production mapping not configured
 
 - Keep only `GET /up` public and minimal.
 - Protect the legacy dashboard, legacy GET APIs, same-origin static assets, Contas, Propostas, Inteligência, Operações and their APIs with the same server-configured browser principal.
@@ -72,7 +72,7 @@ Status: blocked by external gates
 
 ## ADR-008: Operational parity before canonical cutover
 
-Status: contract recorded; implementation and owner acceptance incomplete
+Status: implementation exercised in staging; owner acceptance incomplete
 
 - The legacy dashboard is the minimum behavioral specification for daily pipeline management.
 - PostgreSQL read visibility does not establish operational parity.
