@@ -8,7 +8,13 @@ from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.crm.persistence.models import AuditEvent, Lead, OutboxEvent, Workspace
+from src.crm.persistence.models import (
+    Activity,
+    AuditEvent,
+    Lead,
+    OutboxEvent,
+    Workspace,
+)
 from src.crm.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.crm.services.command_service import (
     CommandAuthorizationError,
@@ -81,7 +87,9 @@ def test_rollback_persists_neither_domain_outbox_nor_audit_and_commit_persists_a
             lead = session.get(Lead, lead_id)
             outbox = session.scalar(select(OutboxEvent))
             audit = session.scalar(select(AuditEvent))
+            activity = session.scalar(select(Activity))
             assert (lead.stage, lead.version) == ("contacted", 2)
+            assert (activity.from_stage, activity.to_stage) == ("new", "contacted")
             assert outbox.status == "pending" and outbox.published_at is None
             assert audit.action == "lead.stage_transitioned"
             assert outbox.command_id == audit.command_id == command.command_id
@@ -123,6 +131,7 @@ def test_replay_is_idempotent_stale_version_is_generic_and_scope_is_exact():
             assert session.get(Lead, lead_id).version == 2
             assert session.scalar(select(func.count(OutboxEvent.id))) == 1
             assert session.scalar(select(func.count(AuditEvent.id))) == 1
+            assert session.scalar(select(func.count(Activity.id))) == 1
 
         changed = _command(
             workspace_id,
@@ -227,6 +236,19 @@ def test_same_command_id_is_isolated_between_workspaces():
         with Session(engine) as session:
             assert session.scalar(select(func.count(OutboxEvent.id))) == 2
             assert session.scalar(select(func.count(AuditEvent.id))) == 2
+            activities = session.scalars(select(Activity)).all()
+            assert {
+                (
+                    activity.workspace_id,
+                    activity.lead_id,
+                    activity.from_stage,
+                    activity.to_stage,
+                )
+                for activity in activities
+            } == {
+                (first_workspace, first_lead, "new", "contacted"),
+                (second_workspace, second_lead, "new", "contacted"),
+            }
     finally:
         cleanup_workspace(engine, first_workspace)
         cleanup_workspace(engine, second_workspace)

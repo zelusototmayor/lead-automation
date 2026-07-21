@@ -868,6 +868,22 @@ class Activity(Base):
             "AND (activity_type <> 'stage_change' OR semantic_fingerprint IS NOT NULL)",
             name="ck_activities_semantic_fingerprint",
         ),
+        CheckConstraint(
+            "(from_stage IS NULL AND to_stage IS NULL) OR "
+            "(from_stage IS NOT NULL AND to_stage IS NOT NULL)",
+            name="ck_activities_stage_transition_pair",
+        ),
+        CheckConstraint(
+            "activity_type = 'stage_change' OR "
+            "(from_stage IS NULL AND to_stage IS NULL)",
+            name="ck_activities_stage_transition_type",
+        ),
+        CheckConstraint(
+            "(from_stage IS NULL AND to_stage IS NULL) OR "
+            f"({_in_check('from_stage', LEAD_STAGES)} AND "
+            f"{_in_check('to_stage', LEAD_STAGES)} AND from_stage <> to_stage)",
+            name="ck_activities_stage_transition_values",
+        ),
         UniqueConstraint("workspace_id", "id", name="uq_activities_workspace_id"),
         UniqueConstraint(
             "workspace_id",
@@ -957,6 +973,8 @@ class Activity(Base):
     semantic_fingerprint: Mapped[str | None] = mapped_column(String(64))
     direction: Mapped[str | None] = mapped_column(String(32))
     outcome_code: Mapped[str | None] = mapped_column(String(32))
+    from_stage: Mapped[str | None] = mapped_column(String(32))
+    to_stage: Mapped[str | None] = mapped_column(String(32))
     source_system: Mapped[str | None] = mapped_column(String(32))
     source_identity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     ingest_event_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))

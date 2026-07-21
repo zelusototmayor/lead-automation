@@ -345,6 +345,7 @@ def test_accountless_contacted_appends_timeline_and_ingest_replays_without_dupli
     activity = uow.activities.rows[0]
     assert activity.account_id is None and activity.lead_id == lead.id
     assert activity.activity_type == "stage_change"
+    assert (activity.from_stage, activity.to_stage) == ("new", "contacted")
     assert len(activity.semantic_fingerprint) == 64
 
     human = uow.new_lead(workspace, IdentityHints())
@@ -824,6 +825,10 @@ def test_reviewed_terminal_correction_still_applies_account_policy():
         command(workspace, stage="meeting_booked", lead_id=lead.id, corrected=True)
     )
     assert result.account_id is not None
+    assert (uow.activities.rows[0].from_stage, uow.activities.rows[0].to_stage) == (
+        "lost",
+        "meeting_booked",
+    )
 
 
 def test_service_preserves_typed_transition_error_with_normalized_safe_target():

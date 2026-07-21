@@ -128,6 +128,7 @@ def test_stage_command_is_atomic_audited_and_idempotent(lead_command_api):
         assert activity.lead_id == lead_id
         assert activity.title == "Stage changed"
         assert activity.summary is None
+        assert (activity.from_stage, activity.to_stage) == ("new", "contacted")
         assert audit.actor_id == actor_id
         assert audit.workspace_id == outbox.workspace_id == workspace_id
         assert audit.command_id == outbox.command_id == command_id

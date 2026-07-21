@@ -134,6 +134,13 @@ def test_postgres_apply_and_identical_replay_create_no_new_rows():
                 )
                 for model in (Account, Contact, Lead, Activity)
             )
+            historical_transitions = session.scalars(
+                select(Activity).where(Activity.workspace_id == workspace_id)
+            ).all()
+            assert all(
+                activity.from_stage is None and activity.to_stage is None
+                for activity in historical_transitions
+            )
         moved_source = FixtureSource()
         moved_source.values[1], moved_source.values[2] = (
             moved_source.values[2],

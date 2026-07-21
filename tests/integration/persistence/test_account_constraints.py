@@ -563,7 +563,12 @@ def test_service_transition_is_atomic_and_replay_is_idempotent(engine, workspace
     with Session(engine) as session:
         assert len(session.scalars(select(Account)).all()) == 1
         assert len(session.scalars(select(Lead)).all()) == 1
-        assert len(session.scalars(select(Activity)).all()) == 1
+        activities = session.scalars(select(Activity)).all()
+        assert len(activities) == 1
+        assert (activities[0].from_stage, activities[0].to_stage) == (
+            "new",
+            "proposal_sent",
+        )
         lead = session.get(Lead, first.lead_id)
         assert lead.account_id == first.account_id and lead.stage == "proposal_sent"
 
@@ -598,6 +603,10 @@ def test_pg_accountless_contacted_event_applies_and_replays_with_one_activity(
         assert len(activities) == 1
         assert activities[0].account_id is None
         assert activities[0].lead_id == lead_id
+        assert (activities[0].from_stage, activities[0].to_stage) == (
+            "new",
+            "contacted",
+        )
         assert len(activities[0].semantic_fingerprint) == 64
 
 

@@ -155,6 +155,8 @@ class HumanCommandService:
             ):
                 raise _conflict()
             previous = lead.stage
+            if previous == target:
+                raise _conflict()
             lead.stage = target
             lead.highest_stage_rank = highest_stage_rank(
                 lead.highest_stage_rank, target
@@ -181,6 +183,8 @@ class HumanCommandService:
                 title="Stage changed",
                 summary=None,
                 semantic_fingerprint=semantic_hash,
+                from_stage=previous,
+                to_stage=target,
                 source_system="manual",
                 actor_type="human",
                 actor_id=principal.actor_id,

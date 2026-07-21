@@ -381,6 +381,9 @@ class AccountService:
                     raise IdentityReviewRequired(
                         "lead identity requires review"
                     ) from None
+                from_stage = lead.stage if lead is not None else "new"
+                if from_stage == target:
+                    raise IdentityReviewRequired("transition requires review") from None
                 if lead is not None:
                     validate_transition(lead.stage, target, command.reviewed_correction)
                     previous = (
@@ -487,6 +490,8 @@ class AccountService:
                     summary=target,
                     ingest_event_id=command.ingest_event_id,
                     semantic_fingerprint=semantic_fingerprint,
+                    from_stage=from_stage,
+                    to_stage=target,
                 )
                 uow.commit()
                 return StageTransitionResult(
