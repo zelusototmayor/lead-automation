@@ -1,0 +1,6 @@
+[
+  ["ID", "Company", "Status", "Next Call Date", "Next Call Time", "Next Email Date", "Next Proposal Follow-Up", "Follow-Up Due", "Outreach", "Notes", "Call Notes", "Email Notes", "Proposal Notes"],
+  ["lead-pre-account", "Example Prospect", "Contacted", "2026/07/22", "14:30", "2026-07-23", "", "2026-07-24", "email", "Qualification detail", "Reached switchboard", "Requested details", ""],
+  ["lead-account", "Example Customer", "Meeting Booked", "", "", "", "25/07/2026", "", "", "", "", "", "Proposal context"],
+  ["lead-malformed", "Example Invalid", "Contacted", "not-a-date", "09:00", "", "", "2026-07-28", "carrier pigeon", "", "", "", ""]
+]
