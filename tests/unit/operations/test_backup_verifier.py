@@ -15,7 +15,7 @@ from scripts.crm_verify_backup import (
 
 
 def test_backup_verifier_contract_tracks_canonical_engagement_schema():
-    assert EXPECTED_SCHEMA_REVISION == "0009"
+    assert EXPECTED_SCHEMA_REVISION == "0010"
     assert {
         "email_messages",
         "meetings",
@@ -28,6 +28,9 @@ def test_backup_verifier_contract_tracks_canonical_engagement_schema():
         "ck_email_messages_mailbox_identity",
         "ck_reconciliation_runs_report_minimized",
         "ck_activities_outcome_code_nonblank",
+        "ck_activities_stage_transition_pair",
+        "ck_activities_stage_transition_type",
+        "ck_activities_stage_transition_values",
         "fk_tasks_workspace_account_lead",
     } <= REQUIRED_CONSTRAINTS
     assert {

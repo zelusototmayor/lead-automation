@@ -362,7 +362,7 @@ def test_0009_downgrade_aborts_before_losing_pre_account_task_context() -> None:
                 connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
-                == "0009"
+                == "0010"
             )
             assert (
                 connection.execute(

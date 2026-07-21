@@ -24,7 +24,7 @@ from src.crm.persistence.models import (
     Workspace,
 )
 from scripts.crm_verify_backup import _smoke_restored_database, validate_safe_target
-from tests.migration._postgres import require_disposable_postgres
+from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -45,42 +45,18 @@ def engine():
         check=True,
     )
     value = create_engine(database_url)
+    with Session(value) as session:
+        existing_workspace_ids = set(session.scalars(select(Workspace.id)))
     try:
         yield value
     finally:
+        with Session(value) as session:
+            created_workspace_ids = (
+                set(session.scalars(select(Workspace.id))) - existing_workspace_ids
+            )
+        for workspace_id in created_workspace_ids:
+            cleanup_workspace(value, workspace_id)
         value.dispose()
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "alembic",
-                "-c",
-                str(ALEMBIC_CONFIG),
-                "downgrade",
-                "base",
-            ],
-            cwd=REPO_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "alembic",
-                "-c",
-                str(ALEMBIC_CONFIG),
-                "upgrade",
-                "head",
-            ],
-            cwd=REPO_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
 
 
 def test_email_message_identity_is_unique_per_mailbox_and_workspace(engine):
@@ -159,7 +135,7 @@ def test_backup_smoke_accepts_valid_canonical_mailbox_identity(engine):
     result = _smoke_restored_database(target, target.database)
 
     assert result["status"] == "verified"
-    assert result["schema_revision"] == "0009"
+    assert result["schema_revision"] == "0010"
     assert result["invariant_violations"] == 0
 
 
