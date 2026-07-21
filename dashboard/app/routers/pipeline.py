@@ -32,6 +32,7 @@ from dashboard.app.schemas.pipeline import (
     TimelineItem,
     TimelinePage,
 )
+from src.crm.domain.enums import CRMStage
 from src.crm.persistence.models import (
     Account,
     Activity,
@@ -441,12 +442,15 @@ def pipeline_analytics(
 def pipeline_items(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
     queue: Annotated[PipelineQueue, Query()] = "all",
+    stage: Annotated[CRMStage | None, Query()] = None,
     priority: Annotated[PipelinePriority | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PipelinePage:
     start, end = _day_bounds(context, _utc_now())
     statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
+    if stage is not None:
+        statement = statement.where(Lead.stage == stage.value)
     if priority is not None:
         statement = statement.where(Lead.priority == priority)
     rows = statement.subquery()

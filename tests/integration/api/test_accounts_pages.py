@@ -65,6 +65,20 @@ def test_leads_page_is_a_compact_mobile_first_operational_list(account_api_fixtu
     assert "data-task-cancel" in response.text
     assert "data-lead-search" in response.text
     assert "data-stage-filter" in response.text
+    assert (
+        'data-stage-filter><option value="">Todos</option><option value="new">'
+        in response.text
+    )
+    assert "data-page-previous" in response.text
+    assert "data-page-next" in response.text
+    assert "data-page-range" in response.text
+    assert "data-pipeline-analytics" in response.text
+    assert "data-analytics-content" in response.text
+    assert "data-analytics-warning" in response.text
+    assert "Indicadores operacionais" in response.text
+    assert "Tempo em fase indisponível" in response.text
+    assert "analytics-grid" in response.text
+    assert "@media (max-width: 560px)" in response.text
     assert 'data-writable="false"' in response.text
     assert "data-csrf-token" not in response.text
     assert "/static/leads.js" in response.text
@@ -89,10 +103,10 @@ def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
     assert "data-priority-filter" in response.text
     for priority in ("low", "medium", "high"):
         assert f'<option value="{priority}">' in response.text
-    assert 'searchParams.set("priority", selectedPriority)' in script
+    assert 'searchParams.set("priority", requestState.priority)' in script
     assert 'priorityFilter.addEventListener("change",' in script
     assert 'search.addEventListener("input", applyFilters)' in script
-    assert 'stageFilter.addEventListener("change", applyFilters)' in script
+    assert 'stageFilter.addEventListener("change", () => loadQueue({' in script
 
 
 def test_leads_page_exposes_save_and_next_and_skip_controls(
@@ -204,6 +218,7 @@ def test_leads_javascript_uses_canonical_pipeline_and_task_command_contracts():
     ).read_text(encoding="utf-8")
 
     assert "/api/v1/pipeline/summary" in script
+    assert "/api/v1/pipeline/analytics?days=30" in script
     assert "/api/v1/pipeline/items" in script
     assert "/api/v1/leads/${leadId}" in script
     assert "/api/v1/leads/${leadId}/timeline" in script

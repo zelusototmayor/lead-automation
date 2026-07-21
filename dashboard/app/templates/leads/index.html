@@ -6,6 +6,26 @@
   .queue-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 7px 10px; color: var(--ink); font-size: 11px; font-weight: 700; }
   .queue-btn[aria-pressed="true"] { color: white; background: var(--dark); border-color: var(--dark); }
   .queue-count { margin-left: 5px; opacity: .72; }
+  .analytics-panel { margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .analytics-panel-header, .analytics-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
+  .analytics-panel-header h2 { margin: 0; font-size: 15px; }
+  .analytics-caption, .analytics-unavailable { color: var(--muted); font-size: 11px; }
+  .analytics-warning { max-width: 52ch; margin: 6px 0 10px; padding: 7px 9px; border-radius: 8px; background: #fff4d6; color: #725200; font-size: 12px; }
+  .analytics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .analytics-card { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--page-bg); color: var(--ink); text-decoration: none; }
+  .analytics-card h3 { margin: 0 0 7px; font-size: 12px; }
+  .analytics-card-wide { grid-column: 1 / -1; }
+  .analytics-card-link:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .analytics-primary { display: block; margin-bottom: 7px; font-size: 13px; }
+  .analytics-days { display: grid; grid-auto-columns: minmax(148px, 1fr); grid-auto-flow: column; gap: 7px; overflow-x: auto; padding-bottom: 3px; }
+  .analytics-day { display: grid; gap: 4px; padding: 8px; border-radius: 8px; background: var(--panel); font-size: 11px; }
+  .analytics-day time { color: var(--muted); }
+  .analytics-breakdown, .analytics-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .analytics-breakdown-compact { flex-wrap: nowrap; overflow-x: auto; }
+  .analytics-chip { display: inline-flex; gap: 4px; align-items: center; padding: 3px 6px; border-radius: 999px; background: var(--panel); font-size: 10px; white-space: nowrap; }
+  .analytics-metric-btn { border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 5px 8px; color: var(--ink); font-size: 10px; font-weight: 700; }
+  .analytics-metric-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .analytics-unavailable { margin: 10px 0 0; }
   .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
   .lead-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
   .lead-tools input, .lead-tools select, .task-form input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -18,6 +38,8 @@
   .lead-company { font-weight: 800; }
   .lead-contact, .lead-action { margin-top: 3px; color: var(--muted); font-size: 12px; }
   .lead-stage { display: inline-block; width: fit-content; padding: 4px 8px; border-radius: 999px; background: var(--accent-soft); font-size: 11px; font-weight: 700; }
+  .queue-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+  .queue-pagination [data-page-range] { color: var(--muted); font-size: 11px; font-weight: 700; }
   .detail-panel { position: sticky; top: 16px; padding: 16px; }
   .detail-section { padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--line); }
   .detail-section h3 { margin-bottom: 8px; font-size: 13px; }
@@ -37,10 +59,15 @@
   .command-form-actions { display: flex; justify-content: flex-end; }
   @media (max-width: 820px) {
     .shell { padding: 18px 14px 36px; }
+    .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .pipeline-layout { grid-template-columns: 1fr; }
     .detail-panel { position: static; }
   }
   @media (max-width: 560px) {
+    .analytics-panel { padding: 10px; }
+    .analytics-grid { grid-template-columns: minmax(0, 1fr); }
+    .analytics-card-wide { grid-column: auto; }
+    .analytics-days { grid-auto-columns: minmax(138px, 82vw); }
     .lead-tools { grid-template-columns: 1fr; }
     .lead-head { display: none; }
     .lead-row { grid-template-columns: 1fr; gap: 6px; }
@@ -58,6 +85,17 @@
   <header class="topbar">
     <div><p class="eyebrow">CRM</p><h1>Trabalho diário</h1><p class="subtle"><span data-lead-total>—</span> leads na fila selecionada.</p></div>
   </header>
+  <section class="analytics-panel" data-pipeline-analytics aria-labelledby="analytics-title">
+    <div class="analytics-panel-header">
+      <h2 id="analytics-title">Indicadores operacionais</h2>
+      <span class="analytics-caption">Janela móvel de 30 dias</span>
+    </div>
+    <p class="analytics-warning hidden" data-analytics-warning role="status"></p>
+    <div data-analytics-content>
+      <p class="analytics-caption" data-analytics-loading>A sincronizar indicadores…</p>
+      <p class="analytics-unavailable">Tempo em fase indisponível — ainda não existem transições tipadas suficientes.</p>
+    </div>
+  </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
       <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
@@ -65,7 +103,7 @@
   </nav>
   <div class="lead-tools">
     <label>Pesquisar<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
-    <label>Estado<select data-stage-filter><option value="">Todos</option></select></label>
+    <label>Estado<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
     <label>Prioridade<select data-priority-filter><option value="">Todas</option><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
   </div>
   <div class="pipeline-layout">
@@ -76,6 +114,11 @@
       <div class="leads-list hidden" data-state="ready" data-leads-list>
         <div class="lead-row lead-head" aria-hidden="true"><span>Empresa / contacto</span><span>Estado</span><span>Próxima ação</span></div>
       </div>
+      <nav class="queue-pagination" aria-label="Paginação da fila">
+        <button class="btn" type="button" data-page-previous disabled>Anterior</button>
+        <span data-page-range>0–0 de 0</span>
+        <button class="btn" type="button" data-page-next disabled>Seguinte</button>
+      </nav>
     </div>
     <aside class="detail-panel" data-lead-detail-panel>
       <div data-detail-empty><p class="eyebrow">Lead</p><p class="subtle">Selecione um lead para abrir o contexto operacional.</p></div>

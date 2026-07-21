@@ -71,8 +71,193 @@
     return { loadLead, save, skip };
   };
 
+  const createLatestQueueLoader = ({
+    requestJson,
+    onStart = () => {},
+    onPage = () => {},
+    onFailure = () => {},
+    limit = 50,
+  }) => {
+    let requestSequence = 0;
+    let state = {
+      queue: "all",
+      stage: "",
+      priority: "",
+      limit,
+      offset: 0,
+      total: 0,
+    };
+    const snapshot = () => ({ ...state });
+
+    const load = async (changes = {}) => {
+      state = { ...state, ...changes, limit };
+      const requestState = snapshot();
+      const sequence = ++requestSequence;
+      onStart(requestState);
+      const searchParams = new URLSearchParams({
+        queue: requestState.queue,
+        limit: String(requestState.limit),
+        offset: String(requestState.offset),
+      });
+      if (requestState.stage) searchParams.set("stage", requestState.stage);
+      if (requestState.priority) searchParams.set("priority", requestState.priority);
+
+      let page;
+      try {
+        page = await requestJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
+      } catch (error) {
+        if (sequence !== requestSequence) return false;
+        onFailure(error, requestState);
+        throw error;
+      }
+      if (sequence !== requestSequence) return false;
+
+      state = {
+        ...requestState,
+        total: Number(page.total ?? 0),
+        limit: Number(page.limit ?? requestState.limit),
+        offset: Number(page.offset ?? requestState.offset),
+      };
+      onPage(page, snapshot());
+      return true;
+    };
+
+    const next = () => (
+      state.offset + state.limit < state.total
+        ? load({ offset: state.offset + state.limit })
+        : Promise.resolve(false)
+    );
+    const previous = () => (
+      state.offset > 0
+        ? load({ offset: Math.max(0, state.offset - state.limit) })
+        : Promise.resolve(false)
+    );
+
+    return { getState: snapshot, load, next, previous };
+  };
+
+  const analyticsElement = (documentObject, tagName, className, text) => {
+    const element = documentObject.createElement(tagName);
+    element.className = className;
+    if (text !== undefined) element.textContent = String(text);
+    return element;
+  };
+
+  const appendBreakdown = (documentObject, parent, values, className = "analytics-breakdown") => {
+    const list = analyticsElement(documentObject, "div", className);
+    Object.entries(values || {}).forEach(([label, count]) => {
+      const item = analyticsElement(documentObject, "span", "analytics-chip");
+      item.append(
+        analyticsElement(documentObject, "span", "analytics-chip-label", stageLabel(label)),
+        analyticsElement(documentObject, "strong", "", count),
+      );
+      list.appendChild(item);
+    });
+    parent.appendChild(list);
+    return list;
+  };
+
+  const renderLeadAnalytics = ({ document: documentObject, root, analytics, filterByStage, openQueue }) => {
+    root.replaceChildren();
+    const days = Number(analytics.period?.days || 30);
+    const heading = analyticsElement(documentObject, "div", "analytics-heading");
+    heading.append(
+      analyticsElement(documentObject, "strong", "", `Últimos ${days} dias`),
+      analyticsElement(documentObject, "span", "analytics-caption", "Agregados operacionais; sem dados pessoais"),
+    );
+    root.appendChild(heading);
+
+    const grid = analyticsElement(documentObject, "div", "analytics-grid");
+    const daily = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+    daily.appendChild(analyticsElement(documentObject, "h3", "", "Atividade diária"));
+    const daysList = analyticsElement(documentObject, "div", "analytics-days");
+    (analytics.daily || []).forEach((day) => {
+      const activities = Object.values(day.activity_types || {}).reduce((total, count) => total + Number(count), 0);
+      const dayElement = analyticsElement(documentObject, "div", "analytics-day");
+      dayElement.append(
+        analyticsElement(documentObject, "time", "", day.date),
+        analyticsElement(documentObject, "strong", "", `Atividades ${activities}`),
+        analyticsElement(documentObject, "span", "", `Contactados ${Number(day.distinct_touched_leads || 0)}`),
+        analyticsElement(documentObject, "span", "analytics-caption", "Resultados"),
+      );
+      appendBreakdown(documentObject, dayElement, day.activity_types, "analytics-breakdown analytics-breakdown-compact");
+      appendBreakdown(documentObject, dayElement, day.outcomes, "analytics-breakdown analytics-breakdown-compact");
+      daysList.appendChild(dayElement);
+    });
+    daily.appendChild(daysList);
+    grid.appendChild(daily);
+
+    const stages = analyticsElement(documentObject, "article", "analytics-card");
+    stages.appendChild(analyticsElement(documentObject, "h3", "", `Leads por fase ${Number(analytics.stages?.total || 0)}`));
+    const stageActions = analyticsElement(documentObject, "div", "analytics-actions");
+    Object.entries(analytics.stages?.by_status || {}).forEach(([stage, count]) => {
+      const button = analyticsElement(documentObject, "button", "analytics-metric-btn", `${stageLabel(stage)} ${count}`);
+      button.setAttribute("type", "button");
+      button.dataset.analyticsStage = stage;
+      button.addEventListener("click", () => filterByStage(stage));
+      stageActions.appendChild(button);
+    });
+    stages.appendChild(stageActions);
+    grid.appendChild(stages);
+
+    const proposals = analyticsElement(documentObject, "a", "analytics-card analytics-card-link");
+    proposals.setAttribute("href", "/propostas");
+    proposals.appendChild(analyticsElement(documentObject, "h3", "", `Propostas ${Number(analytics.proposals?.total || 0)}`));
+    appendBreakdown(documentObject, proposals, analytics.proposals?.by_status);
+    grid.appendChild(proposals);
+
+    const tasks = analyticsElement(documentObject, "article", "analytics-card");
+    const openTasks = Number(analytics.tasks?.by_status?.open || 0);
+    tasks.append(
+      analyticsElement(documentObject, "h3", "", `Tarefas ${Number(analytics.tasks?.total || 0)}`),
+      analyticsElement(documentObject, "strong", "analytics-primary", `Em aberto ${openTasks}`),
+    );
+    appendBreakdown(documentObject, tasks, analytics.tasks?.open_by_type);
+    grid.appendChild(tasks);
+
+    const queues = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+    queues.appendChild(analyticsElement(documentObject, "h3", "", "Filas com prazo"));
+    const queueActions = analyticsElement(documentObject, "div", "analytics-actions");
+    Object.entries(analytics.queues?.counts || {}).forEach(([queue, count]) => {
+      const button = analyticsElement(documentObject, "button", "analytics-metric-btn", `${stageLabel(queue)} ${count}`);
+      button.setAttribute("type", "button");
+      button.dataset.analyticsQueue = queue;
+      button.addEventListener("click", () => openQueue(queue));
+      queueActions.appendChild(button);
+    });
+    queues.appendChild(queueActions);
+    grid.appendChild(queues);
+    root.appendChild(grid);
+
+    root.appendChild(analyticsElement(documentObject, "p", "analytics-unavailable", "Tempo em fase indisponível — ainda não existem transições tipadas suficientes."));
+  };
+
+  const createLeadAnalyticsBehavior = ({
+    fetchJson: requestJson,
+    renderAnalytics,
+    filterByStage,
+    openQueue,
+    onFailure,
+  }) => ({
+    load: async () => {
+      try {
+        const analytics = await requestJson("/api/v1/pipeline/analytics?days=30");
+        renderAnalytics(analytics, { filterByStage, openQueue });
+        return true;
+      } catch (_error) {
+        onFailure("Não foi possível sincronizar os indicadores.");
+        return false;
+      }
+    },
+  });
+
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { createLeadQueueBehavior };
+    module.exports = {
+      createLatestQueueLoader,
+      createLeadQueueBehavior,
+      createLeadAnalyticsBehavior,
+      renderLeadAnalytics,
+    };
   }
 
   const stageLabel = (value) => String(value || "sem estado").replaceAll("_", " ");
@@ -116,6 +301,9 @@
     const search = root.querySelector("[data-lead-search]");
     const stageFilter = root.querySelector("[data-stage-filter]");
     const priorityFilter = root.querySelector("[data-priority-filter]");
+    const previousPageButton = root.querySelector("[data-page-previous]");
+    const nextPageButton = root.querySelector("[data-page-next]");
+    const pageRange = root.querySelector("[data-page-range]");
     const skipButton = root.querySelector("[data-skip-lead]");
     const writable = root.dataset.writable === "true";
     const canWriteTasks = root.dataset.canWriteTasks === "true";
@@ -173,45 +361,46 @@
 
     const applyFilters = () => {
       const query = search.value.trim().toLocaleLowerCase("pt-PT");
-      const selectedStage = stageFilter.value;
       renderRows(
         queueItems.filter((lead) => {
           const searchable = [lead.company, lead.contact_name, lead.email, lead.phone]
             .filter(Boolean)
             .join(" ")
             .toLocaleLowerCase("pt-PT");
-          return (!query || searchable.includes(query)) && (!selectedStage || lead.stage === selectedStage);
+          return !query || searchable.includes(query);
         }),
       );
     };
 
-    const refreshStageOptions = () => {
-      const previous = stageFilter.value;
-      stageFilter.querySelectorAll("option:not(:first-child)").forEach((option) => option.remove());
-      [...new Set(queueItems.map((lead) => lead.stage).filter(Boolean))].sort().forEach((stage) => {
-        const option = document.createElement("option");
-        option.value = stage;
-        option.textContent = stageLabel(stage);
-        stageFilter.appendChild(option);
-      });
-      stageFilter.value = [...stageFilter.options].some((option) => option.value === previous) ? previous : "";
-    };
-
     const loadSummary = async () => renderSummary(await fetchJson("/api/v1/pipeline/summary"));
 
-    const loadQueue = async (queue = activeQueue) => {
-      activeQueue = queue;
-      selectQueueButton();
-      show(root, "loading");
-      const searchParams = new URLSearchParams({ queue, limit: "100", offset: "0" });
-      const selectedPriority = priorityFilter.value;
-      if (selectedPriority) searchParams.set("priority", selectedPriority);
-      const page = await fetchJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
-      queueItems = Array.isArray(page.items) ? page.items : [];
-      root.querySelector("[data-lead-total]").textContent = String(page.total ?? queueItems.length);
-      refreshStageOptions();
-      applyFilters();
+    const renderPagination = ({ total, limit, offset }) => {
+      const first = total > 0 ? offset + 1 : 0;
+      const last = Math.min(offset + queueItems.length, total);
+      pageRange.textContent = `${first}–${last} de ${total}`;
+      previousPageButton.disabled = offset <= 0;
+      nextPageButton.disabled = offset + limit >= total;
     };
+
+    const queueLoader = createLatestQueueLoader({
+      requestJson: fetchJson,
+      onStart: (state) => {
+        activeQueue = state.queue;
+        stageFilter.value = state.stage;
+        priorityFilter.value = state.priority;
+        selectQueueButton();
+        previousPageButton.disabled = true;
+        nextPageButton.disabled = true;
+        show(root, "loading");
+      },
+      onPage: (page, state) => {
+        queueItems = Array.isArray(page.items) ? page.items : [];
+        root.querySelector("[data-lead-total]").textContent = String(state.total);
+        applyFilters();
+        renderPagination(state);
+      },
+    });
+    const loadQueue = (changes = {}) => queueLoader.load(changes);
 
     const taskCommand = async (task, action) => {
       if (!canWriteTasks || !csrfToken || task.status !== "open") return;
@@ -483,16 +672,54 @@
       ),
     });
     const loadLead = queueBehavior.loadLead;
+    const analyticsContent = root.querySelector("[data-analytics-content]");
+    const analyticsWarning = root.querySelector("[data-analytics-warning]");
+    const analyticsBehavior = createLeadAnalyticsBehavior({
+      fetchJson,
+      renderAnalytics: (analytics, actions) => renderLeadAnalytics({
+        document,
+        root: analyticsContent,
+        analytics,
+        ...actions,
+      }),
+      filterByStage: async (stage) => {
+        try {
+          await loadQueue({ stage, offset: 0 });
+          stageFilter.focus();
+        } catch (_error) {
+          show(root, "error");
+        }
+      },
+      openQueue: (queue) => loadQueue({ queue, stage: "", offset: 0 }).catch(() => show(root, "error")),
+      onFailure: (message) => {
+        root.querySelector("[data-analytics-loading]")?.classList.add("hidden");
+        analyticsWarning.textContent = message;
+        analyticsWarning.classList.remove("hidden");
+      },
+    });
 
     root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
-      button.addEventListener("click", () => loadQueue(button.dataset.pipelineQueue).catch(() => show(root, "error")));
+      button.addEventListener("click", () => loadQueue({
+        queue: button.dataset.pipelineQueue,
+        stage: "",
+        offset: 0,
+      }).catch(() => show(root, "error")));
     });
     search.addEventListener("input", applyFilters);
-    stageFilter.addEventListener("change", applyFilters);
-    priorityFilter.addEventListener("change", () => loadQueue().catch(() => show(root, "error")));
+    stageFilter.addEventListener("change", () => loadQueue({
+      stage: stageFilter.value,
+      offset: 0,
+    }).catch(() => show(root, "error")));
+    priorityFilter.addEventListener("change", () => loadQueue({
+      priority: priorityFilter.value,
+      offset: 0,
+    }).catch(() => show(root, "error")));
+    previousPageButton.addEventListener("click", () => queueLoader.previous().catch(() => show(root, "error")));
+    nextPageButton.addEventListener("click", () => queueLoader.next().catch(() => show(root, "error")));
     skipButton.addEventListener("click", () => queueBehavior.skip().catch(() => show(root, "error")));
     bindCommandForms();
 
+    analyticsBehavior.load();
     Promise.all([loadSummary(), loadQueue()]).catch(() => show(root, "error"));
   });
 })();
