@@ -2486,3 +2486,67 @@ Backfill operacional real em dry-run: 1.247 linhas, 38 tarefas candidatas, 269 n
 ```
 
 A falha inicial de três testes transacionais resultou de executar módulos independentes numa ordem que deixou Activities append-only de outros módulos na mesma base. A repetição exclusiva do módulo numa base nova passou; a suite completa canónica, também exclusiva e criada de raiz, passou integralmente. Nenhum worker CRM, reconciler, outbox publisher ou job outbound estava ativo. O candidato ainda necessita congelamento final, revisão independente, commit/publicação e validação no staging persistente antes de qualquer decisão de cutover. O sentinel permanece ausente.
+
+---
+
+## Rollout da revisão visual no staging em 2026-07-21T22:35:42Z
+
+Após autorização explícita do proprietário para atualizar apenas o link de teste, a revisão visual foi reaplicada sobre a base realmente publicada `0784ec3`, sem substituir as funcionalidades operacionais mais recentes. O candidato exato é `7e4c74e542a0cab89e557964211985d921a43d02`, publicado na branch remota `feat/crm-ui-staging-rollout` e na imagem Linux AMD64 `crm-staging:7e4c74e`.
+
+Gates executados sobre esta integração:
+
+```text
+Suite Python: 1200 passed, 1 skipped
+Frontend Node: 36 passed
+Alembic: 0013 (head), sem operações pendentes
+Ruff/format, compileall, node --check e git diff --check: passed
+Gitleaks no delta 0784ec3..7e4c74e: zero leaks
+Browser sintético: desktop 1440, tablet 768, mobile 390 e 320 passed
+Imagem AMD64 local: healthy, 0 restarts, /up=200, /leads autenticado=200, 0 erros de log
+```
+
+Antes do deploy foi criado e copiado para fora do host o backup custom-format:
+
+```text
+remoto: /root/.crm-staging/backups/crm-staging-20260721T222937Z.dump
+local: /Users/max/.hermes/profiles/marketing-max/backups/crm/staging/crm-staging-20260721T222937Z-pre-ui-parity.dump
+modo: 0600
+tamanho: 200589 bytes
+sha256: 3b643050b5a5f8f8fff6e1b29e89a82c6c304b201297e9d315ac2987d2d6e898
+restore: 0013, 22 tabelas, 1 workspace, 0 violações da invariante de Account
+```
+
+Estado verificado depois do deploy:
+
+```text
+URL: https://chat.zelusottomayor.com
+imagem: crm-staging:7e4c74e
+revisão: 7e4c74e
+app: healthy, 0 restarts
+database: healthy, 0 restarts
+migration: 0013 (head)
+workers/outbox/reconcilers: 0
+integrações e projeção Sheets: desligadas
+rotas Leads, Contas, Propostas, Inteligência e Operações autenticadas: 200
+conteúdo protegido: Cache-Control no-store
+browser público sem screenshots: desktop, tablet e mobile passed; 0 overflow, 0 erros de consola, 0 pedidos falhados
+soak read-only: 90 pedidos, 0 falhas, p95 136,1 ms, máximo 234,9 ms
+logs: 0 marcadores de erro
+```
+
+Rollback imediato preservado:
+
+```text
+container: crm-staging-web-prev-0784ec3
+imagem: crm-staging:0784ec3
+backup off-host restaurável: confirmado
+CRM legado: https://leads.zelusottomayor.com/up = 200
+```
+
+Este rollout não executou migrations, backfill, writes de dados, ativação de conectores/workers, merge em `main`, cutover ou alteração de produção. A validação visual do proprietário continua pendente e o cutover permanece bloqueado até aprovação explícita separada.
+
+### Rollback preventivo e correção posterior em 2026-07-21T22:38:04Z
+
+A revisão independente do candidato exato, concluída depois do deploy, encontrou um blocker na reconciliação de ações de tarefa: em filas com duas tarefas do mesmo Lead, o refresh procurava apenas por `lead_id` e podia reabrir a primeira tarefa em vez da row selecionada. O staging foi imediatamente revertido para `crm-staging:0784ec3`; a aplicação voltou a `healthy`, revisão `0784ec3`, zero restarts e `/up=200`.
+
+A correção seguinte passou a resolver primeiro a row composta `lead_id:task_id` capturada antes do POST e só depois a fazer fallback para a row canónica do Lead. O teste RED reproduziu duas tarefas com o mesmo `lead_id`; depois da implementação, a suite frontend terminou com 37 testes verdes. Esta correção requer novo commit, revisão, imagem e deploy antes de a UI revista voltar ao staging.
