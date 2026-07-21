@@ -22,6 +22,38 @@
     return element;
   };
 
+  const proposalSemanticFingerprint = (payload) =>
+    JSON.stringify(Object.keys(payload).sort().map((key) => [key, payload[key]]));
+
+  const createProposalCommandBehavior = ({ createId, sendCommand }) => {
+    let pending = null;
+
+    return {
+      submit: async (payload) => {
+        const semanticPayload = proposalSemanticFingerprint(payload);
+        if (!pending || pending.semanticPayload !== semanticPayload) {
+          pending = { semanticPayload, commandId: createId() };
+        }
+        const request = {
+          commandId: pending.commandId,
+          body: { command_id: pending.commandId, ...payload },
+        };
+        const response = await sendCommand(request);
+        if (!response.ok) {
+          pending = null;
+          throw new Error("proposal command failed");
+        }
+        const result = await response.json();
+        pending = null;
+        return result;
+      },
+    };
+  };
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { createProposalCommandBehavior };
+  }
+
   const renderPortfolio = (root, portfolio) => {
     const target = root.querySelector('[data-field="portfolio"]');
     target.replaceChildren();
@@ -124,16 +156,28 @@
         form.elements.next_action.value = proposal.next_action ?? "";
         form.elements.next_action_due_at.value = localDateTime(proposal.next_action_due_at);
         form.elements.lost_reason.value = proposal.lost_reason ?? "";
+        const commandBehavior = createProposalCommandBehavior({
+          createId: () => crypto.randomUUID(),
+          sendCommand: ({ commandId, body }) => fetch(`/api/v1/commands/proposals/${encodeURIComponent(proposal.id)}/update-pipeline`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              "X-CSRF-Token": root.dataset.csrfToken,
+              "Idempotency-Key": commandId,
+            },
+            body: JSON.stringify(body),
+          }),
+        });
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           const commandState = root.querySelector("[data-proposal-command-state]");
           const button = form.querySelector('button[type="submit"]');
-          const commandId = crypto.randomUUID();
           const data = new FormData(form);
           const textOrNull = (name) => String(data.get(name) || "").trim() || null;
           const dueAt = textOrNull("next_action_due_at");
-          const body = {
-            command_id: commandId,
+          const payload = {
             expected_version: proposal.version,
             status: String(data.get("status")),
             probability: textOrNull("probability"),
@@ -145,18 +189,7 @@
           button.disabled = true;
           commandState.textContent = "A guardar…";
           try {
-            const commandResponse = await fetch(`/api/v1/commands/proposals/${encodeURIComponent(proposal.id)}/update-pipeline`, {
-              method: "POST",
-              credentials: "same-origin",
-              headers: {
-                Accept: "application/json",
-                "Content-Type": "application/json",
-                "X-CSRF-Token": root.dataset.csrfToken,
-                "Idempotency-Key": commandId,
-              },
-              body: JSON.stringify(body),
-            });
-            if (!commandResponse.ok) throw new Error("proposal command failed");
+            await commandBehavior.submit(payload);
             window.location.reload();
           } catch (_error) {
             commandState.textContent = "Não foi possível guardar. Atualize a página e tente novamente.";
