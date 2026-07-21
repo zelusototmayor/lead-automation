@@ -35,7 +35,9 @@ def test_0010_adds_nullable_nonblank_account_city() -> None:
 
         engine = create_engine(database_url)
         try:
-            columns = {column["name"] for column in inspect(engine).get_columns("accounts")}
+            columns = {
+                column["name"] for column in inspect(engine).get_columns("accounts")
+            }
             checks = {
                 constraint["name"]
                 for constraint in inspect(engine).get_check_constraints("accounts")

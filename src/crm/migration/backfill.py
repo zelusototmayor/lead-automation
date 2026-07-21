@@ -464,7 +464,10 @@ def _apply_row(
         if candidates:
             account = next(iter(candidates.values()))
             if city is not None:
-                if account.city is not None and account.city.casefold() != city.casefold():
+                if (
+                    account.city is not None
+                    and account.city.casefold() != city.casefold()
+                ):
                     raise _ReviewRequired()
                 if account.city is None:
                     account.city = city

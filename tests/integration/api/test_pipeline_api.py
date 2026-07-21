@@ -300,7 +300,9 @@ def test_pipeline_search_includes_city_and_is_workspace_scoped(pipeline_api):
     client, lead_id = pipeline_api
 
     by_city = client.get("/api/v1/pipeline/items?queue=all&search=lisboa")
-    by_contact = client.get("/api/v1/pipeline/items?queue=all&search=ANA%40EXAMPLE.TEST")
+    by_contact = client.get(
+        "/api/v1/pipeline/items?queue=all&search=ANA%40EXAMPLE.TEST"
+    )
     absent = client.get("/api/v1/pipeline/items?queue=all&search=porto")
 
     assert by_city.status_code == by_contact.status_code == absent.status_code == 200
