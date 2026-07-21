@@ -157,7 +157,7 @@ test("analytics rendering exposes aggregates and keeps untrusted labels as text"
   for (const expected of [
     "Últimos 30 dias",
     "Atividades 3",
-    "Contactados 2",
+    "Trabalhados 2",
     "Resultados",
     "Leads por fase 5",
     "Propostas 3",

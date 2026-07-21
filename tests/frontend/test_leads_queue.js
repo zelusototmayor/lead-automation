@@ -17,6 +17,53 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
+test("duplicate task rows advance from the selected row key instead of the first lead match", async () => {
+  const loads = [];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => ["A", "A", "B"],
+    getVisibleLeadRows: () => [
+      { leadId: "A", rowKey: "A:task-1" },
+      { leadId: "A", rowKey: "A:task-2" },
+      { leadId: "B", rowKey: "B:task-3" },
+    ],
+    getSelection: () => ({ leadId: "A", rowKey: "A:task-2", lead: { version: 1 } }),
+    clearSelection: () => {},
+    requestLead: async (leadId, rowKey) => ({ detail: { lead_id: leadId }, rowKey }),
+    commitSelection: () => {},
+    postLead: async () => {},
+    onLoad: (leadId, rowKey) => loads.push([leadId, rowKey]),
+  });
+
+  assert.equal(await behavior.skip(), true);
+  assert.deepEqual(loads, [["B", "B:task-3"]]);
+});
+
+test("save refreshes the queue before reloading the selected canonical row", async () => {
+  const events = [];
+  let visibleRows = [{ leadId: "A", rowKey: "A:task-1" }];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => visibleRows.map((row) => row.leadId),
+    getVisibleLeadRows: () => visibleRows,
+    getSelection: () => ({ leadId: "A", rowKey: "A:task-1", lead: { version: 1 } }),
+    clearSelection: () => {},
+    requestLead: async (_leadId, rowKey) => {
+      events.push(`detail:${rowKey}`);
+      return { detail: { lead_id: "A" } };
+    },
+    commitSelection: () => {},
+    postLead: async () => { events.push("post"); },
+    refreshSummary: async () => { events.push("summary"); },
+    refreshQueue: async () => {
+      events.push("queue");
+      visibleRows = [{ leadId: "A", rowKey: "A:task-2" }];
+    },
+  });
+
+  assert.equal(await behavior.save("edit", {}, false), true);
+  assert.ok(events.indexOf("detail:A:task-2") > events.indexOf("queue"));
+  assert.equal(events[0], "post");
+});
+
 test("save and next never overwrites a newer selection while its POST is pending", async () => {
   let selection = { leadId: "A", lead: { version: 7 } };
   let visibleIds = ["A", "B", "C"];

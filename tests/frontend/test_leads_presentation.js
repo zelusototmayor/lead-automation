@@ -10,6 +10,7 @@ const {
   queueMetricValues,
   leadRowView,
   leadNextActionView,
+  leadRowKey,
 } = require("../../dashboard/app/static/leads.js");
 
 test("stage and priority values are presented as Portuguese operational labels", () => {
@@ -77,6 +78,12 @@ test("lead row view exposes dense existing fields without inventing missing data
   assert.equal(missing.email, "—");
   assert.equal(missing.actionTitle, "Sem próxima ação");
   assert.equal(missing.due, "—");
+});
+
+test("queue row keys distinguish multiple tasks belonging to the same lead", () => {
+  assert.equal(leadRowKey({ lead_id: "A", task: { id: "task-1" } }), "A:task-1");
+  assert.equal(leadRowKey({ lead_id: "A", task: { id: "task-2" } }), "A:task-2");
+  assert.equal(leadRowKey({ lead_id: "A", task: null }), "A");
 });
 
 test("detail next action uses the canonical task embedded in the selected queue item", () => {

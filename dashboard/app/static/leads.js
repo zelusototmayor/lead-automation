@@ -3,6 +3,7 @@
 
   const createLeadQueueBehavior = ({
     getVisibleLeadIds,
+    getVisibleLeadRows,
     getSelection,
     clearSelection,
     requestLead,
@@ -15,56 +16,69 @@
   }) => {
     let loadSequence = 0;
 
-    const nextVisibleLeadId = (leadId) => {
-      const visibleLeadIds = getVisibleLeadIds();
-      const currentIndex = visibleLeadIds.indexOf(leadId);
-      return currentIndex >= 0 ? visibleLeadIds[currentIndex + 1] || null : null;
+    const visibleRows = () => (
+      getVisibleLeadRows
+        ? getVisibleLeadRows()
+        : getVisibleLeadIds().map((leadId) => ({ leadId, rowKey: leadId }))
+    );
+
+    const nextVisibleLead = (leadId, rowKey = leadId) => {
+      const rows = visibleRows();
+      const currentIndex = rows.findIndex((row) => row.rowKey === rowKey);
+      return currentIndex >= 0 ? rows[currentIndex + 1] || null : null;
     };
 
-    const loadLead = async (leadId) => {
+    const loadLead = async (leadId, rowKey = leadId) => {
       if (!leadId) return false;
       const requestSequence = ++loadSequence;
-      clearSelection(leadId);
-      onLoad(leadId);
+      clearSelection(leadId, rowKey);
+      onLoad(leadId, rowKey);
       let result;
       try {
-        result = await requestLead(leadId);
+        result = await requestLead(leadId, rowKey);
       } catch (error) {
         if (requestSequence !== loadSequence) return false;
         throw error;
       }
       if (requestSequence !== loadSequence) return false;
-      commitSelection(leadId, result);
+      commitSelection(leadId, result, rowKey);
       return true;
     };
 
     const skip = () => {
-      const { leadId } = getSelection();
-      const nextLeadId = nextVisibleLeadId(leadId);
-      return nextLeadId ? loadLead(nextLeadId) : Promise.resolve(false);
+      const { leadId, rowKey } = getSelection();
+      const nextLead = nextVisibleLead(leadId, rowKey);
+      return nextLead ? loadLead(nextLead.leadId, nextLead.rowKey) : Promise.resolve(false);
     };
 
     const save = async (operation, payload, advanceAfterSave) => {
-      const { leadId, lead } = getSelection();
+      const { leadId, rowKey, lead } = getSelection();
       if (!leadId || !lead) return false;
       const saveSequence = loadSequence;
-      const nextLeadId = advanceAfterSave ? nextVisibleLeadId(leadId) : null;
+      const nextLead = advanceAfterSave ? nextVisibleLead(leadId, rowKey) : null;
       await postLead({ operation, leadId, lead, payload });
 
-      const reads = [];
-      if (saveSequence === loadSequence) {
-        const targetLeadId = advanceAfterSave ? nextLeadId : leadId;
-        if (targetLeadId) {
-          reads.push(loadLead(targetLeadId).catch((error) => onReadFailure("detail", error)));
-        } else {
-          clearSelection(leadId);
-        }
-      }
-      reads.push(
+      await Promise.all([
         refreshSummary().catch((error) => onReadFailure("summary", error)),
         refreshQueue().catch((error) => onReadFailure("queue", error)),
-      );
-      await Promise.all(reads);
+      ]);
+      if (saveSequence !== loadSequence) return true;
+
+      const capturedTarget = advanceAfterSave
+        ? nextLead
+        : { leadId, rowKey: rowKey || leadId };
+      const refreshedRows = visibleRows();
+      const targetLead = capturedTarget
+        ? refreshedRows.find((row) => row.rowKey === capturedTarget.rowKey)
+          || refreshedRows.find((row) => row.leadId === capturedTarget.leadId)
+          || capturedTarget
+        : null;
+      if (targetLead) {
+        await loadLead(targetLead.leadId, targetLead.rowKey)
+          .catch((error) => onReadFailure("detail", error));
+      } else {
+        clearSelection(leadId, rowKey);
+      }
       return true;
     };
 
@@ -177,7 +191,7 @@
       dayElement.append(
         analyticsElement(documentObject, "time", "", day.date),
         analyticsElement(documentObject, "strong", "", `Atividades ${activities}`),
-        analyticsElement(documentObject, "span", "", `Contactados ${Number(day.distinct_touched_leads || 0)}`),
+        analyticsElement(documentObject, "span", "", `Trabalhados ${Number(day.distinct_touched_leads || 0)}`),
         analyticsElement(documentObject, "span", "analytics-caption", "Resultados"),
       );
       appendBreakdown(documentObject, dayElement, day.activity_types, "analytics-breakdown analytics-breakdown-compact");
@@ -332,6 +346,9 @@
       proposalFollowupsDue: count("proposal_followups_overdue") + count("proposal_followups_today"),
     };
   };
+  const leadRowKey = (lead) => (
+    lead?.task?.id ? `${lead.lead_id}:${lead.task.id}` : String(lead?.lead_id || "")
+  );
   const leadRowView = (lead) => ({
     company: lead.company || "Sem empresa",
     contact: lead.contact_name || "—",
@@ -357,6 +374,7 @@
       stageLabel,
       priorityLabel,
       queueMetricValues,
+      leadRowKey,
       leadRowView,
       leadNextActionView,
     };
@@ -404,6 +422,7 @@
     let activeQueue = "all";
     let queueItems = [];
     let selectedLeadId = null;
+    let selectedRowKey = null;
     let currentLead = null;
     let currentSummary = { queues: {} };
 
@@ -436,10 +455,12 @@
       list.querySelectorAll(".lead-row").forEach((row) => row.remove());
       rows.forEach((lead) => {
         const view = leadRowView(lead);
+        const rowKey = leadRowKey(lead);
         const row = document.createElement("tr");
         row.className = "lead-row";
         row.dataset.leadId = lead.lead_id;
-        row.setAttribute("aria-current", String(lead.lead_id === selectedLeadId));
+        row.dataset.rowKey = rowKey;
+        row.setAttribute("aria-current", String(rowKey === selectedRowKey));
 
         const appendCell = (column, className, text) => {
           const cell = document.createElement("td");
@@ -466,7 +487,7 @@
         stage.dataset.stage = lead.stage || "";
         appendCell("priority", "lead-priority", view.priority);
 
-        const open = () => loadLead(lead.lead_id);
+        const open = () => loadLead(lead.lead_id, rowKey);
         row.addEventListener("click", open);
         list.appendChild(row);
       });
@@ -518,6 +539,8 @@
 
     const taskCommand = async (task, action) => {
       if (!canWriteTasks || !csrfToken || task.status !== "open") return;
+      const commandLeadId = selectedLeadId;
+      const commandRowKey = selectedRowKey;
       const commandId = crypto.randomUUID();
       const body = { command_id: commandId, expected_version: task.version };
       if (action === "reschedule") {
@@ -542,7 +565,14 @@
         },
         body: JSON.stringify(body),
       });
-      await Promise.all([loadSummary(), loadQueue(), loadLead(selectedLeadId)]);
+      await Promise.all([loadSummary(), loadQueue()]);
+      if (selectedLeadId !== commandLeadId || selectedRowKey !== commandRowKey) return;
+      const refreshedItem = queueItems.find((item) => item.lead_id === commandLeadId) || null;
+      if (refreshedItem) {
+        await loadLead(commandLeadId, leadRowKey(refreshedItem));
+      } else {
+        clearSelection(commandLeadId, null);
+      }
     };
 
     const leadCommandPath = (leadId, operation) => ({
@@ -751,8 +781,8 @@
       if (detail.email) emailLink.href = `mailto:${detail.email}`;
     };
 
-    const requestLead = async (leadId) => {
-      const queueItem = queueItems.find((item) => item.lead_id === leadId) || null;
+    const requestLead = async (leadId, rowKey) => {
+      const queueItem = queueItems.find((item) => leadRowKey(item) === rowKey) || null;
       const [detail, timeline, tasks] = await Promise.all([
         fetchJson(`/api/v1/leads/${leadId}`),
         fetchJson(`/api/v1/leads/${leadId}/timeline?limit=50&offset=0`),
@@ -761,8 +791,9 @@
       return { detail, timeline, tasks, queueItem };
     };
 
-    const clearSelection = (leadId) => {
+    const clearSelection = (leadId, rowKey = leadId) => {
       selectedLeadId = leadId;
+      selectedRowKey = rowKey;
       currentLead = null;
       applyFilters();
       root.querySelector("[data-detail-ready]").classList.add("hidden");
@@ -800,7 +831,10 @@
       getVisibleLeadIds: () => [...list.querySelectorAll(".lead-row[data-lead-id]")].map(
         (row) => row.dataset.leadId,
       ),
-      getSelection: () => ({ leadId: selectedLeadId, lead: currentLead }),
+      getVisibleLeadRows: () => [...list.querySelectorAll(".lead-row[data-lead-id]")].map(
+        (row) => ({ leadId: row.dataset.leadId, rowKey: row.dataset.rowKey }),
+      ),
+      getSelection: () => ({ leadId: selectedLeadId, rowKey: selectedRowKey, lead: currentLead }),
       clearSelection,
       requestLead,
       commitSelection,
