@@ -15,6 +15,7 @@ from src.crm.services.command_service import (
     CommandConflictError,
     CommandResult,
     HumanCommandPrincipal,
+    _assert_replay_actor,
 )
 
 
@@ -45,6 +46,10 @@ class CancelTaskCommand:
 
 def _conflict() -> CommandConflictError:
     return CommandConflictError("command conflict")
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _semantic_hash(
@@ -93,7 +98,7 @@ class TaskCommandService:
             raise _conflict() from None
 
         semantic_hash = _semantic_hash(command)
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         task = self.uow.tasks.get(
@@ -153,13 +158,15 @@ class TaskCommandService:
             or type(command.due_at) is not datetime
             or command.due_at.tzinfo is None
             or command.due_at.utcoffset() is None
-            or command.due_at <= datetime.now(UTC)
         ):
             raise _conflict() from None
         semantic_hash = _semantic_hash(command)
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
+        due_at = command.due_at.astimezone(UTC)
+        if due_at <= _now():
+            raise _conflict() from None
         task = self.uow.tasks.get(
             command.workspace_id, command.task_id, for_update=True
         )
@@ -169,8 +176,10 @@ class TaskCommandService:
             or task.status != "open"
         ):
             raise _conflict() from None
+        if task.due_at == due_at:
+            raise _conflict() from None
 
-        task.due_at = command.due_at
+        task.due_at = due_at
         self.uow.activities.add(
             Activity(
                 id=uuid5(
@@ -196,7 +205,7 @@ class TaskCommandService:
             semantic_hash,
             action="rescheduled",
             version=task.version,
-            due_at=command.due_at,
+            due_at=due_at,
         )
         return CommandResult(command.command_id, task.id, task.version, False)
 
@@ -214,7 +223,7 @@ class TaskCommandService:
         ):
             raise _conflict() from None
         semantic_hash = _semantic_hash(command)
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         task = self.uow.tasks.get(
@@ -269,6 +278,7 @@ class TaskCommandService:
 
     def _claim_or_replay(
         self,
+        principal: HumanCommandPrincipal,
         command: CompleteTaskCommand | RescheduleTaskCommand | CancelTaskCommand,
         semantic_hash: str,
     ) -> CommandResult | None:
@@ -285,6 +295,12 @@ class TaskCommandService:
             or replay.aggregate_id != command.task_id
         ):
             raise _conflict() from None
+        _assert_replay_actor(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            actor_id=principal.actor_id,
+        )
         return CommandResult(
             command.command_id,
             replay.aggregate_id,

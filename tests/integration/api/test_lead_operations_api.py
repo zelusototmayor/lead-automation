@@ -23,6 +23,7 @@ from src.crm.persistence.models import (
     Task,
     Workspace,
 )
+from src.crm.services import lead_operation_service
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
 
@@ -596,3 +597,82 @@ def test_cross_workspace_lead_command_fails_closed_without_writes(lead_operation
                 assert _count(session, OutboxEvent, tenant_id) == 0
     finally:
         cleanup_workspace(engine, other_workspace_id)
+
+
+def test_lead_operation_replay_by_a_different_actor_is_a_generic_conflict(
+    lead_operations_api,
+):
+    client, engine, workspace_id, lead_id, _ = lead_operations_api
+    command_id = uuid4()
+    payload = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "direction": "inbound",
+        "summary": "Original actor logged this email.",
+    }
+    assert (
+        client.post(
+            f"/api/v1/commands/leads/{lead_id}/log-email",
+            json=payload,
+            headers=_headers(command_id),
+        ).status_code
+        == 200
+    )
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: CRMPrincipal(
+        workspace_id=workspace_id,
+        actor_id=uuid4(),
+        subject="different-lead-actor",
+        permissions=frozenset({"crm:read", "crm:email:log"}),
+    )
+
+    replay = client.post(
+        f"/api/v1/commands/leads/{lead_id}/log-email",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    assert replay.status_code == 409
+    assert replay.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        assert session.get(Lead, lead_id).version == 2
+        assert _count(session, Activity, workspace_id) == 1
+        assert _count(session, AuditEvent, workspace_id) == 1
+        assert _count(session, OutboxEvent, workspace_id) == 1
+
+
+def test_schedule_next_action_replays_after_its_due_at_has_passed(
+    lead_operations_api, monkeypatch
+):
+    client, engine, workspace_id, lead_id, _ = lead_operations_api
+    command_id = uuid4()
+    due_at = datetime.now(UTC) + timedelta(hours=1)
+    payload = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "task_type": "call",
+        "title": "Call before deadline",
+        "due_at": due_at.isoformat(),
+    }
+    first = client.post(
+        f"/api/v1/commands/leads/{lead_id}/schedule-next-action",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    monkeypatch.setattr(
+        lead_operation_service, "_now", lambda: due_at + timedelta(seconds=1)
+    )
+    replay = client.post(
+        f"/api/v1/commands/leads/{lead_id}/schedule-next-action",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json() | {"replayed": True}
+    with Session(engine) as session:
+        assert session.get(Lead, lead_id).version == 2
+        assert _count(session, Task, workspace_id) == 1
+        assert _count(session, Activity, workspace_id) == 1
+        assert _count(session, AuditEvent, workspace_id) == 1
+        assert _count(session, OutboxEvent, workspace_id) == 1

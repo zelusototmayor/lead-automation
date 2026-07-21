@@ -491,3 +491,39 @@ def test_update_proposal_authenticates_before_database_access(monkeypatch):
     assert database_touched is False
     get_settings.cache_clear()
     get_feature_flags.cache_clear()
+
+
+def test_proposal_replay_by_a_different_actor_is_a_generic_conflict(
+    proposal_operations_api,
+):
+    client, engine, workspace_id, proposal_id, _, _ = proposal_operations_api
+    command_id = uuid4()
+    payload = _payload(command_id)
+    assert (
+        client.post(
+            f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
+            json=payload,
+            headers=_headers(command_id),
+        ).status_code
+        == 200
+    )
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: CRMPrincipal(
+        workspace_id=workspace_id,
+        actor_id=uuid4(),
+        subject="different-proposal-actor",
+        permissions=frozenset({"crm:read", "crm:proposal:write"}),
+    )
+
+    replay = client.post(
+        f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    assert replay.status_code == 409
+    assert replay.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        assert session.get(Proposal, proposal_id).version == 2
+        assert _count(session, Activity, workspace_id) == 1
+        assert _count(session, AuditEvent, workspace_id) == 1
+        assert _count(session, OutboxEvent, workspace_id) == 1

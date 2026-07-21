@@ -305,3 +305,32 @@ def test_database_enforces_append_only_audit_and_bounded_payloads():
     finally:
         cleanup_workspace(engine, workspace_id)
         engine.dispose()
+
+
+def test_replay_is_bound_to_the_original_actor_without_duplicate_writes():
+    engine = create_engine(require_disposable_postgres())
+    factory = sessionmaker(engine, expire_on_commit=False)
+    workspace_id, lead_id, actor_id = _seed(engine)
+    command = _command(workspace_id, lead_id)
+    try:
+        with SqlAlchemyUnitOfWork(factory) as uow:
+            HumanCommandService(uow).transition_lead(
+                _principal(workspace_id, actor_id), command
+            )
+            uow.commit()
+
+        with (
+            SqlAlchemyUnitOfWork(factory) as uow,
+            pytest.raises(CommandConflictError, match="^command conflict$"),
+        ):
+            HumanCommandService(uow).transition_lead(
+                _principal(workspace_id, uuid4()), command
+            )
+
+        with Session(engine) as session:
+            assert session.get(Lead, lead_id).version == 2
+            assert session.scalar(select(func.count(OutboxEvent.id))) == 1
+            assert session.scalar(select(func.count(AuditEvent.id))) == 1
+    finally:
+        cleanup_workspace(engine, workspace_id)
+        engine.dispose()

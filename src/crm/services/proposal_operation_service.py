@@ -20,6 +20,7 @@ from src.crm.services.command_service import (
     CommandAuthorizationError,
     CommandConflictError,
     HumanCommandPrincipal,
+    _assert_replay_actor,
 )
 
 
@@ -126,7 +127,7 @@ class ProposalOperationService:
             raise _conflict() from None
 
         semantic_hash = _semantic_hash(command)
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         proposal = self.uow.proposals.get(
@@ -241,7 +242,10 @@ class ProposalOperationService:
             raise CommandAuthorizationError("command forbidden") from None
 
     def _claim_or_replay(
-        self, command: UpdateProposalPipelineCommand, semantic_hash: str
+        self,
+        principal: HumanCommandPrincipal,
+        command: UpdateProposalPipelineCommand,
+        semantic_hash: str,
     ) -> ProposalOperationResult | None:
         self.uow.lock_identities(
             command.workspace_id, (f"human-command:{command.command_id}",)
@@ -256,6 +260,12 @@ class ProposalOperationService:
             or replay.aggregate_id != command.proposal_id
         ):
             raise _conflict() from None
+        _assert_replay_actor(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            actor_id=principal.actor_id,
+        )
         return ProposalOperationResult(
             command.command_id,
             replay.aggregate_id,

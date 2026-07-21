@@ -69,6 +69,14 @@ def _semantic_hash(command: TransitionLeadCommand, target: str) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _assert_replay_actor(
+    uow, *, workspace_id: UUID, command_id: UUID, actor_id: UUID
+) -> None:
+    audit = uow.audit_events.by_command(workspace_id, command_id)
+    if audit is None or audit.actor_id != actor_id:
+        raise _conflict() from None
+
+
 class HumanCommandService:
     """Apply commands in the caller-owned transaction; never publish or commit."""
 
@@ -117,6 +125,12 @@ class HumanCommandService:
                 or replay.aggregate_id != command.lead_id
             ):
                 raise _conflict() from None
+            _assert_replay_actor(
+                self.uow,
+                workspace_id=command.workspace_id,
+                command_id=command.command_id,
+                actor_id=principal.actor_id,
+            )
             return CommandResult(
                 command.command_id,
                 replay.aggregate_id,
