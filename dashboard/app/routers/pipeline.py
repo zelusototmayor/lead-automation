@@ -6,7 +6,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, exists, func, literal, select
+from sqlalchemy import and_, exists, func, literal, or_, select
 
 from dashboard.app.routers.accounts import (
     AccountRequestContext,
@@ -132,6 +132,7 @@ def _pipeline_statement(
         Contact.full_name.label("contact_name"),
         Contact.primary_email.label("email"),
         Contact.phone,
+        Account.city,
         Lead.stage,
         Lead.priority,
         Lead.version.label("lead_version"),
@@ -215,6 +216,7 @@ def _to_item(row) -> PipelineItem:
         contact_name=row.contact_name,
         email=str(row.email) if row.email is not None else None,
         phone=_redact_phone(row.phone),
+        city=row.city,
         stage=row.stage,
         priority=row.priority,
         lead_version=row.lead_version,
@@ -240,11 +242,24 @@ def pipeline_summary(
     return PipelineSummary(queues=counts, generated_at=now)
 
 
+def _literal_search_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 @router.get("/api/v1/pipeline/items", response_model=PipelinePage)
 def pipeline_items(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
     queue: Annotated[PipelineQueue, Query()] = "all",
     priority: Annotated[PipelinePriority | None, Query()] = None,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=200,
+            pattern=r"^[^\x00-\x20\x7f](?:[^\x00-\x1f\x7f]*[^\x00-\x20\x7f])?$",
+        ),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PipelinePage:
@@ -252,6 +267,17 @@ def pipeline_items(
     statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
     if priority is not None:
         statement = statement.where(Lead.priority == priority)
+    if search is not None:
+        pattern = _literal_search_pattern(search)
+        statement = statement.where(
+            or_(
+                Account.display_name.ilike(pattern, escape="\\"),
+                Contact.full_name.ilike(pattern, escape="\\"),
+                Contact.primary_email.ilike(pattern, escape="\\"),
+                Contact.phone.ilike(pattern, escape="\\"),
+                Account.city.ilike(pattern, escape="\\"),
+            )
+        )
     rows = statement.subquery()
     total = int(context.session.scalar(select(func.count()).select_from(rows)) or 0)
     page_rows = context.session.execute(
@@ -283,6 +309,7 @@ def _lead_detail_row(context: AccountRequestContext, lead_id: UUID):
             Contact.full_name.label("contact_name"),
             Contact.primary_email.label("email"),
             Contact.phone,
+            Account.city,
             Lead.stage,
             Lead.priority,
             Lead.version,
@@ -320,6 +347,7 @@ def lead_detail(
         contact_name=row.contact_name,
         email=str(row.email) if row.email is not None else None,
         phone=str(row.phone) if row.phone is not None else None,
+        city=row.city,
         stage=row.stage,
         priority=row.priority,
         version=row.version,

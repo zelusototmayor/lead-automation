@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 
 // Loading the browser bundle in Node only registers its DOMContentLoaded callback.
 global.document = { addEventListener() {} };
-const { createLeadQueueBehavior } = require("../../dashboard/app/static/leads.js");
+const { createLeadQueueBehavior, leadMatchesFilters } = require("../../dashboard/app/static/leads.js");
 
 const deferred = () => {
   let resolve;
@@ -16,6 +16,22 @@ const deferred = () => {
   });
   return { promise, resolve, reject };
 };
+
+test("lead search includes canonical city without weakening stage filtering", () => {
+  const lead = {
+    company: "Acme Logistics",
+    contact_name: "Ana Silva",
+    email: "ana@example.test",
+    phone: "+351210000000",
+    city: "Lisboa",
+    stage: "contacted",
+  };
+
+  assert.equal(leadMatchesFilters(lead, "lisboa", "contacted"), true);
+  assert.equal(leadMatchesFilters(lead, "LISBOA", "contacted"), true);
+  assert.equal(leadMatchesFilters(lead, "lisboa", "new"), false);
+  assert.equal(leadMatchesFilters(lead, "porto", "contacted"), false);
+});
 
 test("save and next captures the visible successor and saved lead before the POST", async () => {
   let selection = { leadId: "A", lead: { version: 7 } };

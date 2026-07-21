@@ -56,12 +56,14 @@ def pipeline_api(monkeypatch):
                     workspace_id=workspace_id,
                     display_name="Acme Logistics",
                     normalized_name="acme logistics",
+                    city="Lisboa",
                 ),
                 Account(
                     id=other_account_id,
                     workspace_id=other_workspace_id,
                     display_name="Foreign Logistics",
                     normalized_name="foreign logistics",
+                    city="Lisboa",
                 ),
             ]
         )
@@ -294,6 +296,24 @@ def test_pipeline_priority_filter_is_strict_and_applied_before_count(pipeline_ap
     assert client.get("/api/v1/pipeline/items?priority=").status_code == 422
 
 
+def test_pipeline_search_includes_city_and_is_workspace_scoped(pipeline_api):
+    client, lead_id = pipeline_api
+
+    by_city = client.get("/api/v1/pipeline/items?queue=all&search=lisboa")
+    by_contact = client.get("/api/v1/pipeline/items?queue=all&search=ANA%40EXAMPLE.TEST")
+    absent = client.get("/api/v1/pipeline/items?queue=all&search=porto")
+
+    assert by_city.status_code == by_contact.status_code == absent.status_code == 200
+    assert by_city.json()["total"] == 2
+    assert str(lead_id) in {item["lead_id"] for item in by_city.json()["items"]}
+    assert {item["company"] for item in by_city.json()["items"]} == {"Acme Logistics"}
+    assert {item["city"] for item in by_city.json()["items"]} == {"Lisboa"}
+    assert [item["lead_id"] for item in by_contact.json()["items"]] == [str(lead_id)]
+    assert absent.json()["total"] == 0
+    assert client.get("/api/v1/pipeline/items?search=%20lisboa").status_code == 422
+    assert client.get("/api/v1/pipeline/items?search=").status_code == 422
+
+
 def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_api):
     client, lead_id = pipeline_api
 
@@ -310,6 +330,7 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "contact_name": "Ana Silva",
         "email": "ana@example.test",
         "phone": "+351210000000",
+        "city": "Lisboa",
         "stage": "contacted",
         "priority": "high",
         "version": 1,

@@ -344,6 +344,45 @@ def test_existing_account_lifecycle_advances_with_higher_stage():
         engine.dispose()
 
 
+def test_backfill_persists_canonical_account_city():
+    database_url = require_disposable_postgres()
+    engine = create_engine(database_url)
+    workspace_id = uuid4()
+    source = FixtureSource()
+    source.values = [
+        [*source.values[0], "City"],
+        [*source.values[1], "Lisboa"],
+    ]
+    try:
+        with Session(engine) as session, session.begin():
+            session.add(
+                Workspace(
+                    id=workspace_id,
+                    slug=f"city-backfill-{workspace_id}",
+                    name="City Backfill Fixture",
+                )
+            )
+        report = backfill_accounts(
+            snapshot_sheet(
+                source, "fixture-spreadsheet", "PT Logistics", stable_id_column="ID"
+            ),
+            apply=True,
+            database_url=database_url,
+            workspace_id=workspace_id,
+        )
+
+        with Session(engine) as session:
+            account = session.scalar(
+                select(Account).where(Account.workspace_id == workspace_id)
+            )
+        assert report.imported == 1
+        assert account is not None
+        assert account.city == "Lisboa"
+    finally:
+        cleanup_workspace(engine, workspace_id)
+        engine.dispose()
+
+
 def test_concurrent_exact_account_evidence_creates_one_account():
     database_url = require_disposable_postgres()
     engine = create_engine(database_url)

@@ -410,6 +410,9 @@ def _apply_row(
             session, workspace_id, scope, row.external_id, "account", row.locator
         )
         company = row.values.get("Company", "").strip()
+        city = row.values.get("City", "").strip() or None
+        if city is not None and len(city) > 255:
+            raise _ReviewRequired()
         if not company:
             raise _ReviewRequired()
         try:
@@ -460,6 +463,11 @@ def _apply_row(
             raise _ReviewRequired()
         if candidates:
             account = next(iter(candidates.values()))
+            if city is not None:
+                if account.city is not None and account.city.casefold() != city.casefold():
+                    raise _ReviewRequired()
+                if account.city is None:
+                    account.city = city
         else:
             account = Account(
                 workspace_id=workspace_id,
@@ -470,6 +478,7 @@ def _apply_row(
                 highest_stage_rank=stage_rank(stage),
                 sector=row.values.get("Industry", "").strip() or None,
                 commercial_vertical=row.values.get("Industry", "").strip() or None,
+                city=city,
                 source_origin=row.values.get("Source", "").strip() or None,
                 source_identity_id=account_identity.id,
             )

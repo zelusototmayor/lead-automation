@@ -573,6 +573,10 @@ class Account(Base):
             name="ck_accounts_vertical_nonblank",
         ),
         CheckConstraint(
+            "city IS NULL OR length(btrim(city)) > 0",
+            name="ck_accounts_city_nonblank",
+        ),
+        CheckConstraint(
             "source_origin IS NULL OR length(btrim(source_origin)) > 0",
             name="ck_accounts_source_origin_nonblank",
         ),
@@ -633,6 +637,7 @@ class Account(Base):
     merged_into_account_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     sector: Mapped[str | None] = mapped_column(String(255))
     commercial_vertical: Mapped[str | None] = mapped_column(String(255))
+    city: Mapped[str | None] = mapped_column(String(255))
     source_origin: Mapped[str | None] = mapped_column(String(255))
     source_identity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(

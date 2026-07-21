@@ -42,6 +42,7 @@ class PipelineItem(BaseModel):
     contact_name: str | None
     email: str | None
     phone: str | None
+    city: str | None
     stage: str
     priority: str | None
     lead_version: int = Field(ge=1)
@@ -74,6 +75,7 @@ class LeadDetail(BaseModel):
     contact_name: str | None
     email: str | None
     phone: str | None
+    city: str | None
     stage: str
     priority: str | None
     version: int = Field(ge=1)

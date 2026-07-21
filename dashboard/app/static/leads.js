@@ -75,8 +75,26 @@
     return { invalidateNavigation, loadLead, save, skip };
   };
 
+  const leadMatchesFilters = (lead, query, selectedStage) => {
+    const normalizedQuery = String(query || "").trim().toLocaleLowerCase("pt-PT");
+    const searchable = [
+      lead.company,
+      lead.contact_name,
+      lead.email,
+      lead.phone,
+      lead.city,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("pt-PT");
+    return (
+      (!normalizedQuery || searchable.includes(normalizedQuery)) &&
+      (!selectedStage || lead.stage === selectedStage)
+    );
+  };
+
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { createLeadQueueBehavior };
+    module.exports = { createLeadQueueBehavior, leadMatchesFilters };
   }
 
   const stageLabel = (value) => String(value || "sem estado").replaceAll("_", " ");
@@ -155,7 +173,7 @@
         appendText(
           identity,
           "lead-contact",
-          [lead.contact_name, lead.email, lead.phone].filter(Boolean).join(" · ") || "Sem contacto",
+          [lead.contact_name, lead.email, lead.phone, lead.city].filter(Boolean).join(" · ") || "Sem contacto",
         );
 
         const stage = document.createElement("span");
@@ -176,16 +194,10 @@
     };
 
     const applyFilters = () => {
-      const query = search.value.trim().toLocaleLowerCase("pt-PT");
+      const query = search.value;
       const selectedStage = stageFilter.value;
       renderRows(
-        queueItems.filter((lead) => {
-          const searchable = [lead.company, lead.contact_name, lead.email, lead.phone]
-            .filter(Boolean)
-            .join(" ")
-            .toLocaleLowerCase("pt-PT");
-          return (!query || searchable.includes(query)) && (!selectedStage || lead.stage === selectedStage);
-        }),
+        queueItems.filter((lead) => leadMatchesFilters(lead, query, selectedStage)),
       );
     };
 
