@@ -86,6 +86,34 @@ def _semantic_hash(command: UpdateProposalPipelineCommand) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+_PIPELINE_AUDIT_FIELDS = (
+    "status",
+    "probability",
+    "probability_source",
+    "forecast_category",
+    "next_action",
+    "next_action_due_at",
+    "won_at",
+    "lost_at",
+    "lost_reason",
+)
+
+
+def _json_safe_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value.quantize(Decimal("0.01")))
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).isoformat()
+    return value
+
+
+def _pipeline_state(proposal) -> dict[str, object]:
+    return {
+        field: _json_safe_value(getattr(proposal, field))
+        for field in _PIPELINE_AUDIT_FIELDS
+    }
+
+
 class ProposalOperationService:
     """Apply explicit proposal pipeline state; never publish or send outbound."""
 
@@ -106,6 +134,7 @@ class ProposalOperationService:
             or type(command.expected_version) is not int
             or command.expected_version < 1
             or command.status not in PROPOSAL_STATUSES
+            or command.status == "won"
         ):
             raise _conflict() from None
         probability = self._probability(command.probability)
@@ -134,11 +163,14 @@ class ProposalOperationService:
         )
         if proposal is None or proposal.version != command.expected_version:
             raise _conflict() from None
+        if proposal.status in {"won", "lost", "withdrawn", "expired"}:
+            raise _conflict() from None
         if command.status in PROPOSAL_SENT_OR_LATER_STATUSES:
             self._validate_confirmed_evidence(proposal, command.status)
         elif proposal.sent_at is not None:
             raise _conflict() from None
 
+        before = _pipeline_state(proposal)
         now = datetime.now(UTC)
         proposal.status = command.status
         proposal.probability = probability
@@ -159,6 +191,7 @@ class ProposalOperationService:
             proposal.lost_at = None
             proposal.lost_reason = None
         proposal.updated_at = now
+        after = _pipeline_state(proposal)
         self.uow.session.flush()
 
         version = proposal.version
@@ -167,6 +200,10 @@ class ProposalOperationService:
             "proposal_id": str(proposal.id),
             "status": proposal.status,
             "version": version,
+            "changes": {
+                field: {"before": before[field], "after": after[field]}
+                for field in _PIPELINE_AUDIT_FIELDS
+            },
         }
         self.uow.activities.add(
             Activity(
@@ -179,6 +216,9 @@ class ProposalOperationService:
                 activity_type="note",
                 occurred_at=now,
                 title="Proposal pipeline updated",
+                summary=json.dumps(
+                    event_payload, sort_keys=True, separators=(",", ":")
+                ),
                 semantic_fingerprint=semantic_hash,
                 source_system="manual",
                 actor_type="human",
@@ -207,7 +247,7 @@ class ProposalOperationService:
                 action=event_type,
                 entity_type="proposal",
                 entity_id=proposal.id,
-                details={"status": proposal.status, "version": version},
+                details=event_payload,
             )
         )
         return ProposalOperationResult(command.command_id, proposal.id, version, False)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -247,10 +248,26 @@ def _count(session: Session, model, workspace_id) -> int:
 def test_update_proposal_pipeline_is_atomic_and_audited(proposal_operations_api):
     client, engine, workspace_id, proposal_id, _, actor_id = proposal_operations_api
     command_id = uuid4()
+    with Session(engine) as session:
+        proposal_before = session.get(Proposal, proposal_id)
+        before = {
+            "status": proposal_before.status,
+            "probability": str(proposal_before.probability),
+            "probability_source": proposal_before.probability_source,
+            "forecast_category": proposal_before.forecast_category,
+            "next_action": proposal_before.next_action,
+            "next_action_due_at": proposal_before.next_action_due_at.astimezone(
+                UTC
+            ).isoformat(),
+            "won_at": None,
+            "lost_at": None,
+            "lost_reason": None,
+        }
 
+    payload = _payload(command_id)
     response = client.post(
         f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
-        json=_payload(command_id),
+        json=payload,
         headers=_headers(command_id),
     )
 
@@ -282,6 +299,36 @@ def test_update_proposal_pipeline_is_atomic_and_audited(proposal_operations_api)
         assert activity.actor_id == actor_id
         assert activity.title == "Proposal pipeline updated"
         assert audit.action == outbox.event_type == "proposal.pipeline_updated"
+        next_action_due_at = payload["next_action_due_at"]
+        assert isinstance(next_action_due_at, str)
+        changes = {
+            field: {"before": before[field], "after": after}
+            for field, after in {
+                "status": "negotiation",
+                "probability": "70.00",
+                "probability_source": "manual",
+                "forecast_category": "commit",
+                "next_action": "Review final scope",
+                "next_action_due_at": datetime.fromisoformat(next_action_due_at)
+                .astimezone(UTC)
+                .isoformat(),
+                "won_at": None,
+                "lost_at": None,
+                "lost_reason": None,
+            }.items()
+        }
+        event_payload = {
+            "proposal_id": str(proposal_id),
+            "status": "negotiation",
+            "version": 2,
+            "changes": changes,
+        }
+        assert outbox.payload == event_payload
+        assert audit.details == event_payload
+        assert activity.summary == json.dumps(
+            event_payload, sort_keys=True, separators=(",", ":")
+        )
+        assert json.loads(activity.summary) == event_payload
         assert _count(session, Activity, workspace_id) == 1
         assert _count(session, AuditEvent, workspace_id) == 1
         assert _count(session, OutboxEvent, workspace_id) == 1
@@ -433,8 +480,14 @@ def test_update_proposal_persists_lost_outcome_and_reason(proposal_operations_ap
         json=payload,
         headers=_headers(command_id),
     )
+    replay = client.post(
+        f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
+        json=payload,
+        headers=_headers(command_id),
+    )
 
-    assert response.status_code == 200
+    assert response.status_code == replay.status_code == 200
+    assert replay.json()["replayed"] is True
     with Session(engine) as session:
         proposal = session.get(Proposal, proposal_id)
         assert proposal.status == "lost"
@@ -504,7 +557,7 @@ def test_update_proposal_accepts_other_terminal_state_with_rejected_evidence(
         assert _count(session, OutboxEvent, workspace_id) == 1
 
 
-def test_update_proposal_accepts_won_with_confirmed_selected_version_evidence(
+def test_update_proposal_rejects_won_without_any_mutation(
     proposal_operations_api,
 ):
     client, engine, workspace_id, proposal_id, _, _ = proposal_operations_api
@@ -530,15 +583,76 @@ def test_update_proposal_accepts_won_with_confirmed_selected_version_evidence(
         headers=_headers(command_id),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Command conflict"}
+    assert response.headers["cache-control"] == "no-store"
+    assert "won" not in response.text
     with Session(engine) as session:
         proposal = session.get(Proposal, proposal_id)
-        assert proposal.version == 2
-        assert proposal.status == "won"
-        assert proposal.won_at is not None
-        assert _count(session, Activity, workspace_id) == 1
-        assert _count(session, AuditEvent, workspace_id) == 1
-        assert _count(session, OutboxEvent, workspace_id) == 1
+        assert proposal.version == 1
+        assert proposal.status == "sent"
+        assert proposal.probability == Decimal("40.00")
+        assert proposal.probability_source == "sales_approved"
+        assert proposal.forecast_category == "pipeline"
+        assert proposal.next_action == "Initial follow-up"
+        assert proposal.next_action_due_at is not None
+        assert proposal.won_at is None
+        assert proposal.lost_at is None
+        assert proposal.lost_reason is None
+        assert _count(session, Activity, workspace_id) == 0
+        assert _count(session, AuditEvent, workspace_id) == 0
+        assert _count(session, OutboxEvent, workspace_id) == 0
+
+
+@pytest.mark.parametrize("terminal_status", ["won", "lost", "withdrawn", "expired"])
+def test_update_proposal_rejects_transition_from_terminal_state_preserving_history(
+    proposal_operations_api, terminal_status
+):
+    client, engine, workspace_id, proposal_id, _, _ = proposal_operations_api
+    command_id = uuid4()
+    terminal_at = datetime(2025, 1, 2, 3, 4, tzinfo=UTC)
+    terminal_values = {
+        "status": terminal_status,
+        "won_at": terminal_at if terminal_status == "won" else None,
+        "lost_at": terminal_at if terminal_status == "lost" else None,
+        "lost_reason": "Buyer chose another vendor"
+        if terminal_status == "lost"
+        else None,
+    }
+    with Session(engine) as session, session.begin():
+        session.execute(
+            update(Proposal).where(Proposal.id == proposal_id).values(**terminal_values)
+        )
+        proposal = session.get(Proposal, proposal_id)
+        before = {
+            "status": proposal.status,
+            "probability": proposal.probability,
+            "probability_source": proposal.probability_source,
+            "forecast_category": proposal.forecast_category,
+            "next_action": proposal.next_action,
+            "next_action_due_at": proposal.next_action_due_at,
+            "won_at": proposal.won_at,
+            "lost_at": proposal.lost_at,
+            "lost_reason": proposal.lost_reason,
+        }
+
+    response = client.post(
+        f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
+        json=_payload(command_id),
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Command conflict"}
+    assert terminal_status not in response.text
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+        after = {field: getattr(proposal, field) for field in before}
+        assert after == before
+        assert proposal.version == 1
+        assert _count(session, Activity, workspace_id) == 0
+        assert _count(session, AuditEvent, workspace_id) == 0
+        assert _count(session, OutboxEvent, workspace_id) == 0
 
 
 @pytest.mark.parametrize("evidence_state", ["missing", "candidate"])
@@ -638,7 +752,6 @@ def test_update_proposal_rejects_document_evidence_with_wrong_type(
         )
 
     payload = _payload(command_id)
-    payload["status"] = "won"
     response = client.post(
         f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
         json=payload,
@@ -719,7 +832,6 @@ def test_update_proposal_rejects_same_account_evidence_from_another_thread(
         )
 
     payload = _payload(command_id)
-    payload["status"] = "won"
     response = client.post(
         f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
         json=payload,
@@ -770,7 +882,6 @@ def test_update_proposal_rejects_confirmed_version_from_another_proposal(
         )
 
     payload = _payload(command_id)
-    payload["status"] = "won"
     response = client.post(
         f"/api/v1/commands/proposals/{proposal_id}/update-pipeline",
         json=payload,
