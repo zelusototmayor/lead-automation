@@ -2,11 +2,13 @@
 {% block title %}Trabalho diário · CRM{% endblock %}
 {% block extra_styles %}
   .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, .9fr); gap: 16px; align-items: start; }
+  .pipeline-layout > *, .leads-list, .lead-row > * { min-width: 0; }
+  .lead-company, .lead-contact, .lead-action, .detail-contact, .task-title { overflow-wrap: anywhere; }
   .queue-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
   .queue-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 7px 10px; color: var(--ink); font-size: 11px; font-weight: 700; }
   .queue-btn[aria-pressed="true"] { color: white; background: var(--dark); border-color: var(--dark); }
   .queue-count { margin-left: 5px; opacity: .72; }
-  .analytics-panel { margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .analytics-panel { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .analytics-panel-header, .analytics-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
   .analytics-panel-header h2 { margin: 0; font-size: 15px; }
   .analytics-caption, .analytics-unavailable { color: var(--muted); font-size: 11px; }
@@ -26,6 +28,7 @@
   .analytics-metric-btn { border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 5px 8px; color: var(--ink); font-size: 10px; font-weight: 700; }
   .analytics-metric-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
   .analytics-unavailable { margin: 10px 0 0; }
+  .analytics-stage-dwell { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 11px; }
   .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
   .lead-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
   .lead-tools input, .lead-tools select, .task-form input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -64,6 +67,9 @@
     .detail-panel { position: static; }
   }
   @media (max-width: 560px) {
+    .primary-nav { gap: 6px; overflow-x: auto; }
+    .primary-nav a, .queue-btn, .analytics-metric-btn, .queue-pagination .btn, .detail-actions .btn, .task-actions .btn, .command-form-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
+    .lead-tools input, .lead-tools select, .task-form input, .command-form input:not([type="checkbox"]), .command-form select { min-height: 44px; }
     .analytics-panel { padding: 10px; }
     .analytics-grid { grid-template-columns: minmax(0, 1fr); }
     .analytics-card-wide { grid-column: auto; }
@@ -85,17 +91,6 @@
   <header class="topbar">
     <div><p class="eyebrow">CRM</p><h1>Trabalho diário</h1><p class="subtle"><span data-lead-total>—</span> leads na fila selecionada.</p></div>
   </header>
-  <section class="analytics-panel" data-pipeline-analytics aria-labelledby="analytics-title">
-    <div class="analytics-panel-header">
-      <h2 id="analytics-title">Indicadores operacionais</h2>
-      <span class="analytics-caption">Janela móvel de 30 dias</span>
-    </div>
-    <p class="analytics-warning hidden" data-analytics-warning role="status"></p>
-    <div data-analytics-content>
-      <p class="analytics-caption" data-analytics-loading>A sincronizar indicadores…</p>
-      <p class="analytics-unavailable">Tempo em fase indisponível — ainda não existem transições tipadas suficientes.</p>
-    </div>
-  </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
       <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
@@ -181,6 +176,17 @@
       </div>
     </aside>
   </div>
+  <section class="analytics-panel" data-pipeline-analytics aria-labelledby="analytics-title">
+    <div class="analytics-panel-header">
+      <h2 id="analytics-title">Indicadores operacionais</h2>
+      <span class="analytics-caption">Janela móvel de 30 dias</span>
+    </div>
+    <p class="analytics-warning hidden" data-analytics-warning role="status"></p>
+    <div data-analytics-content>
+      <p class="analytics-caption" data-analytics-loading>A sincronizar indicadores…</p>
+      <p class="analytics-unavailable">Tempo em fase indisponível — a aguardar cobertura estruturada.</p>
+    </div>
+  </section>
   <template data-task-actions-template>
     <div class="task-actions">
       <button class="btn btn-primary" type="button" data-task-complete>Concluir</button>

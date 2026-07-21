@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import re
 from uuid import uuid4
@@ -25,6 +26,23 @@ from src.crm.persistence.models import (
     Workspace,
 )
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
+
+
+@dataclass(frozen=True)
+class AnalyticsAPI:
+    client: TestClient
+    query_count: object
+    engine: object
+    workspace_id: object
+    foreign_workspace_id: object
+    account_id: object
+    foreign_account_id: object
+    lead_id: object
+    foreign_lead_id: object
+
+    def __iter__(self):
+        yield self.client
+        yield self.query_count
 
 
 @pytest.fixture
@@ -247,7 +265,17 @@ def analytics_api(monkeypatch):
         override_context
     )
     try:
-        yield TestClient(dashboard_main.app), lambda: query_count
+        yield AnalyticsAPI(
+            client=TestClient(dashboard_main.app),
+            query_count=lambda: query_count,
+            engine=engine,
+            workspace_id=workspace_id,
+            foreign_workspace_id=foreign_workspace_id,
+            account_id=account_id,
+            foreign_account_id=foreign_account_id,
+            lead_id=lead_id,
+            foreign_lead_id=foreign_lead_id,
+        )
     finally:
         dashboard_main.app.dependency_overrides.clear()
         dashboard_main.app.dependency_overrides.update(overrides)
@@ -257,6 +285,28 @@ def analytics_api(monkeypatch):
         engine.dispose()
 
 
+def _stage_change(
+    *,
+    workspace_id,
+    account_id,
+    lead_id,
+    occurred_at,
+    from_stage=None,
+    to_stage=None,
+):
+    return Activity(
+        workspace_id=workspace_id,
+        account_id=account_id,
+        lead_id=lead_id,
+        activity_type="stage_change",
+        occurred_at=occurred_at,
+        title="Stage changed",
+        semantic_fingerprint=uuid4().hex * 2,
+        from_stage=from_stage,
+        to_stage=to_stage,
+    )
+
+
 def test_pipeline_analytics_returns_only_bounded_workspace_aggregates(analytics_api):
     client, query_count = analytics_api
     before = query_count()
@@ -264,7 +314,8 @@ def test_pipeline_analytics_returns_only_bounded_workspace_aggregates(analytics_
     response = client.get("/api/v1/pipeline/analytics?days=2")
 
     assert response.status_code == 200
-    assert query_count() - before <= 6
+    # One fixed aggregate query is reserved for structured time-in-stage coverage.
+    assert query_count() - before <= 7
     assert response.json() == {
         "period": {
             "start_date": "2026-07-20",
@@ -308,7 +359,16 @@ def test_pipeline_analytics_returns_only_bounded_workspace_aggregates(analytics_
             },
             "unit": "task",
         },
-        "time_in_stage": "not_available",
+        "time_in_stage": {
+            "status": "not_available",
+            "coverage": {
+                "structured_transitions": 0,
+                "legacy_transitions": 0,
+                "usable_intervals": 0,
+                "uncovered_transitions": 0,
+            },
+            "stages": [],
+        },
         "generated_at": "2026-07-21T00:30:00Z",
     }
 
@@ -377,3 +437,203 @@ def test_pipeline_analytics_days_are_strictly_bounded(analytics_api):
     assert client.get("/api/v1/pipeline/analytics?days=0").status_code == 422
     assert client.get("/api/v1/pipeline/analytics?days=121").status_code == 422
     assert client.get("/api/v1/pipeline/analytics?days=thirty").status_code == 422
+
+
+def test_time_in_stage_uses_only_two_contiguous_structured_transitions(
+    analytics_api,
+):
+    with Session(analytics_api.engine) as session, session.begin():
+        session.add_all(
+            [
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 8, 0, tzinfo=UTC),
+                    from_stage="new",
+                    to_stage="contacted",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 20, 30, tzinfo=UTC),
+                    from_stage="contacted",
+                    to_stage="qualified",
+                ),
+            ]
+        )
+
+    response = analytics_api.client.get("/api/v1/pipeline/analytics?days=2")
+
+    assert response.status_code == 200
+    assert response.json()["time_in_stage"] == {
+        "status": "available",
+        "coverage": {
+            "structured_transitions": 2,
+            "legacy_transitions": 0,
+            "usable_intervals": 1,
+            "uncovered_transitions": 1,
+        },
+        "stages": [
+            {
+                "stage": "contacted",
+                "completed_intervals": 1,
+                "average_hours": 12.5,
+                "median_hours": 12.5,
+                "p90_hours": 12.5,
+            }
+        ],
+    }
+
+
+def test_time_in_stage_returns_multiple_stages_in_canonical_lifecycle_order(
+    analytics_api,
+):
+    with Session(analytics_api.engine) as session, session.begin():
+        session.add_all(
+            [
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 8, 0, tzinfo=UTC),
+                    from_stage="not_a_fit",
+                    to_stage="new",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 9, 0, tzinfo=UTC),
+                    from_stage="new",
+                    to_stage="contacted",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 11, 0, tzinfo=UTC),
+                    from_stage="contacted",
+                    to_stage="qualified",
+                ),
+            ]
+        )
+
+    stage_orders = [
+        [
+            row["stage"]
+            for row in analytics_api.client.get(
+                "/api/v1/pipeline/analytics?days=2"
+            ).json()["time_in_stage"]["stages"]
+        ]
+        for _ in range(5)
+    ]
+
+    assert stage_orders == [["new", "contacted"]] * 5
+
+
+def test_time_in_stage_reports_broken_legacy_and_foreign_coverage_without_inference(
+    analytics_api,
+):
+    with Session(analytics_api.engine) as session, session.begin():
+        session.add_all(
+            [
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 7, 0, tzinfo=UTC),
+                    from_stage="new",
+                    to_stage="contacted",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 9, 0, tzinfo=UTC),
+                    from_stage="qualified",
+                    to_stage="meeting_booked",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 11, 0, tzinfo=UTC),
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime(2026, 7, 20, 13, 0, tzinfo=UTC),
+                    from_stage="meeting_booked",
+                    to_stage="meeting_held",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.foreign_workspace_id,
+                    account_id=analytics_api.foreign_account_id,
+                    lead_id=analytics_api.foreign_lead_id,
+                    occurred_at=datetime(2026, 7, 20, 7, 0, tzinfo=UTC),
+                    from_stage="new",
+                    to_stage="contacted",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.foreign_workspace_id,
+                    account_id=analytics_api.foreign_account_id,
+                    lead_id=analytics_api.foreign_lead_id,
+                    occurred_at=datetime(2026, 7, 20, 8, 0, tzinfo=UTC),
+                    from_stage="contacted",
+                    to_stage="qualified",
+                ),
+            ]
+        )
+
+    time_in_stage = analytics_api.client.get(
+        "/api/v1/pipeline/analytics?days=2"
+    ).json()["time_in_stage"]
+
+    assert time_in_stage == {
+        "status": "not_available",
+        "coverage": {
+            "structured_transitions": 3,
+            "legacy_transitions": 1,
+            "usable_intervals": 0,
+            "uncovered_transitions": 3,
+        },
+        "stages": [],
+    }
+
+
+def test_time_in_stage_is_timezone_independent_and_replay_safe(analytics_api):
+    with Session(analytics_api.engine) as session, session.begin():
+        session.add_all(
+            [
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime.fromisoformat("2026-07-20T10:00:00+05:00"),
+                    from_stage="new",
+                    to_stage="contacted",
+                ),
+                _stage_change(
+                    workspace_id=analytics_api.workspace_id,
+                    account_id=analytics_api.account_id,
+                    lead_id=analytics_api.lead_id,
+                    occurred_at=datetime.fromisoformat("2026-07-20T04:00:00-04:00"),
+                    from_stage="contacted",
+                    to_stage="qualified",
+                ),
+            ]
+        )
+
+    first = analytics_api.client.get("/api/v1/pipeline/analytics?days=2")
+    replay = analytics_api.client.get("/api/v1/pipeline/analytics?days=2")
+    with Session(analytics_api.engine) as session, session.begin():
+        session.get(Workspace, analytics_api.workspace_id).timezone = "America/New_York"
+    other_timezone = analytics_api.client.get("/api/v1/pipeline/analytics?days=2")
+
+    assert first.status_code == replay.status_code == other_timezone.status_code == 200
+    assert first.json()["time_in_stage"] == replay.json()["time_in_stage"]
+    assert other_timezone.json()["time_in_stage"] == first.json()["time_in_stage"]
+    assert first.json()["time_in_stage"]["stages"][0]["average_hours"] == 3.0

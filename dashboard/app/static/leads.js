@@ -227,9 +227,50 @@
     });
     queues.appendChild(queueActions);
     grid.appendChild(queues);
-    root.appendChild(grid);
 
-    root.appendChild(analyticsElement(documentObject, "p", "analytics-unavailable", "Tempo em fase indisponível — ainda não existem transições tipadas suficientes."));
+    const timeInStage = analytics.time_in_stage || {};
+    const coverage = timeInStage.coverage || {};
+    const structuredTransitions = Math.max(0, Number(coverage.structured_transitions) || 0);
+    const usableIntervals = Math.max(0, Number(coverage.usable_intervals) || 0);
+    const legacyTransitions = Math.max(0, Number(coverage.legacy_transitions) || 0);
+    const dwellRows = Array.isArray(timeInStage.stages) ? timeInStage.stages : [];
+    if (timeInStage.status === "available" && dwellRows.length > 0) {
+      const dwell = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+      dwell.append(
+        analyticsElement(documentObject, "h3", "", "Tempo em fase"),
+        analyticsElement(
+          documentObject,
+          "p",
+          "analytics-caption",
+          `Cobertura ${usableIntervals} de ${structuredTransitions} transições estruturadas · ${legacyTransitions} transições legadas`,
+        ),
+      );
+      dwellRows.forEach((row) => {
+        const completed = Math.max(0, Number(row.completed_intervals) || 0);
+        const average = Math.max(0, Number(row.average_hours) || 0);
+        const item = analyticsElement(documentObject, "div", "analytics-stage-dwell");
+        item.append(
+          analyticsElement(documentObject, "strong", "", stageLabel(row.stage)),
+          analyticsElement(
+            documentObject,
+            "span",
+            "",
+            `${average.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h em média · ${completed} ${completed === 1 ? "intervalo concluído" : "intervalos concluídos"}`,
+          ),
+        );
+        dwell.appendChild(item);
+      });
+      grid.appendChild(dwell);
+    } else {
+      const unavailable = analyticsElement(
+        documentObject,
+        "p",
+        "analytics-unavailable",
+        `Tempo em fase indisponível — ${usableIntervals} intervalos utilizáveis em ${structuredTransitions} transições estruturadas; ${legacyTransitions} transições legadas não foram inferidas.`,
+      );
+      grid.appendChild(unavailable);
+    }
+    root.appendChild(grid);
   };
 
   const createLeadAnalyticsBehavior = ({
@@ -251,12 +292,19 @@
     },
   });
 
+  const revealDetailOnMobile = ({ windowObject, detailPanel }) => {
+    if (!windowObject.matchMedia("(max-width: 820px)").matches) return false;
+    detailPanel.scrollIntoView({ block: "start", behavior: "auto" });
+    return true;
+  };
+
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       createLatestQueueLoader,
       createLeadQueueBehavior,
       createLeadAnalyticsBehavior,
       renderLeadAnalytics,
+      revealDetailOnMobile,
     };
   }
 
@@ -653,6 +701,10 @@
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
       root.querySelector("[data-detail-empty]").classList.add("hidden");
       root.querySelector("[data-detail-ready]").classList.remove("hidden");
+      revealDetailOnMobile({
+        windowObject: window,
+        detailPanel: root.querySelector("[data-lead-detail-panel]"),
+      });
     };
 
     const queueBehavior = createLeadQueueBehavior({

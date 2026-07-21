@@ -9,6 +9,7 @@ const {
   createLeadAnalyticsBehavior,
   createLeadQueueBehavior,
   renderLeadAnalytics,
+  revealDetailOnMobile,
 } = require("../../dashboard/app/static/leads.js");
 
 class FakeElement {
@@ -108,7 +109,16 @@ const analyticsFixture = () => ({
     },
     unit: "task",
   },
-  time_in_stage: "not_available",
+  time_in_stage: {
+    status: "not_available",
+    coverage: {
+      structured_transitions: 0,
+      legacy_transitions: 3,
+      usable_intervals: 0,
+      uncovered_transitions: 0,
+    },
+    stages: [],
+  },
 });
 
 test("analytics requests the bounded 30 day aggregate and renders the response", async () => {
@@ -165,6 +175,47 @@ test("analytics rendering exposes aggregates and keeps untrusted labels as text"
   assert.equal(findAll(root, (element) => element.tagName === "SVG").length, 0);
   assert.equal(findAll(root, (element) => element.tagName === "A")[0].attributes.href, "/propostas");
 });
+
+test("time-in-stage rendering reports available aggregates and coverage safely", () => {
+  const root = new FakeElement("section");
+  const analytics = analyticsFixture();
+  analytics.time_in_stage = {
+    status: "available",
+    coverage: {
+      structured_transitions: 2,
+      legacy_transitions: 4,
+      usable_intervals: 1,
+      uncovered_transitions: 1,
+    },
+    stages: [
+      {
+        stage: "contacted",
+        completed_intervals: 1,
+        average_hours: 12.5,
+        median_hours: 12.5,
+        p90_hours: 12.5,
+        private_contacts: ["buyer@example.test"],
+      },
+    ],
+  };
+
+  renderLeadAnalytics({
+    document: fakeDocument,
+    root,
+    analytics,
+    filterByStage: () => {},
+    openQueue: () => {},
+  });
+
+  assert.match(root.textContent, /Tempo em fase/);
+  assert.match(root.textContent, /contacted/);
+  assert.match(root.textContent, /12[,.]5 h/);
+  assert.match(root.textContent, /1 intervalo concluído/);
+  assert.match(root.textContent, /Cobertura 1 de 2 transições estruturadas/);
+  assert.match(root.textContent, /4 transições legadas/);
+  assert.doesNotMatch(root.textContent, /buyer@example\.test/);
+});
+
 
 test("stage and due metrics perform canonical workspace actions", () => {
   const root = new FakeElement("section");
@@ -326,7 +377,25 @@ test("stale queue response cannot mutate rows, queue button, or stage filter", a
   assert.equal(await loadingQueue, true);
   first.resolve({ items: [{ lead_id: "STALE" }], total: 99, limit: 50, offset: 0 });
   assert.equal(await loadingStage, false);
-
-  assert.deepEqual(ui, { queue: "calls_today", stage: "", rows: ["CURRENT"] });
+  assert.equal(ui.queue, "calls_today");
+  assert.equal(ui.stage, "");
+  assert.deepEqual(ui.rows, ["CURRENT"]);
   assert.equal(loader.getState().total, 1);
+});
+
+test("lead detail scrolls into view only at the mobile breakpoint", () => {
+  const calls = [];
+  const detailPanel = { scrollIntoView: (options) => calls.push(options) };
+
+  assert.equal(revealDetailOnMobile({
+    windowObject: { matchMedia: () => ({ matches: false }) },
+    detailPanel,
+  }), false);
+  assert.deepEqual(calls, []);
+
+  assert.equal(revealDetailOnMobile({
+    windowObject: { matchMedia: () => ({ matches: true }) },
+    detailPanel,
+  }), true);
+  assert.deepEqual(calls, [{ block: "start", behavior: "auto" }]);
 });

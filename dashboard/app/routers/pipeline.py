@@ -17,7 +17,10 @@ from dashboard.app.schemas.pipeline import (
     AnalyticsDay,
     AnalyticsPeriod,
     AnalyticsQueueBreakdown,
+    AnalyticsStageDwell,
     AnalyticsTaskBreakdown,
+    AnalyticsTimeInStage,
+    AnalyticsTimeInStageCoverage,
     LeadDetail,
     LeadTask,
     LeadTaskPage,
@@ -92,6 +95,10 @@ _ANALYTICS_QUEUE_NAMES: tuple[PipelineQueue, ...] = (
     "proposal_followups_overdue",
     "proposal_followups_today",
 )
+_CANONICAL_STAGES = tuple(stage.value for stage in CRMStage)
+_CANONICAL_STAGE_ORDER = {
+    stage: position for position, stage in enumerate(_CANONICAL_STAGES)
+}
 
 
 def _utc_now() -> datetime:
@@ -416,6 +423,121 @@ def pipeline_analytics(
         queue: int(getattr(queue_row, queue)) for queue in _ANALYTICS_QUEUE_NAMES
     }
 
+    prior_to_stage = func.lag(Activity.to_stage).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    prior_occurred_at = func.lag(Activity.occurred_at).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    ordered_transitions = (
+        select(
+            Activity.occurred_at.label("occurred_at"),
+            Activity.from_stage.label("from_stage"),
+            Activity.to_stage.label("to_stage"),
+            prior_to_stage.label("prior_to_stage"),
+            prior_occurred_at.label("prior_occurred_at"),
+        )
+        .where(
+            Activity.workspace_id == workspace_id,
+            Activity.activity_type == "stage_change",
+            Activity.lead_id.is_not(None),
+            Activity.occurred_at >= start_at,
+            Activity.occurred_at < end_at,
+        )
+        .cte("ordered_transitions")
+    )
+    duration_seconds = func.extract(
+        "epoch",
+        ordered_transitions.c.occurred_at - ordered_transitions.c.prior_occurred_at,
+    )
+    structured = and_(
+        ordered_transitions.c.from_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.to_stage.in_(_CANONICAL_STAGES),
+    )
+    legacy = and_(
+        ordered_transitions.c.from_stage.is_(None),
+        ordered_transitions.c.to_stage.is_(None),
+    )
+    usable = and_(
+        structured,
+        ordered_transitions.c.prior_to_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.prior_to_stage == ordered_transitions.c.from_stage,
+        duration_seconds >= 0,
+    )
+    scoped_transitions = select(
+        ordered_transitions,
+        structured.label("structured"),
+        legacy.label("legacy"),
+        usable.label("usable"),
+        duration_seconds.label("duration_seconds"),
+    ).cte("scoped_transitions")
+    duration_hours = scoped_transitions.c.duration_seconds / 3600.0
+    coverage_metrics = select(
+        literal("coverage").label("metric"),
+        literal(None).cast(String).label("stage"),
+        func.count().filter(scoped_transitions.c.structured).label("structured"),
+        func.count().filter(scoped_transitions.c.legacy).label("legacy"),
+        func.count().filter(scoped_transitions.c.usable).label("usable"),
+        func.count()
+        .filter(
+            scoped_transitions.c.structured,
+            scoped_transitions.c.usable.is_not(True),
+        )
+        .label("uncovered"),
+        literal(None).label("completed_intervals"),
+        literal(None).label("average_hours"),
+        literal(None).label("median_hours"),
+        literal(None).label("p90_hours"),
+    ).select_from(scoped_transitions)
+    stage_metrics = (
+        select(
+            literal("stage").label("metric"),
+            scoped_transitions.c.from_stage.label("stage"),
+            literal(None).label("structured"),
+            literal(None).label("legacy"),
+            literal(None).label("usable"),
+            literal(None).label("uncovered"),
+            func.count().label("completed_intervals"),
+            func.avg(duration_hours).label("average_hours"),
+            func.percentile_cont(0.5)
+            .within_group(duration_hours)
+            .label("median_hours"),
+            func.percentile_cont(0.9).within_group(duration_hours).label("p90_hours"),
+        )
+        .where(scoped_transitions.c.usable)
+        .group_by(scoped_transitions.c.from_stage)
+    )
+    time_rows = context.session.execute(
+        union_all(coverage_metrics, stage_metrics)
+    ).all()
+    coverage_row = next(row for row in time_rows if row.metric == "coverage")
+    stage_rows = sorted(
+        (row for row in time_rows if row.metric == "stage"),
+        key=lambda row: _CANONICAL_STAGE_ORDER[row.stage],
+    )
+    stage_dwell = tuple(
+        AnalyticsStageDwell(
+            stage=row.stage,
+            completed_intervals=int(row.completed_intervals),
+            average_hours=round(float(row.average_hours), 2),
+            median_hours=round(float(row.median_hours), 2),
+            p90_hours=round(float(row.p90_hours), 2),
+        )
+        for row in stage_rows
+    )
+    time_in_stage = AnalyticsTimeInStage(
+        status="available" if stage_dwell else "not_available",
+        coverage=AnalyticsTimeInStageCoverage(
+            structured_transitions=int(coverage_row.structured),
+            legacy_transitions=int(coverage_row.legacy),
+            usable_intervals=int(coverage_row.usable),
+            uncovered_transitions=int(coverage_row.uncovered),
+        ),
+        stages=stage_dwell,
+    )
+
     return PipelineAnalytics(
         period=AnalyticsPeriod(start_date=start_date, end_date=end_date, days=days),
         daily=tuple(
@@ -434,6 +556,7 @@ def pipeline_analytics(
             total=sum(task_status_counts.values()),
         ),
         queues=AnalyticsQueueBreakdown(counts=queue_counts),
+        time_in_stage=time_in_stage,
         generated_at=now,
     )
 

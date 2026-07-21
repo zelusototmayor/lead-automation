@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.crm.domain.enums import CRMStage
+
 
 PipelineQueue = Literal[
     "calls_overdue",
@@ -102,6 +104,33 @@ class AnalyticsQueueBreakdown(BaseModel):
     unit: Literal["task"] = "task"
 
 
+class AnalyticsTimeInStageCoverage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    structured_transitions: int = Field(ge=0)
+    legacy_transitions: int = Field(ge=0)
+    usable_intervals: int = Field(ge=0)
+    uncovered_transitions: int = Field(ge=0)
+
+
+class AnalyticsStageDwell(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    stage: CRMStage
+    completed_intervals: int = Field(ge=1)
+    average_hours: float = Field(ge=0)
+    median_hours: float = Field(ge=0)
+    p90_hours: float = Field(ge=0)
+
+
+class AnalyticsTimeInStage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["available", "not_available"]
+    coverage: AnalyticsTimeInStageCoverage
+    stages: tuple[AnalyticsStageDwell, ...]
+
+
 class PipelineAnalytics(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -111,7 +140,7 @@ class PipelineAnalytics(BaseModel):
     proposals: AnalyticsCountBreakdown
     tasks: AnalyticsTaskBreakdown
     queues: AnalyticsQueueBreakdown
-    time_in_stage: Literal["not_available"] = "not_available"
+    time_in_stage: AnalyticsTimeInStage
     generated_at: datetime
 
 
