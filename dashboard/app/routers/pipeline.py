@@ -128,11 +128,13 @@ def _pipeline_statement(
     base_columns = (
         Lead.id.label("lead_id"),
         Lead.account_id,
-        func.coalesce(Account.display_name, literal("Sem conta")).label("company"),
-        Contact.full_name.label("contact_name"),
-        Contact.primary_email.label("email"),
-        Contact.phone,
-        Account.city,
+        func.coalesce(
+            Account.display_name, Lead.company_name, literal("Sem conta")
+        ).label("company"),
+        func.coalesce(Contact.full_name, Lead.contact_name).label("contact_name"),
+        func.coalesce(Contact.primary_email, Lead.contact_email).label("email"),
+        func.coalesce(Contact.phone, Lead.contact_phone).label("phone"),
+        func.coalesce(Account.city, Lead.city).label("city"),
         Lead.stage,
         Lead.priority,
         Lead.version.label("lead_version"),
@@ -272,10 +274,15 @@ def pipeline_items(
         statement = statement.where(
             or_(
                 Account.display_name.ilike(pattern, escape="\\"),
+                Lead.company_name.ilike(pattern, escape="\\"),
                 Contact.full_name.ilike(pattern, escape="\\"),
+                Lead.contact_name.ilike(pattern, escape="\\"),
                 Contact.primary_email.ilike(pattern, escape="\\"),
+                Lead.contact_email.ilike(pattern, escape="\\"),
                 Contact.phone.ilike(pattern, escape="\\"),
+                Lead.contact_phone.ilike(pattern, escape="\\"),
                 Account.city.ilike(pattern, escape="\\"),
+                Lead.city.ilike(pattern, escape="\\"),
             )
         )
     rows = statement.subquery()
@@ -305,11 +312,13 @@ def _lead_detail_row(context: AccountRequestContext, lead_id: UUID):
         select(
             Lead.id,
             Lead.account_id,
-            func.coalesce(Account.display_name, literal("Sem conta")).label("company"),
-            Contact.full_name.label("contact_name"),
-            Contact.primary_email.label("email"),
-            Contact.phone,
-            Account.city,
+            func.coalesce(
+                Account.display_name, Lead.company_name, literal("Sem conta")
+            ).label("company"),
+            func.coalesce(Contact.full_name, Lead.contact_name).label("contact_name"),
+            func.coalesce(Contact.primary_email, Lead.contact_email).label("email"),
+            func.coalesce(Contact.phone, Lead.contact_phone).label("phone"),
+            func.coalesce(Account.city, Lead.city).label("city"),
             Lead.stage,
             Lead.priority,
             Lead.version,

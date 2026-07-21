@@ -13,8 +13,10 @@ from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.routers import accounts as accounts_router
 from dashboard.app.security import CRMPrincipal, require_crm_principal
 from src.crm.persistence.models import (
+    Account,
     Activity,
     AuditEvent,
+    Contact,
     Lead,
     OutboxEvent,
     Workspace,
@@ -154,6 +156,206 @@ def test_stage_command_is_atomic_audited_and_idempotent(lead_command_api):
                 )
             )
             == 1
+        )
+
+
+def test_stage_command_promotes_pre_account_lead_from_exact_identity(lead_command_api):
+    client, engine, workspace_id, lead_id, _ = lead_command_api
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        lead.company_name = "Early Company"
+        lead.contact_name = "Early Contact"
+        lead.contact_email = "early@example.test"
+        lead.contact_phone = "+351****0000"
+        lead.city = "Porto"
+    command_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/transition-stage",
+        json=_payload(command_id, target_stage="meeting_booked", expected_version=2),
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 200
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        account = session.get(Account, lead.account_id)
+        contact = session.get(Contact, lead.contact_id)
+        activity = session.scalar(
+            select(Activity).where(
+                Activity.workspace_id == workspace_id,
+                Activity.lead_id == lead_id,
+            )
+        )
+        assert lead.stage == "meeting_booked"
+        assert (
+            lead.company_name,
+            lead.contact_name,
+            lead.contact_email,
+            lead.contact_phone,
+            lead.city,
+        ) == (None, None, None, None, None)
+        assert account.display_name == "Early Company"
+        assert account.city == "Porto"
+        assert account.highest_stage_rank == 40
+        assert contact.account_id == account.id
+        assert contact.full_name == "Early Contact"
+        assert str(contact.primary_email) == "early@example.test"
+        assert contact.phone == "+351****0000"
+        assert activity.account_id == account.id
+        assert (
+            session.scalar(
+                select(func.count(Account.id)).where(
+                    Account.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(Contact.id)).where(
+                    Contact.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+
+
+def test_stage_command_links_contact_when_account_already_exists(lead_command_api):
+    client, engine, workspace_id, lead_id, _ = lead_command_api
+    with Session(engine) as session, session.begin():
+        account = Account(
+            workspace_id=workspace_id,
+            display_name="Existing Company",
+            normalized_name="existing company",
+            city="Porto",
+        )
+        session.add(account)
+        session.flush()
+        lead = session.get(Lead, lead_id)
+        lead.account_id = account.id
+        lead.company_name = "Existing Company"
+        lead.contact_name = "Existing Contact"
+        lead.contact_email = "existing-contact@example.test"
+        lead.contact_phone = "+351000000444"
+        lead.city = "Porto"
+    command_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/transition-stage",
+        json=_payload(command_id, target_stage="meeting_booked", expected_version=2),
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 200
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        contact = session.get(Contact, lead.contact_id)
+        assert contact is not None
+        assert contact.account_id == lead.account_id
+        assert contact.full_name == "Existing Contact"
+        assert str(contact.primary_email) == "existing-contact@example.test"
+        assert contact.phone == "+351000000444"
+        assert (
+            lead.company_name,
+            lead.contact_name,
+            lead.contact_email,
+            lead.contact_phone,
+            lead.city,
+        ) == (None, None, None, None, None)
+        assert (
+            session.scalar(
+                select(func.count(Contact.id)).where(
+                    Contact.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+
+
+def test_stage_command_rejects_cross_field_identity_conflict_atomically(
+    lead_command_api,
+):
+    client, engine, workspace_id, lead_id, _ = lead_command_api
+    with Session(engine) as session, session.begin():
+        account = Account(
+            workspace_id=workspace_id,
+            display_name="Canonical Company",
+            normalized_name="canonical company",
+            city="Lisboa",
+        )
+        session.add(account)
+        session.flush()
+        session.add(
+            Contact(
+                workspace_id=workspace_id,
+                account_id=account.id,
+                full_name="Canonical Contact",
+                primary_email="shared@example.test",
+                phone="+351****1111",
+                is_primary=True,
+            )
+        )
+        lead = session.get(Lead, lead_id)
+        lead.company_name = "Different Company"
+        lead.contact_name = "Canonical Contact"
+        lead.contact_email = "shared@example.test"
+        lead.contact_phone = "+351****1111"
+        lead.city = "Lisboa"
+    command_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/transition-stage",
+        json=_payload(command_id, target_stage="meeting_booked", expected_version=2),
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        assert lead.account_id is None
+        assert lead.contact_id is None
+        assert lead.stage == "new"
+        assert (
+            session.scalar(
+                select(func.count(Account.id)).where(
+                    Account.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(Contact.id)).where(
+                    Contact.workspace_id == workspace_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(Activity.id)).where(
+                    Activity.workspace_id == workspace_id
+                )
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.workspace_id == workspace_id
+                )
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count(OutboxEvent.id)).where(
+                    OutboxEvent.workspace_id == workspace_id
+                )
+            )
+            == 0
         )
 
 

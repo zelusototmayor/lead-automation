@@ -134,6 +134,24 @@ def test_postgres_apply_and_identical_replay_create_no_new_rows():
                 )
                 for model in (Account, Contact, Lead, Activity)
             )
+            accountful_leads = session.scalars(
+                select(Lead).where(
+                    Lead.workspace_id == workspace_id,
+                    Lead.account_id.is_not(None),
+                )
+            ).all()
+            assert accountful_leads
+            assert all(
+                (
+                    lead.company_name,
+                    lead.contact_name,
+                    lead.contact_email,
+                    lead.contact_phone,
+                    lead.city,
+                )
+                == (None, None, None, None, None)
+                for lead in accountful_leads
+            )
         moved_source = FixtureSource()
         moved_source.values[1], moved_source.values[2] = (
             moved_source.values[2],
@@ -350,8 +368,8 @@ def test_backfill_persists_canonical_account_city():
     workspace_id = uuid4()
     source = FixtureSource()
     source.values = [
-        [*source.values[0], "City"],
-        [*source.values[1], "Lisboa"],
+        [*source.values[0], "City", "Phone"],
+        [*source.values[1], "Lisboa", "+351000000123"],
     ]
     try:
         with Session(engine) as session, session.begin():
@@ -375,9 +393,73 @@ def test_backfill_persists_canonical_account_city():
             account = session.scalar(
                 select(Account).where(Account.workspace_id == workspace_id)
             )
+            contact = session.scalar(
+                select(Contact).where(Contact.workspace_id == workspace_id)
+            )
         assert report.imported == 1
         assert account is not None
         assert account.city == "Lisboa"
+        assert contact is not None
+        assert contact.phone == "+351000000123"
+    finally:
+        cleanup_workspace(engine, workspace_id)
+        engine.dispose()
+
+
+def test_backfill_preserves_pre_account_lead_identity_without_creating_account():
+    database_url = require_disposable_postgres()
+    engine = create_engine(database_url)
+    workspace_id = uuid4()
+    source = FixtureSource()
+    source.values = [
+        [*source.values[0], "City", "Phone"],
+        [
+            "pre-account",
+            "Early Prospect",
+            "Carla Contact",
+            "carla@early.example",
+            "https://early.example",
+            "Technology",
+            "Contacted",
+            "Sheet fixture",
+            "Porto",
+            "+351220000000",
+        ],
+    ]
+    try:
+        with Session(engine) as session, session.begin():
+            session.add(
+                Workspace(
+                    id=workspace_id,
+                    slug=f"pre-account-{workspace_id}",
+                    name="Pre-account Backfill Fixture",
+                )
+            )
+
+        report = backfill_accounts(
+            snapshot_sheet(
+                source, "fixture-spreadsheet", "PT Logistics", stable_id_column="ID"
+            ),
+            apply=True,
+            database_url=database_url,
+            workspace_id=workspace_id,
+        )
+
+        with Session(engine) as session:
+            lead = session.scalar(select(Lead).where(Lead.workspace_id == workspace_id))
+            account_count = session.scalar(
+                select(func.count())
+                .select_from(Account)
+                .where(Account.workspace_id == workspace_id)
+            )
+        assert report.imported == 1
+        assert account_count == 0
+        assert lead.account_id is None
+        assert lead.company_name == "Early Prospect"
+        assert lead.contact_name == "Carla Contact"
+        assert str(lead.contact_email) == "carla@early.example"
+        assert lead.contact_phone == "+351220000000"
+        assert lead.city == "Porto"
     finally:
         cleanup_workspace(engine, workspace_id)
         engine.dispose()

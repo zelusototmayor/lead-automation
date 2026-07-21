@@ -23,7 +23,8 @@ from tests.migration._postgres import cleanup_workspace, require_disposable_post
 def pipeline_api(monkeypatch):
     engine = create_engine(require_disposable_postgres())
     workspace_id, other_workspace_id = uuid4(), uuid4()
-    account_id, contact_id, lead_id, low_priority_lead_id = (
+    account_id, contact_id, lead_id, low_priority_lead_id, pre_account_lead_id = (
+        uuid4(),
         uuid4(),
         uuid4(),
         uuid4(),
@@ -95,6 +96,17 @@ def pipeline_api(monkeypatch):
                     account_id=account_id,
                     priority="low",
                     stage="new",
+                ),
+                Lead(
+                    id=pre_account_lead_id,
+                    workspace_id=workspace_id,
+                    company_name="Pre Account Company",
+                    contact_name="Bruno Prospect",
+                    contact_email="bruno@pre-account.example",
+                    contact_phone="+351210000001",
+                    city="Porto",
+                    priority="medium",
+                    stage="contacted",
                 ),
                 Lead(
                     id=other_lead_id,
@@ -201,7 +213,7 @@ def pipeline_api(monkeypatch):
         override_context
     )
     try:
-        yield TestClient(dashboard_main.app), lead_id
+        yield TestClient(dashboard_main.app), lead_id, pre_account_lead_id
     finally:
         dashboard_main.app.dependency_overrides.clear()
         cleanup_workspace(engine, workspace_id)
@@ -210,7 +222,7 @@ def pipeline_api(monkeypatch):
 
 
 def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
-    client, lead_id = pipeline_api
+    client, lead_id, _ = pipeline_api
 
     summary = client.get("/api/v1/pipeline/summary")
     calls_today = client.get("/api/v1/pipeline/items?queue=calls_today")
@@ -227,8 +239,8 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "proposal_followups_overdue": 0,
         "proposal_followups_today": 0,
         "touched_today": 1,
-        "untouched": 1,
-        "all": 2,
+        "untouched": 2,
+        "all": 3,
     }
     assert calls_today.status_code == emails_overdue.status_code == 200
     assert calls_today.json()["total"] == emails_overdue.json()["total"] == 1
@@ -247,7 +259,7 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
 def test_future_call_and_email_queues_are_strict_scoped_and_pagination_safe(
     pipeline_api,
 ):
-    client, lead_id = pipeline_api
+    client, lead_id, _ = pipeline_api
 
     summary = client.get("/api/v1/pipeline/summary")
     first_call = client.get(
@@ -275,7 +287,7 @@ def test_future_call_and_email_queues_are_strict_scoped_and_pagination_safe(
 
 
 def test_pipeline_queue_names_and_pagination_are_strict(pipeline_api):
-    client, _ = pipeline_api
+    client, _, _ = pipeline_api
 
     assert client.get("/api/v1/pipeline/items?queue=unknown").status_code == 422
     assert client.get("/api/v1/pipeline/items?queue=all&limit=101").status_code == 422
@@ -283,7 +295,7 @@ def test_pipeline_queue_names_and_pagination_are_strict(pipeline_api):
 
 
 def test_pipeline_priority_filter_is_strict_and_applied_before_count(pipeline_api):
-    client, lead_id = pipeline_api
+    client, lead_id, _ = pipeline_api
 
     high = client.get("/api/v1/pipeline/items?queue=all&priority=high")
     low = client.get("/api/v1/pipeline/items?queue=all&priority=low")
@@ -297,27 +309,32 @@ def test_pipeline_priority_filter_is_strict_and_applied_before_count(pipeline_ap
 
 
 def test_pipeline_search_includes_city_and_is_workspace_scoped(pipeline_api):
-    client, lead_id = pipeline_api
+    client, lead_id, pre_account_lead_id = pipeline_api
 
     by_city = client.get("/api/v1/pipeline/items?queue=all&search=lisboa")
     by_contact = client.get(
         "/api/v1/pipeline/items?queue=all&search=ANA%40EXAMPLE.TEST"
     )
-    absent = client.get("/api/v1/pipeline/items?queue=all&search=porto")
+    pre_account = client.get("/api/v1/pipeline/items?queue=all&search=porto")
 
-    assert by_city.status_code == by_contact.status_code == absent.status_code == 200
+    assert (
+        by_city.status_code == by_contact.status_code == pre_account.status_code == 200
+    )
     assert by_city.json()["total"] == 2
     assert str(lead_id) in {item["lead_id"] for item in by_city.json()["items"]}
     assert {item["company"] for item in by_city.json()["items"]} == {"Acme Logistics"}
     assert {item["city"] for item in by_city.json()["items"]} == {"Lisboa"}
     assert [item["lead_id"] for item in by_contact.json()["items"]] == [str(lead_id)]
-    assert absent.json()["total"] == 0
+    assert pre_account.json()["total"] == 1
+    assert pre_account.json()["items"][0]["lead_id"] == str(pre_account_lead_id)
+    assert pre_account.json()["items"][0]["company"] == "Pre Account Company"
+    assert pre_account.json()["items"][0]["account_id"] is None
     assert client.get("/api/v1/pipeline/items?search=%20lisboa").status_code == 422
     assert client.get("/api/v1/pipeline/items?search=").status_code == 422
 
 
 def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_api):
-    client, lead_id = pipeline_api
+    client, lead_id, _ = pipeline_api
 
     detail = client.get(f"/api/v1/leads/{lead_id}")
     timeline = client.get(f"/api/v1/leads/{lead_id}/timeline")

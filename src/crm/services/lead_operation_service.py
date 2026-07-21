@@ -10,7 +10,7 @@ from uuid import UUID, uuid5
 
 from src.crm.ingestion.outbox import enqueue_outbox_event
 from src.crm.persistence.models import Activity, AuditEvent, Task
-from src.crm.services.account_service import normalize_company_name
+from src.crm.services.account_service import normalize_company_name, normalize_email
 from src.crm.services.command_service import (
     CommandAuthorizationError,
     CommandConflictError,
@@ -134,7 +134,12 @@ class LeadOperationService:
         priority = _bounded_text(command.priority, maximum=64)
         company_name = _bounded_text(command.company_name, maximum=512)
         contact_name = _bounded_text(command.contact_name, maximum=512)
-        contact_email = _bounded_text(command.contact_email, maximum=320).lower()
+        try:
+            contact_email = normalize_email(
+                _bounded_text(command.contact_email, maximum=320)
+            )
+        except ValueError:
+            raise _conflict() from None
         contact_phone = _bounded_text(command.contact_phone, maximum=64)
         semantic_hash = _semantic_hash(
             "edit",
@@ -153,28 +158,48 @@ class LeadOperationService:
         lead = self.uow.leads.get(
             command.workspace_id, command.lead_id, for_update=True
         )
-        if (
-            lead is None
-            or lead.version != command.expected_version
-            or lead.account_id is None
-            or lead.contact_id is None
-        ):
+        if lead is None or lead.version != command.expected_version:
             raise _conflict() from None
-        account = self.uow.accounts.get(
-            command.workspace_id, lead.account_id, for_update=True
+        account = (
+            self.uow.accounts.get(
+                command.workspace_id, lead.account_id, for_update=True
+            )
+            if lead.account_id is not None
+            else None
         )
-        contact = self.uow.contacts.get(
-            command.workspace_id, lead.contact_id, for_update=True
+        contact = (
+            self.uow.contacts.get(
+                command.workspace_id, lead.contact_id, for_update=True
+            )
+            if lead.contact_id is not None
+            else None
         )
-        if account is None or contact is None or contact.account_id != account.id:
+        if (
+            (account is None) != (contact is None)
+            or (lead.account_id is not None and account is None)
+            or (lead.contact_id is not None and contact is None)
+            or (
+                account is not None
+                and contact is not None
+                and contact.account_id != account.id
+            )
+        ):
             raise _conflict() from None
 
         lead.priority = priority
-        account.display_name = company_name
-        account.normalized_name = normalize_company_name(company_name)
-        contact.full_name = contact_name
-        contact.primary_email = contact_email
-        contact.phone = contact_phone
+        if account is not None:
+            account.display_name = company_name
+            account.normalized_name = normalize_company_name(company_name)
+        else:
+            lead.company_name = company_name
+        if contact is not None:
+            contact.full_name = contact_name
+            contact.primary_email = contact_email
+            contact.phone = contact_phone
+        else:
+            lead.contact_name = contact_name
+            lead.contact_email = contact_email
+            lead.contact_phone = contact_phone
         lead.updated_at = datetime.now(UTC)
         self.uow.session.flush()
         self._record(

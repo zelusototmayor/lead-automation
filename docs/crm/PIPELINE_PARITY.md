@@ -49,9 +49,9 @@ Estados:
 | Definir próxima ação e data/hora | implemented | comando e UI criam tarefa aberta tenant-safe e auditada |
 | Guardar e abrir lead seguinte | implemented | `tests/frontend/test_leads_queue.js` prova captura de lead/versão/sucessor antes do POST, avanço só após sucesso, precedência de navegação/filtros mais recentes e separação entre sucesso da mutação e falhas de refresh |
 | Saltar lead sem alteração | implemented | `tests/frontend/test_leads_queue.js` prova avanço local sem POST/refresh e no-op explícito no último lead, sem wrap |
-| Editar empresa e contacto | partial | comando protegido existe para leads com account/contact; leads pré-conta ainda não são editáveis |
+| Editar empresa e contacto | implemented | comando protegido edita identidades em Account/Contact ou diretamente no Lead pré-conta; a promoção para `meeting_booked` cria/associa Account e Contact apenas a partir de identidade exata |
 | Alterar fase | implemented | endpoint e UI protegidos usam política canónica, expected version e correção revista |
-| Alterar prioridade | partial | incluída no comando de edição, mas ainda acoplada a account/contact existentes |
+| Alterar prioridade | implemented | comando protegido e idempotente atualiza prioridade com optimistic locking, incluindo Leads pré-conta |
 | Registar email manual | implemented | comando protegido regista atividade manual sem enviar email |
 | Concluir follow-up de outreach | partial | tarefas genéricas podem ser concluídas; sem contrato específico de outreach/proposta |
 | Atualizar estado/outcome da proposta | implemented | comando e formulário protegidos atualizam estado, probabilidade e forecast com expected_version, idempotência, activity, audit e outbox atómicos; `won` permanece fail-closed até existir prova oficial |

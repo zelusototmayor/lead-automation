@@ -378,6 +378,30 @@ def _apply_row(
     except AccountRequirementReviewRequired:
         raise _ReviewRequired("history_required") from None
 
+    company = row.values.get("Company", "").strip() or None
+    contact_name = (
+        row.values.get("Contact Name", "").strip()
+        or row.values.get("Contact", "").strip()
+        or None
+    )
+    city = row.values.get("City", "").strip() or None
+    contact_phone = row.values.get("Phone", "").strip() or None
+    if (
+        (company is not None and len(company) > 512)
+        or (contact_name is not None and len(contact_name) > 512)
+        or (city is not None and len(city) > 255)
+        or (contact_phone is not None and len(contact_phone) > 64)
+    ):
+        raise _ReviewRequired()
+    try:
+        email = (
+            normalize_email(row.values.get("Email", ""))
+            if row.values.get("Email", "").strip()
+            else None
+        )
+    except ValueError:
+        raise _ReviewRequired() from None
+
     account = (
         session.get(Account, lead.account_id)
         if lead is not None and lead.account_id is not None
@@ -409,19 +433,10 @@ def _apply_row(
         account_identity = _identity(
             session, workspace_id, scope, row.external_id, "account", row.locator
         )
-        company = row.values.get("Company", "").strip()
-        city = row.values.get("City", "").strip() or None
-        if city is not None and len(city) > 255:
-            raise _ReviewRequired()
         if not company:
             raise _ReviewRequired()
         try:
             normalized_company = normalize_company_name(company)
-            email = (
-                normalize_email(row.values.get("Email", ""))
-                if row.values.get("Email", "").strip()
-                else None
-            )
             domain = _domain(row)
         except ValueError:
             raise _ReviewRequired() from None
@@ -517,12 +532,22 @@ def _apply_row(
                 )
                 session.add(contact)
                 session.flush()
+        if contact is not None:
+            if contact.phone is None:
+                contact.phone = contact_phone
+            elif contact_phone is not None and contact.phone != contact_phone:
+                raise _ReviewRequired()
 
     if lead is None:
         lead = Lead(
             workspace_id=workspace_id,
             account_id=account.id if account else None,
             contact_id=contact.id if contact else None,
+            company_name=company if account is None else None,
+            contact_name=contact_name if contact is None else None,
+            contact_email=email if contact is None else None,
+            contact_phone=contact_phone if contact is None else None,
+            city=city if account is None else None,
             source_stage_raw=_source_stage_raw(row),
             stage=stage,
             highest_stage_rank=stage_rank(stage),
@@ -536,6 +561,11 @@ def _apply_row(
     else:
         lead.account_id = account.id if account else lead.account_id
         lead.contact_id = contact.id if contact else lead.contact_id
+        lead.company_name = company if account is None else None
+        lead.contact_name = contact_name if contact is None else None
+        lead.contact_email = email if contact is None else None
+        lead.contact_phone = contact_phone if contact is None else None
+        lead.city = city if account is None else None
         lead.source_stage_raw = _source_stage_raw(row)
         lead.stage = stage
         lead.highest_stage_rank = max(lead.highest_stage_rank, stage_rank(stage))

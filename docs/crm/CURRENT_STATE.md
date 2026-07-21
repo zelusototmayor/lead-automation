@@ -2350,3 +2350,56 @@ O backup custom-format de staging anterior ao deploy foi copiado off-host para `
 O staging persistente foi atualizado para `crm-staging:84796c3`, com revisão exata `84796c305047b69b5e9fe2c0320a91d8e39c7da7`; a imagem anterior `crm-staging:1245172` permanece disponível para rollback. Aplicação e PostgreSQL ficaram healthy, sem restarts. O proxy/TLS confirmou `/up=200`, rotas ricas sem credenciais em `401`, páginas/APIs autenticadas em `200` com `no-store`, filas futuras disponíveis e Agent ingress desligado. O browser smoke confirmou os dois controlos de fila e um request server-side com `priority=high`, sem erros de consola ou requests falhados. O soak executou 360/360 pedidos com sucesso, zero restarts e zero linhas de erro de aplicação.
 
 A matriz ainda contém capacidades operacionais `partial`/`missing`, e os gates globais continuam fechados por `parity=false`, conflitos reais sem resolução/aceitação, validação humana da amostra, políticas oficiais de `Won` e retenção/scopes, mapping final de produção, PostgreSQL/backup automático off-host de produção, cutover/soak de produção, dois releases pós-cutover, ausência comprovada de consumidores v0 e aceitação dos stakeholders. Não houve deploy de produção, migração live, outbound, retirada do legado ou criação do sentinel.
+
+---
+
+## Identidade operacional de Leads pré-conta em 2026-07-21T11:30:08Z
+
+A retoma preservou integralmente o trabalho staged encontrado sobre `864d526627fa2d417282496cb2bce1abdb43d175` e concluiu o slice de Leads anteriores ao milestone de criação de Account:
+
+- a migration aditiva `0011` acrescenta empresa, contacto, email, telefone e cidade nullable diretamente ao Lead, com constraints nonblank;
+- o downgrade preserva dados: recusa eliminar as colunas quando qualquer identidade pré-conta está preenchida e mantém a revisão `0011` transacionalmente;
+- o backfill mantém identidade operacional em Leads abaixo de rank 40 sem criar Accounts artificiais;
+- lista, detalhe e pesquisa usam Account/Contact quando existem e fazem fallback para a identidade do Lead pré-conta;
+- o comando de edição atualiza prioridade e identidade pré-conta sem criar Account/Contact;
+- uma transição humana para `meeting_booked` ou fase posterior cria/associa Account e Contact apenas quando empresa e email fornecem identidade exata; conflitos falham atomicamente;
+- o backup verifier e o runbook passam a exigir schema `0011`.
+
+Evidência local num PostgreSQL 16 descartável exclusivo, migrado de raiz:
+
+```text
+Regressão focada de migration/backfill/pipeline/comandos/backup: 80 passed
+Migration/backup/comando focado em base limpa: 21 passed
+Suite segura completa com DeprecationWarning como erro: 1060 passed, 1 skipped em 142,38 s
+Alembic lifecycle: 0011 -> 0010 -> 0011 -> base -> 0011
+Alembic current: 0011 (head)
+Alembic check: No new upgrade operations detected
+Restore custom-format: schema 0011, 15 tabelas, 0 workspaces, 0 violações
+Ruff, format, compileall, node --check, git diff --check e scan estático: passed
+```
+
+Esta evidência é local. O staging continua no schema/imagem anterior até o candidato ser congelado, revisto e publicado. Nenhum worker, reconciler, outbox publisher ou job outbound foi ativado; não houve write em Sheet, deploy de produção, cutover, retirada do legado nem criação do sentinel.
+
+Uma regressão adicional isolou conflito entre email exato e nome de empresa divergente sem depender de diferenças de telefone/cidade: o primeiro run devolveu `200` em vez de `409`; a correção exige concordância do nome normalizado antes de associar a Account existente. O teste focado e o módulo completo de comandos passaram depois da correção. Foram também reparadas, sem descartar o trabalho staged herdado, uma expressão incompleta no serviço de transição e referências inconsistentes no update do backfill; `compileall` e a regressão completa acima foram executados sobre o candidato reparado.
+
+Um segundo RED isolou um Lead com Account mas sem Contact ligado: o primeiro run aceitava a edição e voltava a guardar identidade de contacto no próprio Lead. O serviço agora exige que Account e Contact estejam ambos ligados ou ambos ausentes; estados parciais falham com conflito genérico e rollback integral. O teste focado, o módulo completo de operações e a suite completa passaram depois da correção.
+
+Um terceiro RED mostrou que o backfill accountful limpava o telefone do Lead sem o copiar para o Contact canónico. O apply agora preenche telefone ausente no Contact e envia valores contraditórios para review em vez de os sobrescrever; o teste focado, o módulo completo de backfill e a suite completa passaram depois da correção.
+
+Um quarto RED cobriu o estado transitório em que o Lead já tinha uma Account exata mas ainda não tinha Contact ligado. A transição para `meeting_booked` devolvia sucesso, limpava a identidade pré-conta e deixava `contact_id` nulo. O serviço agora valida a Account pelo nome normalizado, cria ou associa o Contact pelo email exato, preserva o telefone sem sobrescrever conflitos e só depois limpa os campos transitórios. O RED observado foi `1 failed`; depois da correção o teste passou e a regressão de comandos/operações/backfill passou com `42 passed`.
+
+### Verificação do candidato reparado em 2026-07-21T12:50:44Z
+
+Num PostgreSQL 16 descartável exclusivo em loopback, explicitamente marcado para testes e sem dados reais:
+
+```text
+Suite segura completa sobre o candidato formatado, com DeprecationWarning como erro: 1061 passed, 1 skipped
+Regressão pós-format de comandos/operações/backfill/migration 0011: 42 passed
+Alembic lifecycle: 0011 -> 0010 -> 0011 -> base -> 0011
+Alembic current: 0011 (head)
+Alembic check: No new upgrade operations detected
+Restore custom-format: schema 0011, 15 tabelas, 0 workspaces, 0 violações
+Ruff e git diff --check: passed nos ficheiros reparados
+```
+
+O candidato está pronto para congelamento e revisão independente antes do commit. O staging permanece no schema/imagem anterior até revisão e publicação deste slice. Nenhum worker, reconciler, outbox publisher ou job outbound foi ativado; não houve write em Sheet, deploy de produção, cutover, retirada do legado nem criação do sentinel.

@@ -16,6 +16,11 @@ from src.crm.domain.stage_policy import (
 )
 from src.crm.ingestion.outbox import enqueue_outbox_event
 from src.crm.persistence.models import Activity, AuditEvent
+from src.crm.services.account_service import (
+    IdentityHints,
+    IdentityReviewRequired,
+    normalize_company_name,
+)
 
 
 class CommandAuthorizationError(RuntimeError):
@@ -67,6 +72,98 @@ def _semantic_hash(command: TransitionLeadCommand, target: str) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _account_lifecycle(target: str) -> str:
+    if target == "won":
+        return "customer"
+    rank = highest_stage_rank(0, target)
+    if rank >= 60:
+        return "proposal"
+    if rank >= 40:
+        return "meeting"
+    return "potential"
+
+
+def _ensure_account_for_transition(uow, lead, target: str):
+    lead_city = lead.city
+    account = (
+        uow.accounts.get(lead.workspace_id, lead.account_id, for_update=True)
+        if lead.account_id is not None
+        else None
+    )
+    contact = (
+        uow.contacts.get(lead.workspace_id, lead.contact_id, for_update=True)
+        if lead.contact_id is not None
+        else None
+    )
+    if lead.account_id is not None and account is None:
+        raise _conflict() from None
+    if lead.contact_id is not None and (
+        contact is None or account is None or contact.account_id != account.id
+    ):
+        raise _conflict() from None
+    hints = None
+    if account is None or contact is None:
+        if not lead.contact_email or (account is None and not lead.company_name):
+            raise _conflict() from None
+        email = str(lead.contact_email)
+        hints = IdentityHints(
+            company_name=lead.company_name,
+            contact_name=lead.contact_name,
+            contact_email=email,
+            sector=lead.sector,
+            vertical=lead.commercial_vertical,
+            source_origin=lead.source_origin,
+        )
+        uow.lock_identities(lead.workspace_id, (f"email:{email.casefold()}",))
+    if account is None:
+        assert hints is not None
+        candidates = {
+            candidate.id: candidate
+            for candidate in uow.account_candidates(lead.workspace_id, hints)
+        }
+        if len(candidates) > 1:
+            raise _conflict() from None
+        account = next(iter(candidates.values()), None)
+        if account is None:
+            account = uow.new_account(lead.workspace_id, hints)
+        elif account.normalized_name != normalize_company_name(lead.company_name):
+            raise _conflict() from None
+        lead.account_id = account.id
+    elif (
+        lead.company_name is not None
+        and account.normalized_name != normalize_company_name(lead.company_name)
+    ):
+        raise _conflict() from None
+    if contact is None:
+        assert hints is not None
+        contact = uow.new_contact(lead.workspace_id, account.id, hints)
+        if contact.phone is None:
+            contact.phone = lead.contact_phone
+        elif lead.contact_phone is not None and contact.phone != lead.contact_phone:
+            raise _conflict() from None
+        lead.contact_id = contact.id
+    account.highest_stage_rank = max(
+        account.highest_stage_rank, highest_stage_rank(lead.highest_stage_rank, target)
+    )
+    desired_lifecycle = _account_lifecycle(target)
+    lifecycle_order = {"potential": 0, "meeting": 1, "proposal": 2, "customer": 3}
+    if lifecycle_order.get(desired_lifecycle, 0) > lifecycle_order.get(
+        account.lifecycle_stage, 0
+    ):
+        account.lifecycle_stage = desired_lifecycle
+    if account.city is None:
+        account.city = lead_city
+    elif lead_city is not None and account.city != lead_city:
+        raise _conflict() from None
+    if lead.account_id == account.id:
+        lead.company_name = None
+        lead.contact_name = None
+        lead.contact_email = None
+        lead.contact_phone = None
+        lead.city = None
+    return account
 
 
 class HumanCommandService:
@@ -131,22 +228,20 @@ class HumanCommandService:
             raise _conflict() from None
         try:
             validate_transition(lead.stage, target, command.reviewed_correction)
-            if (
-                requires_account(
-                    target,
-                    lead.highest_stage_rank,
-                    lead.account_id is not None,
-                )
-                and lead.account_id is None
-            ):
-                raise _conflict()
+            account_required = requires_account(
+                target,
+                lead.highest_stage_rank,
+                lead.account_id is not None,
+            )
+            if account_required or lead.account_id is not None:
+                _ensure_account_for_transition(self.uow, lead, target)
             previous = lead.stage
             lead.stage = target
             lead.highest_stage_rank = highest_stage_rank(
                 lead.highest_stage_rank, target
             )
             self.uow.session.flush()
-        except (TypeError, ValueError):
+        except (IdentityReviewRequired, TypeError, ValueError):
             raise _conflict() from None
 
         audit_id = uuid5(

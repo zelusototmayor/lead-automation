@@ -748,6 +748,26 @@ class Lead(Base):
             name="ck_leads_priority_nonblank",
         ),
         CheckConstraint(
+            "company_name IS NULL OR length(btrim(company_name)) > 0",
+            name="ck_leads_company_name_nonblank",
+        ),
+        CheckConstraint(
+            "contact_name IS NULL OR length(btrim(contact_name)) > 0",
+            name="ck_leads_contact_name_nonblank",
+        ),
+        CheckConstraint(
+            "contact_email IS NULL OR length(btrim(contact_email::text)) > 0",
+            name="ck_leads_contact_email_nonblank",
+        ),
+        CheckConstraint(
+            "contact_phone IS NULL OR length(btrim(contact_phone)) > 0",
+            name="ck_leads_contact_phone_nonblank",
+        ),
+        CheckConstraint(
+            "city IS NULL OR length(btrim(city)) > 0",
+            name="ck_leads_city_nonblank",
+        ),
+        CheckConstraint(
             "sector IS NULL OR length(btrim(sector)) > 0",
             name="ck_leads_sector_nonblank",
         ),
@@ -806,6 +826,11 @@ class Lead(Base):
         Integer, nullable=False, server_default=text("0")
     )
     priority: Mapped[str | None] = mapped_column(String(64))
+    company_name: Mapped[str | None] = mapped_column(String(512))
+    contact_name: Mapped[str | None] = mapped_column(String(512))
+    contact_email: Mapped[str | None] = mapped_column(CITEXT())
+    contact_phone: Mapped[str | None] = mapped_column(String(64))
+    city: Mapped[str | None] = mapped_column(String(255))
     owner_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     sector: Mapped[str | None] = mapped_column(String(255))
     commercial_vertical: Mapped[str | None] = mapped_column(String(255))

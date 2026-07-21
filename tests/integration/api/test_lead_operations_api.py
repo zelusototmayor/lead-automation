@@ -227,6 +227,92 @@ def test_edit_lead_updates_priority_company_and_contact_atomically(lead_operatio
         assert _count(session, OutboxEvent, workspace_id) == 1
 
 
+def test_edit_pre_account_lead_updates_identity_without_creating_account(
+    lead_operations_api,
+):
+    client, engine, workspace_id, _, _ = lead_operations_api
+    pre_account_lead_id = uuid4()
+    with Session(engine) as session, session.begin():
+        session.add(
+            Lead(
+                id=pre_account_lead_id,
+                workspace_id=workspace_id,
+                company_name="Early Company",
+                contact_name="Early Contact",
+                contact_email="early@example.test",
+                contact_phone="+351210000000",
+                priority="medium",
+                stage="contacted",
+            )
+        )
+    command_id = uuid4()
+    updated_phone = "+351000000999"
+
+    response = client.post(
+        f"/api/v1/commands/leads/{pre_account_lead_id}/edit",
+        json={
+            "command_id": str(command_id),
+            "expected_version": 1,
+            "priority": "high",
+            "company_name": "Updated Early Company",
+            "contact_name": "Updated Early Contact",
+            "contact_email": "updated-early@exämple.test",
+            "contact_phone": updated_phone,
+        },
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 200
+    with Session(engine) as session:
+        lead = session.get(Lead, pre_account_lead_id)
+        assert lead.account_id is None
+        assert lead.contact_id is None
+        assert lead.priority == "high"
+        assert lead.company_name == "Updated Early Company"
+        assert lead.contact_name == "Updated Early Contact"
+        assert str(lead.contact_email) == "updated-early@xn--exmple-cua.test"
+        assert lead.contact_phone == updated_phone
+        assert _count(session, Account, workspace_id) == 1
+
+
+def test_edit_accountful_lead_without_linked_contact_fails_closed(
+    lead_operations_api,
+):
+    client, engine, workspace_id, lead_id, _ = lead_operations_api
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        lead.contact_id = None
+    command_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/edit",
+        json={
+            "command_id": str(command_id),
+            "expected_version": 2,
+            "priority": "high",
+            "company_name": "Updated Company",
+            "contact_name": "Updated Contact",
+            "contact_email": "updated@example.com",
+            "contact_phone": "+351****9999",
+        },
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        assert lead.account_id is not None
+        assert lead.contact_id is None
+        assert lead.company_name is None
+        assert lead.contact_name is None
+        assert lead.contact_email is None
+        assert lead.contact_phone is None
+        assert _count(session, Activity, workspace_id) == 0
+        assert _count(session, AuditEvent, workspace_id) == 0
+        assert _count(session, OutboxEvent, workspace_id) == 0
+
+
 def test_log_call_records_structured_outcome_without_sending(lead_operations_api):
     client, engine, workspace_id, lead_id, actor_id = lead_operations_api
     command_id = uuid4()
