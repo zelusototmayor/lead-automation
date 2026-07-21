@@ -11,6 +11,7 @@ const {
   leadRowView,
   leadNextActionView,
   leadRowKey,
+  resolveRefreshedLeadRow,
 } = require("../../dashboard/app/static/leads.js");
 
 test("stage and priority values are presented as Portuguese operational labels", () => {
@@ -84,6 +85,17 @@ test("queue row keys distinguish multiple tasks belonging to the same lead", () 
   assert.equal(leadRowKey({ lead_id: "A", task: { id: "task-1" } }), "A:task-1");
   assert.equal(leadRowKey({ lead_id: "A", task: { id: "task-2" } }), "A:task-2");
   assert.equal(leadRowKey({ lead_id: "A", task: null }), "A");
+});
+
+test("task refresh preserves the selected task row before falling back to the lead", () => {
+  const rows = [
+    { lead_id: "A", task: { id: "task-1", title: "Primeira tarefa" } },
+    { lead_id: "A", task: { id: "task-2", title: "Tarefa selecionada" } },
+  ];
+
+  assert.equal(resolveRefreshedLeadRow(rows, "A", "A:task-2"), rows[1]);
+  assert.equal(resolveRefreshedLeadRow(rows, "A", "A:task-missing"), rows[0]);
+  assert.equal(resolveRefreshedLeadRow(rows, "B", "B:task-1"), null);
 });
 
 test("detail next action uses the canonical task embedded in the selected queue item", () => {
