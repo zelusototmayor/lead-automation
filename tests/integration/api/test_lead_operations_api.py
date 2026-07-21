@@ -91,6 +91,7 @@ def lead_operations_api(monkeypatch):
                 "crm:lead:edit",
                 "crm:call:log",
                 "crm:email:log",
+                "crm:note:write",
                 "crm:task:write",
             }
         ),
@@ -295,6 +296,43 @@ def test_log_email_records_manual_activity_without_sending(lead_operations_api):
         )
         assert outbox.event_type == "lead.email_logged"
         assert "summary" not in outbox.payload
+
+
+def test_add_note_records_append_only_private_timeline_activity(lead_operations_api):
+    client, engine, workspace_id, lead_id, actor_id = lead_operations_api
+    command_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/add-note",
+        json={
+            "command_id": str(command_id),
+            "expected_version": 1,
+            "summary": "Decision maker wants a shorter implementation window.",
+        },
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["version"] == 2
+    with Session(engine) as session:
+        activity = session.scalar(
+            select(Activity).where(Activity.workspace_id == workspace_id)
+        )
+        assert activity.activity_type == "note"
+        assert activity.title == "Note added"
+        assert (
+            activity.summary == "Decision maker wants a shorter implementation window."
+        )
+        assert activity.actor_id == actor_id
+        audit = session.scalar(
+            select(AuditEvent).where(AuditEvent.workspace_id == workspace_id)
+        )
+        outbox = session.scalar(
+            select(OutboxEvent).where(OutboxEvent.workspace_id == workspace_id)
+        )
+        assert audit.action == outbox.event_type == "lead.note_added"
+        assert "summary" not in outbox.payload
+        assert "summary" not in audit.details
 
 
 def test_schedule_next_action_creates_open_task_and_records_atomic_lead_change(

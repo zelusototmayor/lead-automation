@@ -178,6 +178,13 @@ async def require_email_log_command_access(
     return await _require_command_permission(request, principal, "crm:email:log")
 
 
+async def require_note_write_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:note:write")
+
+
 async def require_next_action_command_access(
     request: Request,
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],

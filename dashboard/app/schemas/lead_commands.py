@@ -35,6 +35,10 @@ class LogEmailCommandBody(LeadOperationBase):
     occurred_at: AwareDatetime | None = None
 
 
+class AddNoteCommandBody(LeadOperationBase):
+    summary: StrictStr = Field(min_length=1, max_length=2000)
+
+
 class ScheduleNextActionCommandBody(LeadOperationBase):
     task_type: StrictStr = Field(pattern="^(call|email|follow_up)$")
     title: StrictStr = Field(min_length=1, max_length=512)

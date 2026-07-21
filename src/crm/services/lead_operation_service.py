@@ -54,6 +54,15 @@ class LogEmailCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class AddNoteCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
 class ScheduleNextActionCommand:
     command_id: UUID
     workspace_id: UUID
@@ -335,6 +344,52 @@ class LeadOperationService:
                 "direction": command.direction,
                 "occurred_at": occurred_at.isoformat(),
             },
+        )
+        return LeadOperationResult(
+            command.command_id,
+            lead.id,
+            lead.version,
+            False,
+            occurred_at=occurred_at,
+        )
+
+    def add_note(
+        self, principal: HumanCommandPrincipal, command: AddNoteCommand
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:note:write")
+        if (
+            type(command) is not AddNoteCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+        ):
+            raise _conflict() from None
+        summary = _bounded_text(command.summary, maximum=2000)
+        semantic_hash = _semantic_hash("add-note", command, {"summary": summary})
+        replay = self._claim_or_replay(command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        occurred_at = datetime.now(UTC)
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.note_added",
+            version=lead.version,
+            activity_title="Note added",
+            activity_type="note",
+            occurred_at=occurred_at,
+            summary=summary,
+            payload={"occurred_at": occurred_at.isoformat()},
         )
         return LeadOperationResult(
             command.command_id,

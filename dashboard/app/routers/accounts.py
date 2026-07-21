@@ -487,6 +487,7 @@ def leads_page(
         "can_transition_stage": "crm:lead-stage:write",
         "can_log_call": "crm:call:log",
         "can_log_email": "crm:email:log",
+        "can_add_note": "crm:note:write",
         "can_write_tasks": "crm:task:write",
     }
     capabilities = {

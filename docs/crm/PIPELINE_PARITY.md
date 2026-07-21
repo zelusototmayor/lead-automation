@@ -38,13 +38,13 @@ Estados:
 | Leads ainda não trabalhados | implemented | fila `untouched` baseada na ausência de atividade qualificante |
 | Contadores por fase que abrem filas | implemented | resumo do pipeline devolve contagens e os botões abrem cada fila |
 | Filtro por prioridade | implemented | `/leads` envia o filtro dedicado validado server-side (`low`, `medium`, `high`) antes da contagem e paginação |
-| Pesquisa empresa/contacto/telefone/email/cidade | partial | pesquisa cobre empresa, contacto, telefone e email; cidade não existe no modelo canónico |
+| Pesquisa empresa/contacto/telefone/email/cidade | implemented | pesquisa server-side cobre empresa, contacto, telefone, email e cidade canónica, com escaping literal e sem enfraquecer filtros/paginação |
 | Lista compacta desktop | implemented | fila compacta e detalhe persistente na mesma página |
 | Lista compacta mobile | implemented | layout responsivo mantém fila, detalhe e comandos numa coluna |
 | Detalhe sem perder a fila | implemented | detalhe abre no painel lateral sem abandonar a fila ou filtros locais |
 | Click-to-call e click-to-email | implemented | detalhe protegido cria links `tel:` e `mailto:` apenas a partir dos dados da API |
 | Registar resultado de chamada | implemented | comando protegido persiste outcome, nota, activity, audit e outbox atomicamente |
-| Notas e histórico | partial | notas de chamada/email e timeline operacional existem; nota livre autónoma ainda não |
+| Notas e histórico | implemented | notas de chamada/email e comando autónomo `add-note` entram numa timeline append-only; idempotência, versão otimista, audit e outbox não expõem o conteúdo privado |
 | Concluir/reagendar tarefa | implemented | comandos e UI complete/reschedule/cancel têm versão, idempotência, activity, audit e outbox atómicos |
 | Definir próxima ação e data/hora | implemented | comando e UI criam tarefa aberta tenant-safe e auditada |
 | Guardar e abrir lead seguinte | implemented | `tests/frontend/test_leads_queue.js` prova captura de lead/versão/sucessor antes do POST, avanço só após sucesso, precedência de navegação/filtros mais recentes e separação entre sucesso da mutação e falhas de refresh |

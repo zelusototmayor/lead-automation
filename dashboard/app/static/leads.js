@@ -263,6 +263,7 @@
       "transition-stage": `/api/v1/commands/leads/${leadId}/transition-stage`,
       "log-call": `/api/v1/commands/leads/${leadId}/log-call`,
       "log-email": `/api/v1/commands/leads/${leadId}/log-email`,
+      "add-note": `/api/v1/commands/leads/${leadId}/add-note`,
       "schedule-next-action": `/api/v1/commands/leads/${leadId}/schedule-next-action`,
     })[operation];
 
@@ -352,6 +353,19 @@
           emailForm.reset();
         } catch (_error) {
           window.notify("Não foi possível registar o email.", "err");
+        }
+      });
+
+      const noteForm = root.querySelector("[data-note-form]");
+      noteForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          await queueBehavior.save("add-note", {
+            summary: String(new FormData(noteForm).get("summary") || "").trim(),
+          }, false);
+          noteForm.reset();
+        } catch (_error) {
+          window.notify("Não foi possível adicionar a nota.", "err");
         }
       });
 

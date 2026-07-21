@@ -53,6 +53,7 @@
   data-can-transition-stage="{{ 'true' if can_transition_stage else 'false' }}"
   data-can-log-call="{{ 'true' if can_log_call else 'false' }}"
   data-can-log-email="{{ 'true' if can_log_email else 'false' }}"
+  data-can-add-note="{{ 'true' if can_add_note else 'false' }}"
   data-can-write-tasks="{{ 'true' if can_write_tasks else 'false' }}"{% if csrf_token %}
   data-csrf-token="{{ csrf_token }}"{% endif %}>
   <header class="topbar">
@@ -121,6 +122,12 @@
             <label>Direção<select name="direction" required><option value="outbound">Enviado</option><option value="inbound">Recebido</option></select></label>
             <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar email</button></div>
+          </form>
+          {% endif %}
+          {% if can_add_note %}
+          <form class="command-form" data-note-form>
+            <label>Nota livre<textarea name="summary" maxlength="2000" required></textarea></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Adicionar nota</button></div>
           </form>
           {% endif %}
           {% if can_write_tasks %}

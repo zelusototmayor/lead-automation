@@ -25,6 +25,7 @@ _CRM_PRINCIPAL_PERMISSIONS = frozenset(
         "crm:lead-stage:write",
         "crm:call:log",
         "crm:email:log",
+        "crm:note:write",
         "crm:task:write",
         "crm:proposal:write",
     }
