@@ -2403,3 +2403,86 @@ Ruff e git diff --check: passed nos ficheiros reparados
 ```
 
 O candidato está pronto para congelamento e revisão independente antes do commit. O staging permanece no schema/imagem anterior até revisão e publicação deste slice. Nenhum worker, reconciler, outbox publisher ou job outbound foi ativado; não houve write em Sheet, deploy de produção, cutover, retirada do legado nem criação do sentinel.
+## Paridade operacional local concluída em 2026-07-21
+
+A implementação do plano `CRM-PIPELINE-OPERATIONAL-PARITY-PLAN.md` foi concluída localmente na branch `feat/crm-pipeline-parity`. O candidato funcional anterior a esta atualização documental era `64e2f1aeb3658303d18b4a0f9221a55dc23c5816`; nenhum commit desta branch foi enviado, merged ou publicado.
+
+O novo workspace preserva Leads como unidade operacional e acrescenta Contas, Propostas e Inteligência sem substituir o fluxo diário. Estão implementados:
+
+- filas server-side de chamadas, emails, propostas, tarefas vencidas, tarefas de hoje e trabalho futuro, com cardinalidade explícita;
+- detalhe e timeline por Lead, ações humanas auditáveis, tarefas, outcomes, edição e `expected_version`;
+- `Guardar e seguinte` com sucessor capturado antes do write e avanço apenas após confirmação; `Saltar` sem writes nem wrap;
+- latest-request-wins para seleção, filtros e paginação, mantendo sucesso de writes quando apenas o refresh posterior falha;
+- workspace desktop e mobile validado a 390×844 e 320×844, sem overflow de página e com touch targets operacionais;
+- analytics acionáveis, agregados seguros e tempo em fase derivado exclusivamente de `Activity.from_stage`/`to_stage`, com cobertura explícita e ordem canónica;
+- replay idempotente ligado ao ator original, CSRF/origin, isolamento por workspace, auditoria e outbox transacional;
+- Propostas com proveniência de evidência por thread, estados terminais fail-closed, `won` bloqueado no comando genérico e before/after completo das mutações comerciais;
+- retry manual do formulário de Propostas que reutiliza `command_id` após resposta ambígua, sem repetir writes automaticamente;
+- backfill operacional dry-run por omissão, determinístico, atómico, DST fail-closed e sem matching destrutivo por nome;
+- migrations fail-closed até `0011`, incluindo factos estruturados de fase e constraint PostgreSQL `ck_leads_stage_requires_account`;
+- verificador de backups alinhado com `0011`, constraints obrigatórias, invariantes accountless e preservação do erro primário quando o cleanup também falha.
+
+### Evidência do gate final
+
+Numa base PostgreSQL 16 descartável e exclusiva em loopback, criada de raiz:
+
+```text
+Alembic upgrade: base -> 0011 (head)
+Alembic check: No new upgrade operations detected
+Suite Python completa exclusiva: 1185 passed, 1 skipped em 225,12 s
+Frontend Node: 27 passed
+Ruff e format check: 40 ficheiros Python alterados passaram
+compileall, node --check e git diff --check: passed
+Revisão independente dos cinco blockers finais: PASS
+```
+
+O primeiro ensaio completo concorrente com uma revisão independente foi invalidado por contaminação da mesma base de testes. Depois de remover qualquer segundo processo, os seis casos afetados passaram juntos numa base nova e a suite completa exclusiva passou integralmente. A fixture de Operações também deixou de fabricar um Lead sem Conta em `meeting_booked`, estado agora corretamente impossível sob `0011`.
+
+A imagem operacional do dashboard foi construída a partir de `dashboard/Dockerfile`. O smoke do candidato funcional confirmou:
+
+```text
+/up: 200
+/leads, /contas, /propostas, /inteligencia e API sem autenticação: 401
+WWW-Authenticate: Basic
+Cache-Control em conteúdo protegido: no-store
+/static/proposals.js autenticado: 200, ETag presente, caching normal
+container: healthy
+```
+
+### Gates ainda fechados
+
+Esta conclusão é de implementação e verificação local, não de rollout. O staging existente não foi atualizado por esta branch. Permanecem proibidos sem aprovação e validação próprias:
+
+- push, merge ou deploy deste candidato;
+- `--apply` do backfill operacional: o dry-run conhecido mantém 187 casos para revisão;
+- resolução automática dos conflitos de dados e declaração de paridade real;
+- ativação de writes PostgreSQL, conectores, workers, outbox publisher, Agent ingress ou projeção Sheets;
+- cutover ou retirada do CRM legado/Sheet.
+
+A fase seguinte é preparar uma validação de staging fail-closed, com identidade real e revisão do proprietário, mantendo o legado como fallback. O cutover continua bloqueado por paridade de dados, validação humana, backup off-host/restore, soak e aprovação explícita.
+
+---
+
+## Retoma do candidato integrado em 2026-07-21T16:25:32Z
+
+A retoma partiu do `HEAD` sincronizado `d30f6f6dd3589d5429f3577450d6e91861f02495` e preservou integralmente 53 ficheiros staged, incluindo correções posteriores unstaged nas migrations e respetivos testes. O candidato integrado mantém os IDs já publicados `0010` e `0011`, acrescenta `0012` para factos estruturados de transição e `0013` para a invariante de Account obrigatória, e reúne o workspace operacional, analytics, idempotência browser, backfill legado e constraints PostgreSQL sem retirar contratos v0.
+
+Num PostgreSQL 16 descartável e exclusivo em loopback, sem dados reais ou credenciais live:
+
+```text
+Suite Python segura completa com DeprecationWarning como erro: 1200 passed, 1 skipped em 250,38 s
+Frontend Node: 28 passed
+Regressão transacional isolada após contaminação de uma ordem focada: 12 passed
+Alembic lifecycle: base -> 0013 -> 0011 -> 0013 -> base -> 0013
+Alembic current: 0013 (head)
+Alembic check: No new upgrade operations detected
+Restore custom-format: schema 0013, 15 tabelas, 0 workspaces, 0 violações
+Ruff, format check, compileall, node --check e git diff --check: passed
+Gitleaks no histórico e no candidato staged: zero leaks
+Imagem local: manifest list sha256:5697aae4d4311384e226e3d472c6e4b5d332bb3094b01a181c736244f7c03a98
+Smoke com defaults: /up=200; dashboard e rotas ricas=403; Agent ingress=404; zero linhas de erro no log
+Smoke autenticado com PostgreSQL: Leads, Contas, Propostas, Inteligência, Operações e APIs v1=200; pedidos sem credenciais=401
+Backfill operacional real em dry-run: 1.247 linhas, 38 tarefas candidatas, 269 notas candidatas, 187 conflitos, zero writes
+```
+
+A falha inicial de três testes transacionais resultou de executar módulos independentes numa ordem que deixou Activities append-only de outros módulos na mesma base. A repetição exclusiva do módulo numa base nova passou; a suite completa canónica, também exclusiva e criada de raiz, passou integralmente. Nenhum worker CRM, reconciler, outbox publisher ou job outbound estava ativo. O candidato ainda necessita congelamento final, revisão independente, commit/publicação e validação no staging persistente antes de qualquer decisão de cutover. O sentinel permanece ausente.

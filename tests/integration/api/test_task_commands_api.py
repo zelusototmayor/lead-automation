@@ -23,6 +23,7 @@ from src.crm.persistence.models import (
     Task,
     Workspace,
 )
+from src.crm.services import task_command_service
 from src.crm.services.task_command_service import TaskCommandService
 from tests.migration._postgres import cleanup_workspace, require_disposable_postgres
 
@@ -536,3 +537,103 @@ def test_task_command_rolls_back_domain_activity_audit_and_outbox(
             )
             == 0
         )
+
+
+def test_task_replay_by_a_different_actor_is_a_generic_conflict(task_command_api):
+    client, engine, workspace_id, task_id, _ = task_command_api
+    command_id = uuid4()
+    payload = {"command_id": str(command_id), "expected_version": 1}
+    assert (
+        client.post(
+            f"/api/v1/commands/tasks/{task_id}/complete",
+            json=payload,
+            headers=_headers(command_id),
+        ).status_code
+        == 200
+    )
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+        CRMPrincipal(
+            workspace_id=workspace_id,
+            actor_id=uuid4(),
+            subject="different-task-actor",
+            permissions=frozenset({"crm:read", "crm:task:write"}),
+        )
+    )
+
+    replay = client.post(
+        f"/api/v1/commands/tasks/{task_id}/complete",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    assert replay.status_code == 409
+    assert replay.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        assert session.get(Task, task_id).version == 2
+        assert _workspace_count(session, Activity, workspace_id) == 1
+        assert _workspace_count(session, AuditEvent, workspace_id) == 1
+        assert _workspace_count(session, OutboxEvent, workspace_id) == 1
+
+
+def test_reschedule_replays_after_due_at_has_passed(task_command_api, monkeypatch):
+    client, engine, workspace_id, task_id, _ = task_command_api
+    command_id = uuid4()
+    initial_now = datetime(2030, 1, 1, tzinfo=UTC)
+    due_at = initial_now + timedelta(hours=1)
+
+    monkeypatch.setattr(task_command_service, "_now", lambda: initial_now)
+    payload = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "due_at": due_at.isoformat(),
+    }
+    first = client.post(
+        f"/api/v1/commands/tasks/{task_id}/reschedule",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    monkeypatch.setattr(
+        task_command_service, "_now", lambda: due_at + timedelta(seconds=1)
+    )
+    replay = client.post(
+        f"/api/v1/commands/tasks/{task_id}/reschedule",
+        json=payload,
+        headers=_headers(command_id),
+    )
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json() | {"replayed": True}
+    with Session(engine) as session:
+        assert _workspace_count(session, Activity, workspace_id) == 1
+        assert _workspace_count(session, AuditEvent, workspace_id) == 1
+        assert _workspace_count(session, OutboxEvent, workspace_id) == 1
+
+
+def test_reschedule_to_identical_due_at_is_a_generic_no_op_conflict(
+    task_command_api,
+):
+    client, engine, workspace_id, task_id, _ = task_command_api
+    command_id = uuid4()
+    with Session(engine) as session:
+        due_at = session.get(Task, task_id).due_at
+
+    response = client.post(
+        f"/api/v1/commands/tasks/{task_id}/reschedule",
+        json={
+            "command_id": str(command_id),
+            "expected_version": 1,
+            "due_at": due_at.isoformat(),
+        },
+        headers=_headers(command_id),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Command conflict"}
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        assert task.version == 1
+        assert task.due_at == due_at
+        assert _workspace_count(session, Activity, workspace_id) == 0
+        assert _workspace_count(session, AuditEvent, workspace_id) == 0
+        assert _workspace_count(session, OutboxEvent, workspace_id) == 0

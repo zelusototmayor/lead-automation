@@ -71,7 +71,7 @@ def operations_api_fixture():
                     (id, workspace_id, account_id, stage, highest_stage_rank)
                 VALUES
                     (:lead_id, :workspace_id, :account_id, 'meeting_held', 50),
-                    (:orphan_lead_id, :workspace_id, NULL, 'meeting_booked', 40);
+                    (:orphan_lead_id, :workspace_id, NULL, 'qualified', 30);
                 INSERT INTO ingest_events
                     (id, workspace_id, source_system, source_scope, event_type,
                      schema_version, idempotency_key, occurred_at, received_at, payload,
@@ -185,7 +185,7 @@ def test_operations_metrics_are_canonical_workspace_scoped_and_redacted(
     assert body["dead_letter_count"] == 1
     assert body["reconciliation_mismatch_count"] == 3
     assert body["missing_value_count"] == 1
-    assert body["account_invariant_violation_count"] == 2
+    assert body["account_invariant_violation_count"] == 1
     assert 235 <= body["outbox_lag_seconds"] <= 255
     assert body["observed_at"].endswith("Z")
     assert "private" not in response.text.lower()

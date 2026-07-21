@@ -477,3 +477,51 @@ def test_stage_command_requires_actor_and_exact_permission(lead_command_api):
         )
         assert response.status_code == 403
         assert response.json() == {"detail": "Forbidden"}
+
+
+def test_stage_command_replay_does_not_inflate_time_in_stage_analytics(
+    lead_command_api,
+):
+    client, engine, workspace_id, lead_id, _ = lead_command_api
+    first_id, second_id = uuid4(), uuid4()
+
+    first_payload = _payload(first_id)
+    second_payload = _payload(
+        second_id,
+        target_stage="qualified",
+        expected_version=2,
+    )
+    for command_id, payload in (
+        (first_id, first_payload),
+        (first_id, first_payload),
+        (second_id, second_payload),
+        (second_id, second_payload),
+    ):
+        assert (
+            client.post(
+                f"/api/v1/commands/leads/{lead_id}/transition-stage",
+                json=payload,
+                headers=_headers(command_id),
+            ).status_code
+            == 200
+        )
+
+    analytics = client.get("/api/v1/pipeline/analytics?days=1")
+
+    assert analytics.status_code == 200
+    assert analytics.json()["time_in_stage"]["coverage"] == {
+        "structured_transitions": 2,
+        "legacy_transitions": 0,
+        "usable_intervals": 1,
+        "uncovered_transitions": 1,
+    }
+    assert analytics.json()["time_in_stage"]["stages"][0]["completed_intervals"] == 1
+    with Session(engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(Activity.id)).where(
+                    Activity.workspace_id == workspace_id
+                )
+            )
+            == 2
+        )

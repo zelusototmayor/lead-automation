@@ -232,7 +232,7 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
     assert summary.json()["queues"] == {
         "calls_overdue": 0,
         "calls_today": 1,
-        "calls_future": 1,
+        "calls_future": 2,
         "emails_overdue": 1,
         "emails_today": 1,
         "emails_future": 1,
@@ -241,6 +241,19 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "touched_today": 1,
         "untouched": 2,
         "all": 3,
+    }
+    assert summary.json()["queue_units"] == {
+        "calls_overdue": "task",
+        "calls_today": "task",
+        "calls_future": "task",
+        "emails_overdue": "task",
+        "emails_today": "task",
+        "emails_future": "task",
+        "proposal_followups_overdue": "task",
+        "proposal_followups_today": "task",
+        "touched_today": "lead",
+        "untouched": "lead",
+        "all": "lead",
     }
     assert calls_today.status_code == emails_overdue.status_code == 200
     assert calls_today.json()["total"] == emails_overdue.json()["total"] == 1
@@ -271,7 +284,7 @@ def test_future_call_and_email_queues_are_strict_scoped_and_pagination_safe(
     emails = client.get("/api/v1/pipeline/items?queue=emails_future")
 
     assert summary.status_code == 200
-    assert summary.json()["queues"]["calls_future"] == 1
+    assert summary.json()["queues"]["calls_future"] == 2
     assert summary.json()["queues"]["emails_future"] == 1
     assert (
         first_call.status_code == second_call.status_code == emails.status_code == 200
@@ -331,6 +344,67 @@ def test_pipeline_search_includes_city_and_is_workspace_scoped(pipeline_api):
     assert pre_account.json()["items"][0]["account_id"] is None
     assert client.get("/api/v1/pipeline/items?search=%20lisboa").status_code == 422
     assert client.get("/api/v1/pipeline/items?search=").status_code == 422
+
+
+def test_pipeline_stage_filter_is_canonical_workspace_scoped_and_composes_with_priority(
+    pipeline_api,
+):
+    client, lead_id, pre_account_lead_id = pipeline_api
+
+    contacted = client.get("/api/v1/pipeline/items?queue=all&stage=contacted")
+    contacted_high = client.get(
+        "/api/v1/pipeline/items?queue=all&stage=contacted&priority=high"
+    )
+    contacted_low = client.get(
+        "/api/v1/pipeline/items?queue=all&stage=contacted&priority=low"
+    )
+
+    assert contacted.status_code == contacted_high.status_code == 200
+    assert contacted.json()["total"] == 2
+    assert {item["lead_id"] for item in contacted.json()["items"]} == {
+        str(lead_id),
+        str(pre_account_lead_id),
+    }
+    assert contacted_high.json()["total"] == 1
+    assert [item["lead_id"] for item in contacted_high.json()["items"]] == [
+        str(lead_id)
+    ]
+    assert contacted_low.status_code == 200
+    assert contacted_low.json()["total"] == 0
+    assert contacted_low.json()["items"] == []
+
+
+def test_pipeline_stage_filter_applies_before_total_and_offset(pipeline_api):
+    client, lead_id, _ = pipeline_api
+
+    first = client.get(
+        "/api/v1/pipeline/items"
+        "?queue=calls_future&stage=contacted&priority=high&limit=1&offset=0"
+    )
+    second = client.get(
+        "/api/v1/pipeline/items"
+        "?queue=calls_future&stage=contacted&priority=high&limit=1&offset=1"
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["total"] == second.json()["total"] == 2
+    assert first.json()["offset"] == 0
+    assert second.json()["offset"] == 1
+    assert [
+        first.json()["items"][0]["task"]["id"],
+        second.json()["items"][0]["task"]["id"],
+    ] == [str(UUID(int=1)), str(UUID(int=2))]
+    assert {
+        item["lead_id"] for item in first.json()["items"] + second.json()["items"]
+    } == {str(lead_id)}
+
+
+def test_pipeline_stage_filter_rejects_noncanonical_values(pipeline_api):
+    client, _, _ = pipeline_api
+
+    assert client.get("/api/v1/pipeline/items?stage=unknown").status_code == 422
+    assert client.get("/api/v1/pipeline/items?stage=CONTACTED").status_code == 422
+    assert client.get("/api/v1/pipeline/items?stage=").status_code == 422
 
 
 def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_api):

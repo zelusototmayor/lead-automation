@@ -55,7 +55,7 @@ export CRM_RESTORE_TEST_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/c
   --target-url-env CRM_RESTORE_TEST_URL
 ```
 
-The verifier checks archive readability, PostgreSQL major version, current Alembic head (`0011`), required tables, workspace count, orphan references and account invariants, then force-drops only its generated `crm_restore_verify_<uuid>` database.
+The verifier checks archive readability, PostgreSQL major version, current Alembic head (`0013`), required tables, required constraints, workspace count, orphan references and account invariants, then force-drops only its generated `crm_restore_verify_<uuid>` database.
 
 ## Observed local evidence
 

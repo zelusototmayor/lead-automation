@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import crm_verify_backup
 from scripts.crm_verify_backup import (
     BackupVerificationError,
     EXPECTED_SCHEMA_REVISION,
@@ -11,11 +12,12 @@ from scripts.crm_verify_backup import (
     REQUIRED_INDEXES,
     REQUIRED_TABLES,
     validate_safe_target,
+    verify_backup,
 )
 
 
 def test_backup_verifier_contract_tracks_canonical_engagement_schema():
-    assert EXPECTED_SCHEMA_REVISION == "0011"
+    assert EXPECTED_SCHEMA_REVISION == "0013"
     assert {
         "email_messages",
         "meetings",
@@ -28,6 +30,10 @@ def test_backup_verifier_contract_tracks_canonical_engagement_schema():
         "ck_email_messages_mailbox_identity",
         "ck_reconciliation_runs_report_minimized",
         "ck_activities_outcome_code_nonblank",
+        "ck_activities_stage_transition_pair",
+        "ck_activities_stage_transition_type",
+        "ck_activities_stage_transition_values",
+        "ck_leads_stage_requires_account",
         "fk_tasks_workspace_account_lead",
     } <= REQUIRED_CONSTRAINTS
     assert {
@@ -97,3 +103,77 @@ def test_backup_verifier_ignores_ambient_libpq_destination_overrides(monkeypatch
         "PGDATABASE": "crm_restore_verify_" + "a" * 32,
         "PGPASSWORD": "secret",
     }
+
+
+class _FakeAdminConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def execute(self, statement):
+        return None
+
+
+def _prepare_verify_backup(monkeypatch, tmp_path: Path):
+    archive = tmp_path / "backup.dump"
+    archive.write_bytes(b"PGDMPfixture")
+    target = validate_safe_target(
+        "postgresql://operator@127.0.0.1/crm_restore_test",
+        disposable_marker=True,
+    )
+    monkeypatch.setattr(
+        crm_verify_backup.shutil, "which", lambda name: "/bin/pg_restore"
+    )
+    monkeypatch.setattr(crm_verify_backup, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        crm_verify_backup, "_assert_postgres_16", lambda connection: None
+    )
+    monkeypatch.setattr(
+        crm_verify_backup.psycopg,
+        "connect",
+        lambda **kwargs: _FakeAdminConnection(),
+    )
+    return archive, target
+
+
+def test_cleanup_failure_does_not_replace_primary_verification_error(
+    monkeypatch, tmp_path: Path
+):
+    archive, target = _prepare_verify_backup(monkeypatch, tmp_path)
+
+    def fail_smoke(target, database):
+        raise BackupVerificationError("restored CRM invariants failed")
+
+    def fail_cleanup(target, database):
+        raise BackupVerificationError("sensitive cleanup detail")
+
+    monkeypatch.setattr(crm_verify_backup, "_smoke_restored_database", fail_smoke)
+    monkeypatch.setattr(crm_verify_backup, "_drop_restore_database", fail_cleanup)
+
+    with pytest.raises(BackupVerificationError) as captured:
+        verify_backup(archive, target)
+
+    assert captured.value.args == ("restored CRM invariants failed",)
+    assert getattr(captured.value, "__notes__", []) == ["backup cleanup also failed"]
+    assert "sensitive" not in repr(captured.value)
+
+
+def test_cleanup_failure_is_surfaced_when_verification_succeeds(
+    monkeypatch, tmp_path: Path
+):
+    archive, target = _prepare_verify_backup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        crm_verify_backup,
+        "_smoke_restored_database",
+        lambda target, database: {"status": "verified"},
+    )
+
+    def fail_cleanup(target, database):
+        raise BackupVerificationError("sensitive cleanup detail")
+
+    monkeypatch.setattr(crm_verify_backup, "_drop_restore_database", fail_cleanup)
+
+    with pytest.raises(BackupVerificationError, match="^backup cleanup failed$"):
+        verify_backup(archive, target)

@@ -40,7 +40,9 @@ def engine():
 @pytest.fixture(autouse=True)
 def clean_database(engine):
     with engine.begin() as connection:
-        connection.execute(text("TRUNCATE tasks, activities, leads, accounts, workspaces CASCADE"))
+        connection.execute(
+            text("TRUNCATE tasks, activities, leads, accounts, workspaces CASCADE")
+        )
 
 
 def _account_and_lead(engine):
@@ -189,5 +191,87 @@ def test_activity_rejects_blank_outcome_code(engine):
             )
         )
         with pytest.raises(IntegrityError, match="ck_activities_outcome_code_nonblank"):
+            session.flush()
+        session.rollback()
+
+
+def test_historical_stage_change_without_structured_facts_remains_valid(engine):
+    workspace_id, account_id, lead_id = _account_and_lead(engine)
+
+    with Session(engine) as session, session.begin():
+        activity = Activity(
+            workspace_id=workspace_id,
+            account_id=account_id,
+            lead_id=lead_id,
+            activity_type="stage_change",
+            occurred_at=NOW,
+            title="Historical stage observation",
+            semantic_fingerprint="0" * 64,
+        )
+        session.add(activity)
+        session.flush()
+        assert activity.from_stage is None
+        assert activity.to_stage is None
+
+
+def test_stage_change_persists_canonical_structured_transition(engine):
+    workspace_id, account_id, lead_id = _account_and_lead(engine)
+
+    with Session(engine) as session, session.begin():
+        activity = Activity(
+            workspace_id=workspace_id,
+            account_id=account_id,
+            lead_id=lead_id,
+            activity_type="stage_change",
+            occurred_at=NOW,
+            title="Stage changed",
+            semantic_fingerprint="1" * 64,
+            from_stage="new",
+            to_stage="contacted",
+        )
+        session.add(activity)
+        session.flush()
+        assert (activity.from_stage, activity.to_stage) == ("new", "contacted")
+
+
+@pytest.mark.parametrize(
+    ("activity_type", "from_stage", "to_stage", "constraint"),
+    [
+        ("stage_change", "new", None, "ck_activities_stage_transition_pair"),
+        ("call", "new", "contacted", "ck_activities_stage_transition_type"),
+        (
+            "stage_change",
+            "unknown",
+            "contacted",
+            "ck_activities_stage_transition_values",
+        ),
+        (
+            "stage_change",
+            "new",
+            "new",
+            "ck_activities_stage_transition_values",
+        ),
+    ],
+)
+def test_activity_rejects_invalid_structured_stage_facts(
+    engine, activity_type, from_stage, to_stage, constraint
+):
+    workspace_id, account_id, lead_id = _account_and_lead(engine)
+
+    with Session(engine) as session:
+        session.add(
+            Activity(
+                workspace_id=workspace_id,
+                account_id=account_id,
+                lead_id=lead_id,
+                activity_type=activity_type,
+                occurred_at=NOW,
+                title="Invalid structured transition",
+                semantic_fingerprint="2" * 64,
+                from_stage=from_stage,
+                to_stage=to_stage,
+            )
+        )
+        with pytest.raises(IntegrityError, match=constraint):
             session.flush()
         session.rollback()

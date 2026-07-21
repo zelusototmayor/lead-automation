@@ -15,6 +15,7 @@ from src.crm.services.command_service import (
     CommandAuthorizationError,
     CommandConflictError,
     HumanCommandPrincipal,
+    _assert_replay_actor,
 )
 
 
@@ -87,6 +88,10 @@ def _conflict() -> CommandConflictError:
     return CommandConflictError("command conflict")
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def _bounded_text(value: object, *, maximum: int) -> str:
     if (
         type(value) is not str
@@ -152,7 +157,7 @@ class LeadOperationService:
                 "priority": priority,
             },
         )
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         lead = self.uow.leads.get(
@@ -249,7 +254,7 @@ class LeadOperationService:
             type(occurred_at) is not datetime
             or occurred_at.tzinfo is None
             or occurred_at.utcoffset() is None
-            or occurred_at > datetime.now(UTC)
+            or occurred_at > _now()
         ):
             raise _conflict() from None
         occurred_at = occurred_at.astimezone(UTC)
@@ -264,7 +269,7 @@ class LeadOperationService:
                 "summary": command.summary,
             },
         )
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         lead = self.uow.leads.get(
@@ -327,7 +332,7 @@ class LeadOperationService:
             type(occurred_at) is not datetime
             or occurred_at.tzinfo is None
             or occurred_at.utcoffset() is None
-            or occurred_at > datetime.now(UTC)
+            or occurred_at > _now()
         ):
             raise _conflict() from None
         occurred_at = occurred_at.astimezone(UTC)
@@ -342,7 +347,7 @@ class LeadOperationService:
                 "summary": command.summary,
             },
         )
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         lead = self.uow.leads.get(
@@ -393,7 +398,7 @@ class LeadOperationService:
             raise _conflict() from None
         summary = _bounded_text(command.summary, maximum=2000)
         semantic_hash = _semantic_hash("add-note", command, {"summary": summary})
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         lead = self.uow.leads.get(
@@ -441,7 +446,6 @@ class LeadOperationService:
             or type(command.due_at) is not datetime
             or command.due_at.tzinfo is None
             or command.due_at.utcoffset() is None
-            or command.due_at <= datetime.now(UTC)
         ):
             raise _conflict() from None
         title = _bounded_text(command.title, maximum=512)
@@ -455,9 +459,11 @@ class LeadOperationService:
                 "title": title,
             },
         )
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
+        if due_at <= _now():
+            raise _conflict() from None
         lead = self.uow.leads.get(
             command.workspace_id, command.lead_id, for_update=True
         )
@@ -514,7 +520,7 @@ class LeadOperationService:
             raise CommandAuthorizationError("command forbidden") from None
 
     def _claim_or_replay(
-        self, command, semantic_hash: str
+        self, principal: HumanCommandPrincipal, command, semantic_hash: str
     ) -> LeadOperationResult | None:
         self.uow.lock_identities(
             command.workspace_id, (f"human-command:{command.command_id}",)
@@ -529,6 +535,12 @@ class LeadOperationService:
             or replay.aggregate_id != command.lead_id
         ):
             raise _conflict() from None
+        _assert_replay_actor(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            actor_id=principal.actor_id,
+        )
         return LeadOperationResult(
             command.command_id,
             replay.aggregate_id,

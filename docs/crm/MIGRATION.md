@@ -51,6 +51,20 @@ The real tab uses `Stage` and `Contact`; the migration adapter accepts them as e
 13. Soak with connectors disabled, then enable one allowlisted connector at a time in shadow mode.
 14. Only after stable shadow evidence, switch the command writer to PostgreSQL while keeping the Sheets projection reversible.
 
+## Repairing the deployed staging migration lineage
+
+The persistent staging database was previously migrated by the isolated pipeline-parity branch. It reports Alembic revision `0011`, but that historical `0011` already contains `activities.from_stage`/`to_stage`, the three `ck_activities_stage_transition_*` checks and `ck_leads_stage_requires_account`; it does not contain the canonical `0010` Account city or canonical `0011` pre-account Lead identity fields. This is a revision-lineage mismatch, not permission to recreate or overwrite the database.
+
+Repair is allowed only when a fresh custom-format backup has been restored into a second PostgreSQL 16 database and the restored clone proves exactly that schema fingerprint. With workers, connectors, outbox publishing and outbound jobs paused:
+
+1. verify `alembic_version=0011`, all four previously deployed constraints, both structured Activity columns, zero Account-required Lead violations, and absence of the canonical Account/Lead identity columns;
+2. run `alembic stamp 0009` on the clone, then `alembic upgrade head`;
+3. require canonical Account city and all five pre-account Lead identity columns, revision `0013`, zero invariant violations and `alembic check` clean;
+4. exercise `0013 -> 0011 -> 0013` on the clone when no structured transitions exist, then restore the original backup again and repeat the forward repair;
+5. only then repeat the same stamp/upgrade on staging, never on production by inference.
+
+Migration `0012` adopts the previously deployed Activity objects only when both columns have the expected nullable `varchar(32)` type and all three named checks are present; it then replaces those checks transactionally with the canonical definitions. Migration `0013` revalidates zero violating Leads and replaces the previously named Account-required constraint with the canonical definition in the same transaction. Partial or incompatible Activity objects fail closed with a generic migration error. On failure, keep the old application image, leave the backup untouched and restore into a new database; do not drop the only staging database or hand-edit domain rows.
+
 ## Required cutover flags
 
 `dashboard.app.feature_flags` parses the six controls without database or network I/O. Only the literal boolean strings `true` and `false` are accepted. Unknown values and inconsistent combinations stop application startup; request-level gates return a generic unavailable/not-found response without opening PostgreSQL or parsing an agent payload.

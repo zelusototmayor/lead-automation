@@ -20,6 +20,7 @@ from src.crm.services.command_service import (
     CommandAuthorizationError,
     CommandConflictError,
     HumanCommandPrincipal,
+    _assert_replay_actor,
 )
 
 
@@ -85,6 +86,34 @@ def _semantic_hash(command: UpdateProposalPipelineCommand) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+_PIPELINE_AUDIT_FIELDS = (
+    "status",
+    "probability",
+    "probability_source",
+    "forecast_category",
+    "next_action",
+    "next_action_due_at",
+    "won_at",
+    "lost_at",
+    "lost_reason",
+)
+
+
+def _json_safe_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value.quantize(Decimal("0.01")))
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).isoformat()
+    return value
+
+
+def _pipeline_state(proposal) -> dict[str, object]:
+    return {
+        field: _json_safe_value(getattr(proposal, field))
+        for field in _PIPELINE_AUDIT_FIELDS
+    }
+
+
 class ProposalOperationService:
     """Apply explicit proposal pipeline state; never publish or send outbound."""
 
@@ -126,7 +155,7 @@ class ProposalOperationService:
             raise _conflict() from None
 
         semantic_hash = _semantic_hash(command)
-        replay = self._claim_or_replay(command, semantic_hash)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
         if replay is not None:
             return replay
         proposal = self.uow.proposals.get(
@@ -134,12 +163,14 @@ class ProposalOperationService:
         )
         if proposal is None or proposal.version != command.expected_version:
             raise _conflict() from None
+        if proposal.status in {"won", "lost", "withdrawn", "expired"}:
+            raise _conflict() from None
         if command.status in PROPOSAL_SENT_OR_LATER_STATUSES:
-            if proposal.sent_at is None or proposal.sent_verification_state is None:
-                raise _conflict() from None
+            self._validate_confirmed_evidence(proposal, command.status)
         elif proposal.sent_at is not None:
             raise _conflict() from None
 
+        before = _pipeline_state(proposal)
         now = datetime.now(UTC)
         proposal.status = command.status
         proposal.probability = probability
@@ -160,6 +191,7 @@ class ProposalOperationService:
             proposal.lost_at = None
             proposal.lost_reason = None
         proposal.updated_at = now
+        after = _pipeline_state(proposal)
         self.uow.session.flush()
 
         version = proposal.version
@@ -168,6 +200,10 @@ class ProposalOperationService:
             "proposal_id": str(proposal.id),
             "status": proposal.status,
             "version": version,
+            "changes": {
+                field: {"before": before[field], "after": after[field]}
+                for field in _PIPELINE_AUDIT_FIELDS
+            },
         }
         self.uow.activities.add(
             Activity(
@@ -180,6 +216,9 @@ class ProposalOperationService:
                 activity_type="note",
                 occurred_at=now,
                 title="Proposal pipeline updated",
+                summary=json.dumps(
+                    event_payload, sort_keys=True, separators=(",", ":")
+                ),
                 semantic_fingerprint=semantic_hash,
                 source_system="manual",
                 actor_type="human",
@@ -208,10 +247,69 @@ class ProposalOperationService:
                 action=event_type,
                 entity_type="proposal",
                 entity_id=proposal.id,
-                details={"status": proposal.status, "version": version},
+                details=event_payload,
             )
         )
         return ProposalOperationResult(command.command_id, proposal.id, version, False)
+
+    def _validate_confirmed_evidence(self, proposal, status: str) -> None:
+        if (
+            proposal.sent_at is None
+            or proposal.sent_verification_state != "verified"
+            or proposal.sent_evidence_id is None
+            or proposal.selected_version_id is None
+        ):
+            raise _conflict() from None
+        sent_evidence = self.uow.evidence.get(
+            proposal.workspace_id, proposal.sent_evidence_id
+        )
+        version = self.uow.proposal_versions.get_for_proposal(
+            proposal.id, proposal.selected_version_id
+        )
+        expected_thread = (
+            str(proposal.thread_source_identity_id)
+            if proposal.thread_source_identity_id is not None
+            else None
+        )
+        if (
+            sent_evidence is None
+            or sent_evidence.account_id != proposal.account_id
+            or sent_evidence.evidence_type != "email_message"
+            or expected_thread is None
+            or sent_evidence.metadata_json.get("thread_source_identity_id")
+            != expected_thread
+            or version is None
+            or version.source_document_evidence_id is None
+            or version.confirmed_by is None
+            or version.confirmed_at is None
+        ):
+            raise _conflict() from None
+        version_evidence = self.uow.evidence.get(
+            proposal.workspace_id, version.source_document_evidence_id
+        )
+        if (
+            version_evidence is None
+            or version_evidence.account_id != proposal.account_id
+            or version_evidence.evidence_type != "attachment"
+            or version_evidence.metadata_json.get("thread_source_identity_id")
+            != expected_thread
+        ):
+            raise _conflict() from None
+        if status == "won":
+            valid_state = (
+                version.status == "accepted" and proposal.value_state == "confirmed"
+            )
+        elif status in {"lost", "withdrawn", "expired"}:
+            valid_state = (
+                version.status == "rejected" and proposal.value_state == "rejected"
+            )
+        else:
+            valid_state = (
+                version.status in {"sent", "accepted"}
+                and proposal.value_state == "confirmed"
+            )
+        if not valid_state:
+            raise _conflict() from None
 
     @staticmethod
     def _probability(value: object) -> Decimal | None:
@@ -241,7 +339,10 @@ class ProposalOperationService:
             raise CommandAuthorizationError("command forbidden") from None
 
     def _claim_or_replay(
-        self, command: UpdateProposalPipelineCommand, semantic_hash: str
+        self,
+        principal: HumanCommandPrincipal,
+        command: UpdateProposalPipelineCommand,
+        semantic_hash: str,
     ) -> ProposalOperationResult | None:
         self.uow.lock_identities(
             command.workspace_id, (f"human-command:{command.command_id}",)
@@ -256,6 +357,12 @@ class ProposalOperationService:
             or replay.aggregate_id != command.proposal_id
         ):
             raise _conflict() from None
+        _assert_replay_actor(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            actor_id=principal.actor_id,
+        )
         return ProposalOperationResult(
             command.command_id,
             replay.aggregate_id,

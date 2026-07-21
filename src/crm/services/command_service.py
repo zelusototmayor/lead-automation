@@ -166,6 +166,14 @@ def _ensure_account_for_transition(uow, lead, target: str):
     return account
 
 
+def _assert_replay_actor(
+    uow, *, workspace_id: UUID, command_id: UUID, actor_id: UUID
+) -> None:
+    audit = uow.audit_events.by_command(workspace_id, command_id)
+    if audit is None or audit.actor_id != actor_id:
+        raise _conflict() from None
+
+
 class HumanCommandService:
     """Apply commands in the caller-owned transaction; never publish or commit."""
 
@@ -214,6 +222,12 @@ class HumanCommandService:
                 or replay.aggregate_id != command.lead_id
             ):
                 raise _conflict() from None
+            _assert_replay_actor(
+                self.uow,
+                workspace_id=command.workspace_id,
+                command_id=command.command_id,
+                actor_id=principal.actor_id,
+            )
             return CommandResult(
                 command.command_id,
                 replay.aggregate_id,
@@ -236,6 +250,8 @@ class HumanCommandService:
             if account_required or lead.account_id is not None:
                 _ensure_account_for_transition(self.uow, lead, target)
             previous = lead.stage
+            if previous == target:
+                raise _conflict()
             lead.stage = target
             lead.highest_stage_rank = highest_stage_rank(
                 lead.highest_stage_rank, target
@@ -262,6 +278,8 @@ class HumanCommandService:
                 title="Stage changed",
                 summary=None,
                 semantic_fingerprint=semantic_hash,
+                from_stage=previous,
+                to_stage=target,
                 source_system="manual",
                 actor_type="human",
                 actor_id=principal.actor_id,

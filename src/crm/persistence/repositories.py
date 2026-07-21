@@ -253,3 +253,11 @@ class OutboxEventRepository(Repository[OutboxEvent]):
 class AuditEventRepository(Repository[AuditEvent]):
     def __init__(self, session: Session):
         super().__init__(session, AuditEvent)
+
+    def by_command(self, workspace_id: UUID, command_id: UUID) -> AuditEvent | None:
+        return self.session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.command_id == command_id,
+            )
+        )

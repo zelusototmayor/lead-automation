@@ -1,0 +1,9 @@
+[
+  ["Company", "Contact", "Stage", "notes", "Last Touch Type", "What Happened", "Due", "Due Time", "Dashboard Touched", "Proposal Sent", "ID", "Initial Email Sent", "Outreach FU1 Sent", "Outreach FU2 Sent", "Outreach FU3 Sent", "Outreach Reactivation Sent", "Proposal Status", "Proposal FU1 Sent", "Proposal FU2 Sent", "Proposal FU3 Sent", "Proposal Reactivation Sent", "Proposal Next Action", "Proposal Next Action Due", "FU1 Sent", "FU2 Sent", "FU3 Sent", "Reactivation Sent"],
+  ["Example Email", "Email Contact", "Send Email", "Keep the lowercase note", "Email Sent", "Sent requested information", "2026-07-22", "", "2026-07-20", "", "canonical-email", "2026-07-18", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["Example Call", "Call Contact", "Qualified", "", "Call", "Discussed requirements", "2026-07-23", "14:30", "2026-07-21", "2026-07-19", "canonical-call-proposal", "", "", "", "", "", "Sent", "", "", "", "", "Review proposal", "2026-07-25", "", "", "", ""],
+  ["Example Terminal", "Terminal Contact", "Lost", "", "", "", "2026-07-24", "10:00", "", "", "canonical-terminal", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["Example Sequence", "Sequence Contact", "Email Sent", "", "", "", "", "", "", "", "canonical-sequence", "2026-07-10", "2026-07-12", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["Example Ambiguous", "Ambiguous Contact", "Email Sent", "", "", "", "", "", "", "", "canonical-ambiguous", "", "2026-07-12", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["Example Touch", "Touch Contact", "Qualified", "", "Carrier pigeon", "Unclassifiable touch", "", "", "2026-07-20", "", "canonical-touch-review", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+]

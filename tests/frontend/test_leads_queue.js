@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 
 // Loading the browser bundle in Node only registers its DOMContentLoaded callback.
 global.document = { addEventListener() {} };
-const { createLeadQueueBehavior, leadMatchesFilters } = require("../../dashboard/app/static/leads.js");
+const { createLeadQueueBehavior } = require("../../dashboard/app/static/leads.js");
 
 const deferred = () => {
   let resolve;
@@ -17,23 +17,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-test("lead search includes canonical city without weakening stage filtering", () => {
-  const lead = {
-    company: "Acme Logistics",
-    contact_name: "Ana Silva",
-    email: "ana@example.test",
-    phone: "+351210000000",
-    city: "Lisboa",
-    stage: "contacted",
-  };
-
-  assert.equal(leadMatchesFilters(lead, "lisboa", "contacted"), true);
-  assert.equal(leadMatchesFilters(lead, "LISBOA", "contacted"), true);
-  assert.equal(leadMatchesFilters(lead, "lisboa", "new"), false);
-  assert.equal(leadMatchesFilters(lead, "porto", "contacted"), false);
-});
-
-test("save and next captures the visible successor and saved lead before the POST", async () => {
+test("save and next never overwrites a newer selection while its POST is pending", async () => {
   let selection = { leadId: "A", lead: { version: 7 } };
   let visibleIds = ["A", "B", "C"];
   const post = deferred();
@@ -42,16 +26,19 @@ test("save and next captures the visible successor and saved lead before the POS
   const behavior = createLeadQueueBehavior({
     getVisibleLeadIds: () => visibleIds,
     getSelection: () => selection,
-    clearSelection: () => {},
-    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
-    commitSelection: () => {},
+    clearSelection: (leadId) => {
+      selection = { leadId, lead: null };
+    },
+    requestLead: async (leadId) => ({ detail: { lead_id: leadId, version: 99 } }),
+    commitSelection: (leadId, result) => {
+      selection = { leadId, lead: result.detail };
+    },
     postLead: (command) => {
       posts.push(command);
       return post.promise;
     },
-    refresh: async () => {
+    refreshQueue: async () => {
       visibleIds = ["C", "A"];
-      selection = { leadId: "C", lead: { version: 99 } };
     },
     onLoad: (leadId) => loads.push(leadId),
   });
@@ -64,56 +51,113 @@ test("save and next captures the visible successor and saved lead before the POS
     payload: { company_name: "A editada" },
   }]);
 
+  // The operator explicitly selects C while A is still being saved.
+  assert.equal(await behavior.loadLead("C"), true);
   post.resolve();
-  await saving;
+
+  assert.equal(await saving, true);
+  assert.deepEqual(loads, ["C"]);
+  assert.equal(selection.leadId, "C");
+});
+
+test("save and next uses the successor captured before the queue refresh", async () => {
+  let visibleIds = ["A", "B", "C"];
+  const loads = [];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => visibleIds,
+    getSelection: () => ({ leadId: "A", lead: { version: 7 } }),
+    clearSelection: () => {},
+    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
+    commitSelection: () => {},
+    postLead: async () => {},
+    refreshQueue: async () => {
+      visibleIds = ["C", "A"];
+    },
+    onLoad: (leadId) => loads.push(leadId),
+  });
+
+  assert.equal(await behavior.save("edit", {}, true), true);
   assert.deepEqual(loads, ["B"]);
 });
 
-test("newer operator navigation wins over pending save auto-advance", async () => {
-  let selection = { leadId: "A", lead: { version: 7 } };
-  const post = deferred();
+test("a summary read failure after commit still resolves the save and advances", async () => {
+  let visibleIds = ["A", "B", "C"];
+  let posts = 0;
+  let queueRefreshes = 0;
   const loads = [];
+  const readFailures = [];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => visibleIds,
+    getSelection: () => ({ leadId: "A", lead: { version: 7 } }),
+    clearSelection: () => {},
+    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
+    commitSelection: () => {},
+    postLead: async () => { posts += 1; },
+    refreshSummary: async () => { throw new Error("summary failed"); },
+    refreshQueue: async () => {
+      queueRefreshes += 1;
+      visibleIds = ["C", "A"];
+    },
+    onLoad: (leadId) => loads.push(leadId),
+    onReadFailure: (source, error) => readFailures.push([source, error.message]),
+  });
+
+  assert.equal(await behavior.save("edit", {}, true), true);
+  assert.equal(posts, 1);
+  assert.equal(queueRefreshes, 1);
+  assert.deepEqual(loads, ["B"]);
+  assert.deepEqual(readFailures, [["summary", "summary failed"]]);
+});
+
+test("a queue read failure after commit still resolves the save and advances", async () => {
+  let posts = 0;
+  let summaryRefreshes = 0;
+  const loads = [];
+  const readFailures = [];
+  const behavior = createLeadQueueBehavior({
+    getVisibleLeadIds: () => ["A", "B", "C"],
+    getSelection: () => ({ leadId: "A", lead: { version: 7 } }),
+    clearSelection: () => {},
+    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
+    commitSelection: () => {},
+    postLead: async () => { posts += 1; },
+    refreshSummary: async () => { summaryRefreshes += 1; },
+    refreshQueue: async () => { throw new Error("queue failed"); },
+    onLoad: (leadId) => loads.push(leadId),
+    onReadFailure: (source, error) => readFailures.push([source, error.message]),
+  });
+
+  assert.equal(await behavior.save("edit", {}, true), true);
+  assert.equal(posts, 1);
+  assert.equal(summaryRefreshes, 1);
+  assert.deepEqual(loads, ["B"]);
+  assert.deepEqual(readFailures, [["queue", "queue failed"]]);
+});
+
+test("a target detail read failure after commit resolves and leaves no stale saved version", async () => {
+  let selection = { leadId: "A", lead: { version: 7 } };
+  let posts = 0;
+  let summaryRefreshes = 0;
+  let queueRefreshes = 0;
+  const readFailures = [];
   const behavior = createLeadQueueBehavior({
     getVisibleLeadIds: () => ["A", "B", "C"],
     getSelection: () => selection,
     clearSelection: (leadId) => { selection = { leadId, lead: null }; },
-    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
-    commitSelection: (leadId) => {
-      selection = { leadId, lead: { version: 99 } };
-      loads.push(leadId);
-    },
-    postLead: () => post.promise,
-    refresh: async () => {},
+    requestLead: async () => { throw new Error("detail failed"); },
+    commitSelection: (leadId, result) => { selection = { leadId, lead: result.detail }; },
+    postLead: async () => { posts += 1; },
+    refreshSummary: async () => { summaryRefreshes += 1; },
+    refreshQueue: async () => { queueRefreshes += 1; },
+    onReadFailure: (source, error) => readFailures.push([source, error.message]),
   });
 
-  const saving = behavior.save("edit", {}, true);
-  await behavior.loadLead("C");
-  post.resolve();
-  await saving;
-
-  assert.equal(selection.leadId, "C");
-  assert.deepEqual(loads, ["C"]);
-});
-
-test("a queue or filter change cancels pending save auto-navigation", async () => {
-  const post = deferred();
-  const loads = [];
-  const behavior = createLeadQueueBehavior({
-    getVisibleLeadIds: () => ["A", "B"],
-    getSelection: () => ({ leadId: "A", lead: { version: 7 } }),
-    clearSelection: () => {},
-    requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
-    commitSelection: (leadId) => loads.push(leadId),
-    postLead: () => post.promise,
-    refresh: async () => {},
-  });
-
-  const saving = behavior.save("edit", {}, true);
-  behavior.invalidateNavigation();
-  post.resolve();
-  await saving;
-
-  assert.deepEqual(loads, []);
+  assert.equal(await behavior.save("edit", {}, true), true);
+  assert.equal(posts, 1);
+  assert.equal(summaryRefreshes, 1);
+  assert.equal(queueRefreshes, 1);
+  assert.deepEqual(selection, { leadId: "B", lead: null });
+  assert.deepEqual(readFailures, [["detail", "detail failed"]]);
 });
 
 test("a failed save does not refresh or advance", async () => {
@@ -126,46 +170,13 @@ test("a failed save does not refresh or advance", async () => {
     requestLead: async () => ({}),
     commitSelection: () => {},
     postLead: async () => { throw new Error("POST failed"); },
-    refresh: async () => { refreshes += 1; },
+    refreshQueue: async () => { refreshes += 1; },
     onLoad: (leadId) => loads.push(leadId),
   });
 
   await assert.rejects(behavior.save("edit", {}, true), /POST failed/);
   assert.equal(refreshes, 0);
   assert.deepEqual(loads, []);
-});
-
-test("successful mutation is not reported as failed when queue refresh fails", async () => {
-  const loads = [];
-  const behavior = createLeadQueueBehavior({
-    getVisibleLeadIds: () => ["A", "B"],
-    getSelection: () => ({ leadId: "A", lead: { version: 1 } }),
-    clearSelection: () => {},
-    requestLead: async (leadId) => {
-      loads.push(leadId);
-      return { detail: { lead_id: leadId } };
-    },
-    commitSelection: () => {},
-    postLead: async () => {},
-    refresh: async () => { throw new Error("summary refresh failed"); },
-  });
-
-  await assert.doesNotReject(behavior.save("edit", {}, true));
-  assert.deepEqual(loads, ["B"]);
-});
-
-test("successful mutation is not reported as failed when target reload fails", async () => {
-  const behavior = createLeadQueueBehavior({
-    getVisibleLeadIds: () => ["A", "B"],
-    getSelection: () => ({ leadId: "A", lead: { version: 1 } }),
-    clearSelection: () => {},
-    requestLead: async () => { throw new Error("detail refresh failed"); },
-    commitSelection: () => {},
-    postLead: async () => {},
-    refresh: async () => {},
-  });
-
-  await assert.doesNotReject(behavior.save("edit", {}, true));
 });
 
 test("skip loads the next visible lead without writes or refresh", async () => {
@@ -179,7 +190,7 @@ test("skip loads the next visible lead without writes or refresh", async () => {
     requestLead: async (leadId) => ({ detail: { lead_id: leadId } }),
     commitSelection: () => {},
     postLead: async () => { posts += 1; },
-    refresh: async () => { refreshes += 1; },
+    refreshQueue: async () => { refreshes += 1; },
     onLoad: (leadId) => loads.push(leadId),
   });
 
@@ -198,7 +209,7 @@ test("skip on the last visible lead is an explicit no-op without wrap", async ()
     requestLead: async () => ({}),
     commitSelection: () => {},
     postLead: async () => { throw new Error("must not write"); },
-    refresh: async () => { throw new Error("must not refresh"); },
+    refreshQueue: async () => { throw new Error("must not refresh"); },
     onLoad: (leadId) => loads.push(leadId),
   });
 
@@ -207,17 +218,18 @@ test("skip on the last visible lead is an explicit no-op without wrap", async ()
 });
 
 test("save and next on the last visible lead saves successfully without wrap", async () => {
+  let selection = { leadId: "B", lead: { version: 3 } };
   let posts = 0;
   let refreshes = 0;
   const loads = [];
   const behavior = createLeadQueueBehavior({
     getVisibleLeadIds: () => ["A", "B"],
-    getSelection: () => ({ leadId: "B", lead: { version: 3 } }),
-    clearSelection: () => {},
+    getSelection: () => selection,
+    clearSelection: (leadId) => { selection = { leadId, lead: null }; },
     requestLead: async () => ({}),
     commitSelection: () => {},
     postLead: async () => { posts += 1; },
-    refresh: async () => { refreshes += 1; },
+    refreshQueue: async () => { refreshes += 1; },
     onLoad: (leadId) => loads.push(leadId),
   });
 
@@ -225,6 +237,7 @@ test("save and next on the last visible lead saves successfully without wrap", a
   assert.equal(posts, 1);
   assert.equal(refreshes, 1);
   assert.deepEqual(loads, []);
+  assert.deepEqual(selection, { leadId: "B", lead: null });
 });
 
 test("an older A response cannot overwrite a newer B selection", async () => {
@@ -237,7 +250,7 @@ test("an older A response cannot overwrite a newer B selection", async () => {
     requestLead: (leadId) => requests[leadId].promise,
     commitSelection: (leadId, result) => commits.push([leadId, result.detail.company]),
     postLead: async () => {},
-    refresh: async () => {},
+    refreshQueue: async () => {},
   });
 
   const loadingA = behavior.loadLead("A");
@@ -258,7 +271,7 @@ test("a stale A failure is ignored after B has become the active selection", asy
     requestLead: (leadId) => requests[leadId].promise,
     commitSelection: () => {},
     postLead: async () => {},
-    refresh: async () => {},
+    refreshQueue: async () => {},
   });
 
   const loadingA = behavior.loadLead("A");
@@ -283,7 +296,7 @@ test("a partial B load failure clears A and never associates A form data with B"
     },
     commitSelection: (leadId, result) => commits.push([leadId, result.detail.company]),
     postLead: async () => {},
-    refresh: async () => {},
+    refreshQueue: async () => {},
   });
 
   await behavior.loadLead("A");

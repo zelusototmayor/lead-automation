@@ -1,35 +1,47 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, exists, func, literal, or_, select
+from sqlalchemy import String, and_, case, exists, func, literal, or_, select, union_all
 
 from dashboard.app.routers.accounts import (
     AccountRequestContext,
     get_account_request_context,
 )
 from dashboard.app.schemas.pipeline import (
+    AnalyticsCountBreakdown,
+    AnalyticsDay,
+    AnalyticsPeriod,
+    AnalyticsQueueBreakdown,
+    AnalyticsStageDwell,
+    AnalyticsTaskBreakdown,
+    AnalyticsTimeInStage,
+    AnalyticsTimeInStageCoverage,
     LeadDetail,
     LeadTask,
     LeadTaskPage,
+    PipelineAnalytics,
     PipelineItem,
     PipelinePage,
     PipelinePriority,
     PipelineQueue,
+    PipelineQueueUnit,
     PipelineSummary,
     PipelineTask,
     TimelineItem,
     TimelinePage,
 )
+from src.crm.domain.enums import CRMStage
 from src.crm.persistence.models import (
     Account,
     Activity,
     Contact,
     Lead,
+    Proposal,
     Task,
     Workspace,
 )
@@ -54,6 +66,9 @@ _TASK_QUEUES = frozenset(
     for queue in _QUEUES
     if queue.startswith(("calls_", "emails_", "proposal_followups_"))
 )
+_QUEUE_UNITS: dict[PipelineQueue, PipelineQueueUnit] = {
+    queue: "task" if queue in _TASK_QUEUES else "lead" for queue in _QUEUES
+}
 _QUALIFYING_ACTIVITY_TYPES = (
     "call",
     "email_sent",
@@ -63,25 +78,50 @@ _QUALIFYING_ACTIVITY_TYPES = (
     "stage_change",
     "note",
 )
+_ANALYTICS_OUTCOMES = (
+    "connected",
+    "no_answer",
+    "voicemail",
+    "wrong_number",
+    "not_interested",
+    "follow_up",
+)
+_ANALYTICS_TASK_TYPES = ("call", "email", "follow_up", "proposal_followup")
+_ANALYTICS_QUEUE_NAMES: tuple[PipelineQueue, ...] = (
+    "calls_overdue",
+    "calls_today",
+    "emails_overdue",
+    "emails_today",
+    "proposal_followups_overdue",
+    "proposal_followups_today",
+)
+_CANONICAL_STAGES = tuple(stage.value for stage in CRMStage)
+_CANONICAL_STAGE_ORDER = {
+    stage: position for position, stage in enumerate(_CANONICAL_STAGES)
+}
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _day_bounds(
-    context: AccountRequestContext, now: datetime
-) -> tuple[datetime, datetime]:
+def _workspace_timezone(context: AccountRequestContext) -> tuple[str, ZoneInfo]:
     timezone_name = context.session.scalar(
         select(Workspace.timezone).where(Workspace.id == context.principal.workspace_id)
     )
     try:
-        timezone = ZoneInfo(timezone_name)
+        return timezone_name, ZoneInfo(timezone_name)
     except (TypeError, ZoneInfoNotFoundError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Pipeline unavailable",
         ) from None
+
+
+def _day_bounds(
+    context: AccountRequestContext, now: datetime
+) -> tuple[datetime, datetime]:
+    _, timezone = _workspace_timezone(context)
     local_date = now.astimezone(timezone).date()
     start = datetime.combine(local_date, time.min, timezone).astimezone(UTC)
     end = datetime.combine(local_date, time.max, timezone).astimezone(UTC)
@@ -237,11 +277,292 @@ def pipeline_summary(
         rows = _pipeline_statement(
             context.principal.workspace_id, queue, start, end
         ).subquery()
-        counts[queue] = int(
-            context.session.scalar(select(func.count(func.distinct(rows.c.lead_id))))
-            or 0
+        count_expression = (
+            func.count()
+            if queue in _TASK_QUEUES
+            else func.count(func.distinct(rows.c.lead_id))
         )
-    return PipelineSummary(queues=counts, generated_at=now)
+        counts[queue] = int(
+            context.session.scalar(select(count_expression).select_from(rows)) or 0
+        )
+    return PipelineSummary(queues=counts, queue_units=_QUEUE_UNITS, generated_at=now)
+
+
+@router.get("/api/v1/pipeline/analytics", response_model=PipelineAnalytics)
+def pipeline_analytics(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    days: Annotated[int, Query(ge=1, le=120)] = 30,
+) -> PipelineAnalytics:
+    now = _utc_now()
+    workspace_id = context.principal.workspace_id
+    timezone_name, timezone = _workspace_timezone(context)
+    end_date = now.astimezone(timezone).date()
+    start_date = end_date - timedelta(days=days - 1)
+    start_at = datetime.combine(start_date, time.min, timezone).astimezone(UTC)
+    end_at = datetime.combine(
+        end_date + timedelta(days=1), time.min, timezone
+    ).astimezone(UTC)
+    local_day = func.date(func.timezone(timezone_name, Activity.occurred_at))
+    outcome_bucket = case(
+        (Activity.outcome_code.is_(None), None),
+        (
+            Activity.outcome_code.in_(_ANALYTICS_OUTCOMES),
+            Activity.outcome_code,
+        ),
+        else_="other",
+    ).cast(String)
+    activity_filters = (
+        Activity.workspace_id == workspace_id,
+        Activity.occurred_at >= start_at,
+        Activity.occurred_at < end_at,
+        Activity.activity_type.in_(_QUALIFYING_ACTIVITY_TYPES),
+    )
+    activity_groups = (
+        select(
+            literal("activity").label("metric"),
+            local_day.label("local_day"),
+            Activity.activity_type.label("dimension"),
+            outcome_bucket.label("outcome"),
+            func.count().label("value"),
+        )
+        .where(*activity_filters)
+        .group_by(local_day, Activity.activity_type, outcome_bucket)
+    )
+    touched_groups = (
+        select(
+            literal("touched").label("metric"),
+            local_day.label("local_day"),
+            literal(None).cast(String).label("dimension"),
+            literal(None).cast(String).label("outcome"),
+            func.count(func.distinct(Activity.lead_id)).label("value"),
+        )
+        .where(*activity_filters, Activity.lead_id.is_not(None))
+        .group_by(local_day)
+    )
+    activity_rows = context.session.execute(
+        union_all(activity_groups, touched_groups)
+    ).all()
+
+    daily_values: dict[date, dict[str, object]] = {
+        start_date + timedelta(days=offset): {
+            "activity_types": {},
+            "outcomes": {},
+            "distinct_touched_leads": 0,
+        }
+        for offset in range(days)
+    }
+    for row in activity_rows:
+        values = daily_values[row.local_day]
+        if row.metric == "touched":
+            values["distinct_touched_leads"] = int(row.value)
+            continue
+        activity_types = values["activity_types"]
+        outcomes = values["outcomes"]
+        assert isinstance(activity_types, dict)
+        assert isinstance(outcomes, dict)
+        activity_types[row.dimension] = activity_types.get(row.dimension, 0) + int(
+            row.value
+        )
+        if row.outcome is not None:
+            outcomes[row.outcome] = outcomes.get(row.outcome, 0) + int(row.value)
+
+    stage_rows = context.session.execute(
+        select(Lead.stage, func.count())
+        .where(Lead.workspace_id == workspace_id)
+        .group_by(Lead.stage)
+    ).all()
+    stage_counts = {row.stage: int(row.count) for row in stage_rows}
+
+    proposal_rows = context.session.execute(
+        select(Proposal.status, func.count())
+        .where(Proposal.workspace_id == workspace_id)
+        .group_by(Proposal.status)
+    ).all()
+    proposal_counts = {row.status: int(row.count) for row in proposal_rows}
+
+    task_type_bucket = case(
+        (Task.task_type.in_(_ANALYTICS_TASK_TYPES), Task.task_type), else_="other"
+    ).cast(String)
+    task_status_groups = (
+        select(
+            literal("status").label("metric"),
+            Task.status.label("dimension"),
+            func.count().label("value"),
+        )
+        .where(Task.workspace_id == workspace_id)
+        .group_by(Task.status)
+    )
+    open_task_type_groups = (
+        select(
+            literal("open_type").label("metric"),
+            task_type_bucket.label("dimension"),
+            func.count().label("value"),
+        )
+        .where(Task.workspace_id == workspace_id, Task.status == "open")
+        .group_by(task_type_bucket)
+    )
+    task_rows = context.session.execute(
+        union_all(task_status_groups, open_task_type_groups)
+    ).all()
+    task_status_counts = {
+        row.dimension: int(row.value) for row in task_rows if row.metric == "status"
+    }
+    open_task_type_counts = {
+        row.dimension: int(row.value) for row in task_rows if row.metric == "open_type"
+    }
+
+    today_start = datetime.combine(end_date, time.min, timezone).astimezone(UTC)
+    today_end = datetime.combine(end_date, time.max, timezone).astimezone(UTC)
+    queue_row = context.session.execute(
+        select(
+            *(
+                func.count()
+                .filter(_task_filter(queue, today_start, today_end))
+                .label(queue)
+                for queue in _ANALYTICS_QUEUE_NAMES
+            )
+        ).where(Task.workspace_id == workspace_id)
+    ).one()
+    queue_counts = {
+        queue: int(getattr(queue_row, queue)) for queue in _ANALYTICS_QUEUE_NAMES
+    }
+
+    prior_to_stage = func.lag(Activity.to_stage).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    prior_occurred_at = func.lag(Activity.occurred_at).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    ordered_transitions = (
+        select(
+            Activity.occurred_at.label("occurred_at"),
+            Activity.from_stage.label("from_stage"),
+            Activity.to_stage.label("to_stage"),
+            prior_to_stage.label("prior_to_stage"),
+            prior_occurred_at.label("prior_occurred_at"),
+        )
+        .where(
+            Activity.workspace_id == workspace_id,
+            Activity.activity_type == "stage_change",
+            Activity.lead_id.is_not(None),
+            Activity.occurred_at >= start_at,
+            Activity.occurred_at < end_at,
+        )
+        .cte("ordered_transitions")
+    )
+    duration_seconds = func.extract(
+        "epoch",
+        ordered_transitions.c.occurred_at - ordered_transitions.c.prior_occurred_at,
+    )
+    structured = and_(
+        ordered_transitions.c.from_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.to_stage.in_(_CANONICAL_STAGES),
+    )
+    legacy = and_(
+        ordered_transitions.c.from_stage.is_(None),
+        ordered_transitions.c.to_stage.is_(None),
+    )
+    usable = and_(
+        structured,
+        ordered_transitions.c.prior_to_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.prior_to_stage == ordered_transitions.c.from_stage,
+        duration_seconds >= 0,
+    )
+    scoped_transitions = select(
+        ordered_transitions,
+        structured.label("structured"),
+        legacy.label("legacy"),
+        usable.label("usable"),
+        duration_seconds.label("duration_seconds"),
+    ).cte("scoped_transitions")
+    duration_hours = scoped_transitions.c.duration_seconds / 3600.0
+    coverage_metrics = select(
+        literal("coverage").label("metric"),
+        literal(None).cast(String).label("stage"),
+        func.count().filter(scoped_transitions.c.structured).label("structured"),
+        func.count().filter(scoped_transitions.c.legacy).label("legacy"),
+        func.count().filter(scoped_transitions.c.usable).label("usable"),
+        func.count()
+        .filter(
+            scoped_transitions.c.structured,
+            scoped_transitions.c.usable.is_not(True),
+        )
+        .label("uncovered"),
+        literal(None).label("completed_intervals"),
+        literal(None).label("average_hours"),
+        literal(None).label("median_hours"),
+        literal(None).label("p90_hours"),
+    ).select_from(scoped_transitions)
+    stage_metrics = (
+        select(
+            literal("stage").label("metric"),
+            scoped_transitions.c.from_stage.label("stage"),
+            literal(None).label("structured"),
+            literal(None).label("legacy"),
+            literal(None).label("usable"),
+            literal(None).label("uncovered"),
+            func.count().label("completed_intervals"),
+            func.avg(duration_hours).label("average_hours"),
+            func.percentile_cont(0.5)
+            .within_group(duration_hours)
+            .label("median_hours"),
+            func.percentile_cont(0.9).within_group(duration_hours).label("p90_hours"),
+        )
+        .where(scoped_transitions.c.usable)
+        .group_by(scoped_transitions.c.from_stage)
+    )
+    time_rows = context.session.execute(
+        union_all(coverage_metrics, stage_metrics)
+    ).all()
+    coverage_row = next(row for row in time_rows if row.metric == "coverage")
+    stage_rows = sorted(
+        (row for row in time_rows if row.metric == "stage"),
+        key=lambda row: _CANONICAL_STAGE_ORDER[row.stage],
+    )
+    stage_dwell = tuple(
+        AnalyticsStageDwell(
+            stage=row.stage,
+            completed_intervals=int(row.completed_intervals),
+            average_hours=round(float(row.average_hours), 2),
+            median_hours=round(float(row.median_hours), 2),
+            p90_hours=round(float(row.p90_hours), 2),
+        )
+        for row in stage_rows
+    )
+    time_in_stage = AnalyticsTimeInStage(
+        status="available" if stage_dwell else "not_available",
+        coverage=AnalyticsTimeInStageCoverage(
+            structured_transitions=int(coverage_row.structured),
+            legacy_transitions=int(coverage_row.legacy),
+            usable_intervals=int(coverage_row.usable),
+            uncovered_transitions=int(coverage_row.uncovered),
+        ),
+        stages=stage_dwell,
+    )
+
+    return PipelineAnalytics(
+        period=AnalyticsPeriod(start_date=start_date, end_date=end_date, days=days),
+        daily=tuple(
+            AnalyticsDay(date=local_date, **values)
+            for local_date, values in daily_values.items()
+        ),
+        stages=AnalyticsCountBreakdown(
+            by_status=stage_counts, total=sum(stage_counts.values())
+        ),
+        proposals=AnalyticsCountBreakdown(
+            by_status=proposal_counts, total=sum(proposal_counts.values())
+        ),
+        tasks=AnalyticsTaskBreakdown(
+            by_status=task_status_counts,
+            open_by_type=open_task_type_counts,
+            total=sum(task_status_counts.values()),
+        ),
+        queues=AnalyticsQueueBreakdown(counts=queue_counts),
+        time_in_stage=time_in_stage,
+        generated_at=now,
+    )
 
 
 def _literal_search_pattern(value: str) -> str:
@@ -253,6 +574,7 @@ def _literal_search_pattern(value: str) -> str:
 def pipeline_items(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
     queue: Annotated[PipelineQueue, Query()] = "all",
+    stage: Annotated[CRMStage | None, Query()] = None,
     priority: Annotated[PipelinePriority | None, Query()] = None,
     search: Annotated[
         str | None,
@@ -267,6 +589,8 @@ def pipeline_items(
 ) -> PipelinePage:
     start, end = _day_bounds(context, _utc_now())
     statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
+    if stage is not None:
+        statement = statement.where(Lead.stage == stage.value)
     if priority is not None:
         statement = statement.where(Lead.priority == priority)
     if search is not None:

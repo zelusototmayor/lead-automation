@@ -8,9 +8,10 @@
     requestLead,
     commitSelection,
     postLead,
-    refresh,
+    refreshSummary = async () => {},
+    refreshQueue = async () => {},
     onLoad = () => {},
-    onRefreshError = () => {},
+    onReadFailure = () => {},
   }) => {
     let loadSequence = 0;
 
@@ -43,58 +44,268 @@
       return nextLeadId ? loadLead(nextLeadId) : Promise.resolve(false);
     };
 
-    const invalidateNavigation = () => {
-      loadSequence += 1;
-    };
-
     const save = async (operation, payload, advanceAfterSave) => {
       const { leadId, lead } = getSelection();
       if (!leadId || !lead) return false;
-      const navigationSequence = loadSequence;
+      const saveSequence = loadSequence;
       const nextLeadId = advanceAfterSave ? nextVisibleLeadId(leadId) : null;
       await postLead({ operation, leadId, lead, payload });
-      if (navigationSequence !== loadSequence) return true;
-      clearSelection(leadId);
-      try {
-        await refresh();
-      } catch (error) {
-        onRefreshError("queue", error);
-      }
-      if (navigationSequence !== loadSequence) return true;
-      const targetLeadId = advanceAfterSave ? nextLeadId : leadId;
-      if (targetLeadId) {
-        try {
-          await loadLead(targetLeadId);
-        } catch (error) {
-          onRefreshError("detail", error);
+
+      const reads = [];
+      if (saveSequence === loadSequence) {
+        const targetLeadId = advanceAfterSave ? nextLeadId : leadId;
+        if (targetLeadId) {
+          reads.push(loadLead(targetLeadId).catch((error) => onReadFailure("detail", error)));
+        } else {
+          clearSelection(leadId);
         }
       }
+      reads.push(
+        refreshSummary().catch((error) => onReadFailure("summary", error)),
+        refreshQueue().catch((error) => onReadFailure("queue", error)),
+      );
+      await Promise.all(reads);
       return true;
     };
 
-    return { invalidateNavigation, loadLead, save, skip };
+    return { loadLead, save, skip };
   };
 
-  const leadMatchesFilters = (lead, query, selectedStage) => {
-    const normalizedQuery = String(query || "").trim().toLocaleLowerCase("pt-PT");
-    const searchable = [
-      lead.company,
-      lead.contact_name,
-      lead.email,
-      lead.phone,
-      lead.city,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLocaleLowerCase("pt-PT");
-    return (
-      (!normalizedQuery || searchable.includes(normalizedQuery)) &&
-      (!selectedStage || lead.stage === selectedStage)
+  const createLatestQueueLoader = ({
+    requestJson,
+    onStart = () => {},
+    onPage = () => {},
+    onFailure = () => {},
+    limit = 50,
+  }) => {
+    let requestSequence = 0;
+    let state = {
+      queue: "all",
+      stage: "",
+      priority: "",
+      limit,
+      offset: 0,
+      total: 0,
+    };
+    const snapshot = () => ({ ...state });
+
+    const load = async (changes = {}) => {
+      state = { ...state, ...changes, limit };
+      const requestState = snapshot();
+      const sequence = ++requestSequence;
+      onStart(requestState);
+      const searchParams = new URLSearchParams({
+        queue: requestState.queue,
+        limit: String(requestState.limit),
+        offset: String(requestState.offset),
+      });
+      if (requestState.stage) searchParams.set("stage", requestState.stage);
+      if (requestState.priority) searchParams.set("priority", requestState.priority);
+
+      let page;
+      try {
+        page = await requestJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
+      } catch (error) {
+        if (sequence !== requestSequence) return false;
+        onFailure(error, requestState);
+        throw error;
+      }
+      if (sequence !== requestSequence) return false;
+
+      state = {
+        ...requestState,
+        total: Number(page.total ?? 0),
+        limit: Number(page.limit ?? requestState.limit),
+        offset: Number(page.offset ?? requestState.offset),
+      };
+      onPage(page, snapshot());
+      return true;
+    };
+
+    const next = () => (
+      state.offset + state.limit < state.total
+        ? load({ offset: state.offset + state.limit })
+        : Promise.resolve(false)
     );
+    const previous = () => (
+      state.offset > 0
+        ? load({ offset: Math.max(0, state.offset - state.limit) })
+        : Promise.resolve(false)
+    );
+
+    return { getState: snapshot, load, next, previous };
+  };
+
+  const analyticsElement = (documentObject, tagName, className, text) => {
+    const element = documentObject.createElement(tagName);
+    element.className = className;
+    if (text !== undefined) element.textContent = String(text);
+    return element;
+  };
+
+  const appendBreakdown = (documentObject, parent, values, className = "analytics-breakdown") => {
+    const list = analyticsElement(documentObject, "div", className);
+    Object.entries(values || {}).forEach(([label, count]) => {
+      const item = analyticsElement(documentObject, "span", "analytics-chip");
+      item.append(
+        analyticsElement(documentObject, "span", "analytics-chip-label", stageLabel(label)),
+        analyticsElement(documentObject, "strong", "", count),
+      );
+      list.appendChild(item);
+    });
+    parent.appendChild(list);
+    return list;
+  };
+
+  const renderLeadAnalytics = ({ document: documentObject, root, analytics, filterByStage, openQueue }) => {
+    root.replaceChildren();
+    const days = Number(analytics.period?.days || 30);
+    const heading = analyticsElement(documentObject, "div", "analytics-heading");
+    heading.append(
+      analyticsElement(documentObject, "strong", "", `Últimos ${days} dias`),
+      analyticsElement(documentObject, "span", "analytics-caption", "Agregados operacionais; sem dados pessoais"),
+    );
+    root.appendChild(heading);
+
+    const grid = analyticsElement(documentObject, "div", "analytics-grid");
+    const daily = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+    daily.appendChild(analyticsElement(documentObject, "h3", "", "Atividade diária"));
+    const daysList = analyticsElement(documentObject, "div", "analytics-days");
+    (analytics.daily || []).forEach((day) => {
+      const activities = Object.values(day.activity_types || {}).reduce((total, count) => total + Number(count), 0);
+      const dayElement = analyticsElement(documentObject, "div", "analytics-day");
+      dayElement.append(
+        analyticsElement(documentObject, "time", "", day.date),
+        analyticsElement(documentObject, "strong", "", `Atividades ${activities}`),
+        analyticsElement(documentObject, "span", "", `Contactados ${Number(day.distinct_touched_leads || 0)}`),
+        analyticsElement(documentObject, "span", "analytics-caption", "Resultados"),
+      );
+      appendBreakdown(documentObject, dayElement, day.activity_types, "analytics-breakdown analytics-breakdown-compact");
+      appendBreakdown(documentObject, dayElement, day.outcomes, "analytics-breakdown analytics-breakdown-compact");
+      daysList.appendChild(dayElement);
+    });
+    daily.appendChild(daysList);
+    grid.appendChild(daily);
+
+    const stages = analyticsElement(documentObject, "article", "analytics-card");
+    stages.appendChild(analyticsElement(documentObject, "h3", "", `Leads por fase ${Number(analytics.stages?.total || 0)}`));
+    const stageActions = analyticsElement(documentObject, "div", "analytics-actions");
+    Object.entries(analytics.stages?.by_status || {}).forEach(([stage, count]) => {
+      const button = analyticsElement(documentObject, "button", "analytics-metric-btn", `${stageLabel(stage)} ${count}`);
+      button.setAttribute("type", "button");
+      button.dataset.analyticsStage = stage;
+      button.addEventListener("click", () => filterByStage(stage));
+      stageActions.appendChild(button);
+    });
+    stages.appendChild(stageActions);
+    grid.appendChild(stages);
+
+    const proposals = analyticsElement(documentObject, "a", "analytics-card analytics-card-link");
+    proposals.setAttribute("href", "/propostas");
+    proposals.appendChild(analyticsElement(documentObject, "h3", "", `Propostas ${Number(analytics.proposals?.total || 0)}`));
+    appendBreakdown(documentObject, proposals, analytics.proposals?.by_status);
+    grid.appendChild(proposals);
+
+    const tasks = analyticsElement(documentObject, "article", "analytics-card");
+    const openTasks = Number(analytics.tasks?.by_status?.open || 0);
+    tasks.append(
+      analyticsElement(documentObject, "h3", "", `Tarefas ${Number(analytics.tasks?.total || 0)}`),
+      analyticsElement(documentObject, "strong", "analytics-primary", `Em aberto ${openTasks}`),
+    );
+    appendBreakdown(documentObject, tasks, analytics.tasks?.open_by_type);
+    grid.appendChild(tasks);
+
+    const queues = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+    queues.appendChild(analyticsElement(documentObject, "h3", "", "Filas com prazo"));
+    const queueActions = analyticsElement(documentObject, "div", "analytics-actions");
+    Object.entries(analytics.queues?.counts || {}).forEach(([queue, count]) => {
+      const button = analyticsElement(documentObject, "button", "analytics-metric-btn", `${stageLabel(queue)} ${count}`);
+      button.setAttribute("type", "button");
+      button.dataset.analyticsQueue = queue;
+      button.addEventListener("click", () => openQueue(queue));
+      queueActions.appendChild(button);
+    });
+    queues.appendChild(queueActions);
+    grid.appendChild(queues);
+
+    const timeInStage = analytics.time_in_stage || {};
+    const coverage = timeInStage.coverage || {};
+    const structuredTransitions = Math.max(0, Number(coverage.structured_transitions) || 0);
+    const usableIntervals = Math.max(0, Number(coverage.usable_intervals) || 0);
+    const legacyTransitions = Math.max(0, Number(coverage.legacy_transitions) || 0);
+    const dwellRows = Array.isArray(timeInStage.stages) ? timeInStage.stages : [];
+    if (timeInStage.status === "available" && dwellRows.length > 0) {
+      const dwell = analyticsElement(documentObject, "article", "analytics-card analytics-card-wide");
+      dwell.append(
+        analyticsElement(documentObject, "h3", "", "Tempo em fase"),
+        analyticsElement(
+          documentObject,
+          "p",
+          "analytics-caption",
+          `Cobertura ${usableIntervals} de ${structuredTransitions} transições estruturadas · ${legacyTransitions} transições legadas`,
+        ),
+      );
+      dwellRows.forEach((row) => {
+        const completed = Math.max(0, Number(row.completed_intervals) || 0);
+        const average = Math.max(0, Number(row.average_hours) || 0);
+        const item = analyticsElement(documentObject, "div", "analytics-stage-dwell");
+        item.append(
+          analyticsElement(documentObject, "strong", "", stageLabel(row.stage)),
+          analyticsElement(
+            documentObject,
+            "span",
+            "",
+            `${average.toLocaleString("pt-PT", { maximumFractionDigits: 2 })} h em média · ${completed} ${completed === 1 ? "intervalo concluído" : "intervalos concluídos"}`,
+          ),
+        );
+        dwell.appendChild(item);
+      });
+      grid.appendChild(dwell);
+    } else {
+      const unavailable = analyticsElement(
+        documentObject,
+        "p",
+        "analytics-unavailable",
+        `Tempo em fase indisponível — ${usableIntervals} intervalos utilizáveis em ${structuredTransitions} transições estruturadas; ${legacyTransitions} transições legadas não foram inferidas.`,
+      );
+      grid.appendChild(unavailable);
+    }
+    root.appendChild(grid);
+  };
+
+  const createLeadAnalyticsBehavior = ({
+    fetchJson: requestJson,
+    renderAnalytics,
+    filterByStage,
+    openQueue,
+    onFailure,
+  }) => ({
+    load: async () => {
+      try {
+        const analytics = await requestJson("/api/v1/pipeline/analytics?days=30");
+        renderAnalytics(analytics, { filterByStage, openQueue });
+        return true;
+      } catch (_error) {
+        onFailure("Não foi possível sincronizar os indicadores.");
+        return false;
+      }
+    },
+  });
+
+  const revealDetailOnMobile = ({ windowObject, detailPanel }) => {
+    if (!windowObject.matchMedia("(max-width: 820px)").matches) return false;
+    detailPanel.scrollIntoView({ block: "start", behavior: "auto" });
+    return true;
   };
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { createLeadQueueBehavior, leadMatchesFilters };
+    module.exports = {
+      createLatestQueueLoader,
+      createLeadQueueBehavior,
+      createLeadAnalyticsBehavior,
+      renderLeadAnalytics,
+      revealDetailOnMobile,
+    };
   }
 
   const stageLabel = (value) => String(value || "sem estado").replaceAll("_", " ");
@@ -138,6 +349,9 @@
     const search = root.querySelector("[data-lead-search]");
     const stageFilter = root.querySelector("[data-stage-filter]");
     const priorityFilter = root.querySelector("[data-priority-filter]");
+    const previousPageButton = root.querySelector("[data-page-previous]");
+    const nextPageButton = root.querySelector("[data-page-next]");
+    const pageRange = root.querySelector("[data-page-range]");
     const skipButton = root.querySelector("[data-skip-lead]");
     const writable = root.dataset.writable === "true";
     const canWriteTasks = root.dataset.canWriteTasks === "true";
@@ -173,7 +387,7 @@
         appendText(
           identity,
           "lead-contact",
-          [lead.contact_name, lead.email, lead.phone, lead.city].filter(Boolean).join(" · ") || "Sem contacto",
+          [lead.contact_name, lead.email, lead.phone].filter(Boolean).join(" · ") || "Sem contacto",
         );
 
         const stage = document.createElement("span");
@@ -194,40 +408,47 @@
     };
 
     const applyFilters = () => {
-      const query = search.value;
-      const selectedStage = stageFilter.value;
+      const query = search.value.trim().toLocaleLowerCase("pt-PT");
       renderRows(
-        queueItems.filter((lead) => leadMatchesFilters(lead, query, selectedStage)),
+        queueItems.filter((lead) => {
+          const searchable = [lead.company, lead.contact_name, lead.email, lead.phone]
+            .filter(Boolean)
+            .join(" ")
+            .toLocaleLowerCase("pt-PT");
+          return !query || searchable.includes(query);
+        }),
       );
-    };
-
-    const refreshStageOptions = () => {
-      const previous = stageFilter.value;
-      stageFilter.querySelectorAll("option:not(:first-child)").forEach((option) => option.remove());
-      [...new Set(queueItems.map((lead) => lead.stage).filter(Boolean))].sort().forEach((stage) => {
-        const option = document.createElement("option");
-        option.value = stage;
-        option.textContent = stageLabel(stage);
-        stageFilter.appendChild(option);
-      });
-      stageFilter.value = [...stageFilter.options].some((option) => option.value === previous) ? previous : "";
     };
 
     const loadSummary = async () => renderSummary(await fetchJson("/api/v1/pipeline/summary"));
 
-    const loadQueue = async (queue = activeQueue) => {
-      activeQueue = queue;
-      selectQueueButton();
-      show(root, "loading");
-      const searchParams = new URLSearchParams({ queue, limit: "100", offset: "0" });
-      const selectedPriority = priorityFilter.value;
-      if (selectedPriority) searchParams.set("priority", selectedPriority);
-      const page = await fetchJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
-      queueItems = Array.isArray(page.items) ? page.items : [];
-      root.querySelector("[data-lead-total]").textContent = String(page.total ?? queueItems.length);
-      refreshStageOptions();
-      applyFilters();
+    const renderPagination = ({ total, limit, offset }) => {
+      const first = total > 0 ? offset + 1 : 0;
+      const last = Math.min(offset + queueItems.length, total);
+      pageRange.textContent = `${first}–${last} de ${total}`;
+      previousPageButton.disabled = offset <= 0;
+      nextPageButton.disabled = offset + limit >= total;
     };
+
+    const queueLoader = createLatestQueueLoader({
+      requestJson: fetchJson,
+      onStart: (state) => {
+        activeQueue = state.queue;
+        stageFilter.value = state.stage;
+        priorityFilter.value = state.priority;
+        selectQueueButton();
+        previousPageButton.disabled = true;
+        nextPageButton.disabled = true;
+        show(root, "loading");
+      },
+      onPage: (page, state) => {
+        queueItems = Array.isArray(page.items) ? page.items : [];
+        root.querySelector("[data-lead-total]").textContent = String(state.total);
+        applyFilters();
+        renderPagination(state);
+      },
+    });
+    const loadQueue = (changes = {}) => queueLoader.load(changes);
 
     const taskCommand = async (task, action) => {
       if (!canWriteTasks || !csrfToken || task.status !== "open") return;
@@ -365,7 +586,7 @@
           }, false);
           noteForm.reset();
         } catch (_error) {
-          window.notify("Não foi possível adicionar a nota.", "err");
+          window.notify("Não foi possível guardar a nota.", "err");
         }
       });
 
@@ -494,6 +715,10 @@
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
       root.querySelector("[data-detail-empty]").classList.add("hidden");
       root.querySelector("[data-detail-ready]").classList.remove("hidden");
+      revealDetailOnMobile({
+        windowObject: window,
+        detailPanel: root.querySelector("[data-lead-detail-panel]"),
+      });
     };
 
     const queueBehavior = createLeadQueueBehavior({
@@ -505,35 +730,62 @@
       requestLead,
       commitSelection,
       postLead: postLeadCommand,
-      refresh: () => Promise.all([loadSummary(), loadQueue()]),
-      onRefreshError: () => window.notify(
-        "Alteração guardada, mas não foi possível atualizar a vista.",
+      refreshSummary: loadSummary,
+      refreshQueue: loadQueue,
+      onReadFailure: () => window.notify(
+        "Alteração guardada, mas não foi possível atualizar todos os dados.",
         "err",
       ),
     });
     const loadLead = queueBehavior.loadLead;
+    const analyticsContent = root.querySelector("[data-analytics-content]");
+    const analyticsWarning = root.querySelector("[data-analytics-warning]");
+    const analyticsBehavior = createLeadAnalyticsBehavior({
+      fetchJson,
+      renderAnalytics: (analytics, actions) => renderLeadAnalytics({
+        document,
+        root: analyticsContent,
+        analytics,
+        ...actions,
+      }),
+      filterByStage: async (stage) => {
+        try {
+          await loadQueue({ stage, offset: 0 });
+          stageFilter.focus();
+        } catch (_error) {
+          show(root, "error");
+        }
+      },
+      openQueue: (queue) => loadQueue({ queue, stage: "", offset: 0 }).catch(() => show(root, "error")),
+      onFailure: (message) => {
+        root.querySelector("[data-analytics-loading]")?.classList.add("hidden");
+        analyticsWarning.textContent = message;
+        analyticsWarning.classList.remove("hidden");
+      },
+    });
 
     root.querySelectorAll("[data-pipeline-queue]").forEach((button) => {
-      button.addEventListener("click", () => {
-        queueBehavior.invalidateNavigation();
-        loadQueue(button.dataset.pipelineQueue).catch(() => show(root, "error"));
-      });
+      button.addEventListener("click", () => loadQueue({
+        queue: button.dataset.pipelineQueue,
+        stage: "",
+        offset: 0,
+      }).catch(() => show(root, "error")));
     });
-    search.addEventListener("input", () => {
-      queueBehavior.invalidateNavigation();
-      applyFilters();
-    });
-    stageFilter.addEventListener("change", () => {
-      queueBehavior.invalidateNavigation();
-      applyFilters();
-    });
-    priorityFilter.addEventListener("change", () => {
-      queueBehavior.invalidateNavigation();
-      loadQueue().catch(() => show(root, "error"));
-    });
+    search.addEventListener("input", applyFilters);
+    stageFilter.addEventListener("change", () => loadQueue({
+      stage: stageFilter.value,
+      offset: 0,
+    }).catch(() => show(root, "error")));
+    priorityFilter.addEventListener("change", () => loadQueue({
+      priority: priorityFilter.value,
+      offset: 0,
+    }).catch(() => show(root, "error")));
+    previousPageButton.addEventListener("click", () => queueLoader.previous().catch(() => show(root, "error")));
+    nextPageButton.addEventListener("click", () => queueLoader.next().catch(() => show(root, "error")));
     skipButton.addEventListener("click", () => queueBehavior.skip().catch(() => show(root, "error")));
     bindCommandForms();
 
+    analyticsBehavior.load();
     Promise.all([loadSummary(), loadQueue()]).catch(() => show(root, "error"));
   });
 })();

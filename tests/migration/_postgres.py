@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID
 
 import pytest
@@ -33,6 +34,29 @@ from src.crm.persistence.models import (
 
 
 DISPOSABLE_MARKER = "CRM_DISPOSABLE_TEST_DATABASE"
+LIBPQ_CONNECTION_OVERRIDES = {
+    "database",
+    "dbname",
+    "host",
+    "hostaddr",
+    "passfile",
+    "password",
+    "port",
+    "service",
+    "servicefile",
+    "user",
+}
+LIBPQ_ENVIRONMENT_OVERRIDES = {
+    "PGDATABASE",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPASSFILE",
+    "PGPASSWORD",
+    "PGPORT",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGUSER",
+}
 
 
 def require_disposable_postgres() -> str:
@@ -41,6 +65,10 @@ def require_disposable_postgres() -> str:
         pytest.skip("requires disposable PostgreSQL")
     try:
         parsed = make_url(value)
+        query_keys = {
+            key.casefold()
+            for key, _ in parse_qsl(urlsplit(value).query, keep_blank_values=True)
+        }
     except Exception:
         pytest.fail("DATABASE_URL is not a valid disposable PostgreSQL URL")
     if (
@@ -48,6 +76,10 @@ def require_disposable_postgres() -> str:
         or parsed.host not in {"127.0.0.1", "localhost", "::1"}
         or not parsed.database
         or "test" not in parsed.database.lower()
+        or query_keys & LIBPQ_CONNECTION_OVERRIDES
+        or any(
+            os.getenv(name) not in (None, "") for name in LIBPQ_ENVIRONMENT_OVERRIDES
+        )
         or os.getenv(DISPOSABLE_MARKER) != "1"
     ):
         pytest.fail(

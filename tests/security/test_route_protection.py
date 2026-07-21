@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
 import re
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from dashboard.app import main as dashboard_main
 from dashboard.app.config import get_principal_settings, get_settings
 from dashboard.app.feature_flags import get_feature_flags
+from dashboard.app.routers import accounts
 
 
 WRITE_TOKEN = "write-token-for-tests"
@@ -61,6 +65,58 @@ def _raw_asgi_post(
             (b"content-type", b"application/json"),
             *headers,
         ],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+    }
+    asyncio.run(dashboard_main.app(scope, receive, send))
+
+    start = next(
+        message for message in messages if message["type"] == "http.response.start"
+    )
+    body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    response_headers = {
+        key.decode("latin-1").lower(): value.decode("latin-1")
+        for key, value in start["headers"]
+    }
+    return start["status"], json.loads(body), response_headers
+
+
+def _raw_asgi_get(
+    path: str,
+    *,
+    query_string: bytes = b"",
+    headers: list[tuple[bytes, bytes]] | None = None,
+) -> tuple[int, dict, dict]:
+    """Send a raw GET through the real FastAPI ASGI application."""
+    messages: list[dict] = []
+    request_messages = iter(
+        (
+            {"type": "http.request", "body": b"", "more_body": False},
+            {"type": "http.disconnect"},
+        )
+    )
+
+    async def receive():
+        return next(request_messages)
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": query_string,
+        "root_path": "",
+        "headers": [(b"host", b"testserver"), *(headers or [])],
         "client": ("testclient", 50000),
         "server": ("testserver", 80),
     }
@@ -347,3 +403,252 @@ def test_protected_dashboard_reload_is_get_only_for_manual_and_hourly_refresh():
     assert "fetch('/api/recommendations')" not in response.text
     assert "fetch('/api/refresh', { method: 'POST' })" not in response.text
     assert '@click="refresh()"' not in response.text
+
+
+def test_legacy_adapter_is_initialized_only_after_successful_authentication(
+    monkeypatch,
+):
+    calls = 0
+
+    class FakeReadCRM:
+        def get_stats(self, _today):
+            return {"ok": True}
+
+    def adapter(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return FakeReadCRM()
+
+    monkeypatch.setattr(dashboard_main, "crm", None)
+    monkeypatch.setattr(dashboard_main, "PTLogisticsCRM", adapter)
+    client = TestClient(dashboard_main.app)
+
+    denied = client.get("/api/stats")
+    assert denied.status_code == 401
+    assert calls == 0
+
+    allowed = client.get("/api/stats", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD))
+
+    assert calls == 1
+    assert allowed.status_code == 200
+    assert allowed.json() == {"ok": True}
+
+
+def test_request_validation_error_does_not_reflect_commercial_input_marker():
+    marker = "private-commercial-marker"
+    credentials = base64.b64encode(
+        f"{PRINCIPAL_USERNAME}:{PRINCIPAL_PASSWORD}".encode("ascii")
+    )
+
+    status_code, body, headers = _raw_asgi_get(
+        "/api/history",
+        query_string=f"days={marker}".encode("ascii"),
+        headers=[(b"authorization", b"Basic " + credentials)],
+    )
+
+    assert status_code == 422
+    assert body == {"detail": "Invalid request"}
+    assert marker not in json.dumps(body)
+    assert headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/",
+        "/dashboard",
+        "/cold-calling",
+        "/campaign/logistics",
+        "/ready",
+        "/leads",
+        "/contas",
+        "/propostas",
+        "/inteligencia",
+        "/operacoes",
+        "/api/stats",
+        "/api/v1/accounts",
+    ),
+)
+def test_every_protected_surface_disables_storage(path):
+    response = TestClient(dashboard_main.app).get(path, follow_redirects=False)
+
+    assert response.headers["cache-control"] == "no-store", path
+
+
+def test_public_health_does_not_receive_unnecessary_no_store():
+    response = TestClient(dashboard_main.app).get("/up")
+
+    assert "cache-control" not in response.headers
+
+
+def test_protected_static_asset_does_not_disable_browser_caching():
+    response = TestClient(dashboard_main.app).get(
+        "/static/accounts.js", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("cache-control") != "no-store"
+
+
+@pytest.mark.parametrize("method", ("GET", "HEAD"))
+def test_protected_static_get_and_head_require_authentication(method):
+    response = TestClient(dashboard_main.app).request(method, "/static/accounts.js")
+
+    assert response.status_code == 401
+    if method == "GET":
+        assert response.json() == {"detail": "Unauthorized"}
+    else:
+        assert response.content == b""
+    assert response.headers["www-authenticate"] == "Basic"
+
+
+def test_protected_static_head_and_conditional_requests_preserve_file_semantics():
+    client = TestClient(dashboard_main.app)
+    auth = (PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+    fetched = client.get("/static/accounts.js", auth=auth)
+
+    assert fetched.status_code == 200
+    assert fetched.headers["etag"]
+
+    head = client.head("/static/accounts.js", auth=auth)
+    conditional_get = client.get(
+        "/static/accounts.js",
+        auth=auth,
+        headers={"If-None-Match": fetched.headers["etag"]},
+    )
+    conditional_head = client.head(
+        "/static/accounts.js",
+        auth=auth,
+        headers={"If-None-Match": fetched.headers["etag"]},
+    )
+
+    assert head.status_code == 200
+    assert head.content == b""
+    assert head.headers["content-length"] == fetched.headers["content-length"]
+    assert conditional_get.status_code == 304
+    assert conditional_get.content == b""
+    assert conditional_head.status_code == 304
+    assert conditional_head.content == b""
+
+
+@pytest.mark.parametrize("method", ("GET", "HEAD"))
+def test_authenticated_protected_static_missing_file_returns_404(method):
+    response = TestClient(dashboard_main.app).request(
+        method,
+        "/static/does-not-exist.js",
+        auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD),
+    )
+
+    assert response.status_code == 404
+
+
+def test_unhandled_rich_route_exception_is_redacted_inside_security_boundary(
+    caplog,
+):
+    marker = "rich-route-secret-marker"
+
+    def exploding_context():
+        raise RuntimeError(marker)
+
+    previous_overrides = dashboard_main.app.dependency_overrides.copy()
+    dashboard_main.app.dependency_overrides[accounts.get_account_request_context] = (
+        exploding_context
+    )
+    try:
+        with caplog.at_level(logging.DEBUG):
+            response = TestClient(
+                dashboard_main.app, raise_server_exceptions=False
+            ).get("/contas", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD))
+    finally:
+        dashboard_main.app.dependency_overrides.clear()
+        dashboard_main.app.dependency_overrides.update(previous_overrides)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["permissions-policy"]
+    assert response.headers["content-security-policy"]
+    assert marker not in response.text
+    assert marker not in caplog.text
+    assert "Traceback" not in caplog.text
+
+
+def test_security_boundary_preserves_framework_http_responses():
+    def teapot_context():
+        raise HTTPException(status_code=418, detail="expected response")
+
+    previous_overrides = dashboard_main.app.dependency_overrides.copy()
+    dashboard_main.app.dependency_overrides[accounts.get_account_request_context] = (
+        teapot_context
+    )
+    try:
+        response = TestClient(dashboard_main.app).get(
+            "/contas", auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD)
+        )
+    finally:
+        dashboard_main.app.dependency_overrides.clear()
+        dashboard_main.app.dependency_overrides.update(previous_overrides)
+
+    assert response.status_code == 418
+    assert response.json() == {"detail": "expected response"}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    (
+        ("get", "/api/stats", None),
+        ("get", "/api/leads", None),
+        ("get", "/api/email-followups", None),
+        ("get", "/api/proposal-followups", None),
+        ("get", "/api/proposals", None),
+        ("get", "/api/impacted-leads", None),
+        ("get", "/api/history", None),
+        ("get", "/api/account-profiles", None),
+        ("get", "/api/portfolio", None),
+        ("get", "/api/recommendations", None),
+        ("get", "/api/stage-timing", None),
+        ("post", "/api/log-call", {"lead_id": "lead-1", "call_status": "Connected"}),
+        ("post", "/api/update-lead", {"lead_id": "lead-1", "updates": {}}),
+        (
+            "post",
+            "/api/mark-email-followup",
+            {"lead_id": "lead-1", "task_type": "Follow-up"},
+        ),
+        (
+            "post",
+            "/api/mark-proposal-followup",
+            {"lead_id": "lead-1", "task_type": "Proposal"},
+        ),
+        ("post", "/api/update-proposal", {"lead_id": "lead-1"}),
+        ("post", "/api/mark-email-sent", {"lead_id": "lead-1"}),
+        ("post", "/api/refresh", {}),
+    ),
+)
+def test_legacy_runtime_exceptions_are_redacted(monkeypatch, method, path, body):
+    marker = "legacy-runtime-secret-marker"
+
+    class ExplodingCRM:
+        def __getattr__(self, _name):
+            raise RuntimeError(marker)
+
+    monkeypatch.setattr(dashboard_main, "crm", ExplodingCRM())
+    client = TestClient(dashboard_main.app)
+    if method == "get":
+        response = client.get(path, auth=(PRINCIPAL_USERNAME, PRINCIPAL_PASSWORD))
+    else:
+        response = client.post(
+            path,
+            json=body,
+            headers={
+                "Authorization": f"Bearer {WRITE_TOKEN}",
+                "X-CSRF-Token": CSRF_TOKEN,
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"error": "Internal server error"}
+    assert marker not in response.text
