@@ -618,11 +618,13 @@ def test_lead_operation_replay_by_a_different_actor_is_a_generic_conflict(
         ).status_code
         == 200
     )
-    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: CRMPrincipal(
-        workspace_id=workspace_id,
-        actor_id=uuid4(),
-        subject="different-lead-actor",
-        permissions=frozenset({"crm:read", "crm:email:log"}),
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+        CRMPrincipal(
+            workspace_id=workspace_id,
+            actor_id=uuid4(),
+            subject="different-lead-actor",
+            permissions=frozenset({"crm:read", "crm:email:log"}),
+        )
     )
 
     replay = client.post(

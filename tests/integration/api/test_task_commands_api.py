@@ -551,11 +551,13 @@ def test_task_replay_by_a_different_actor_is_a_generic_conflict(task_command_api
         ).status_code
         == 200
     )
-    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: CRMPrincipal(
-        workspace_id=workspace_id,
-        actor_id=uuid4(),
-        subject="different-task-actor",
-        permissions=frozenset({"crm:read", "crm:task:write"}),
+    dashboard_main.app.dependency_overrides[require_crm_principal] = lambda: (
+        CRMPrincipal(
+            workspace_id=workspace_id,
+            actor_id=uuid4(),
+            subject="different-task-actor",
+            permissions=frozenset({"crm:read", "crm:task:write"}),
+        )
     )
 
     replay = client.post(
