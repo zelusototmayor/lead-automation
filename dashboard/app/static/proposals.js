@@ -80,6 +80,13 @@
     }
   };
 
+  const localDateTime = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  };
+
   const loadDetail = async (root) => {
     try {
       const response = await fetch(`/api/v1/proposals/${encodeURIComponent(root.dataset.proposalId)}`, { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -96,6 +103,7 @@
       setText(root, "source-state", proposal.sent_verification_state ? `Origem do envio: ${proposal.sent_verification_state}` : "Ainda sem envio registado.");
       setText(root, "next-action", proposal.next_action || "Sem próxima ação registada.");
       const versions = root.querySelector('[data-field="versions"]');
+      versions.replaceChildren();
       (proposal.versions || []).forEach((version) => {
         const card = document.createElement("div");
         appendText(card, "strong", `Versão ${version.version_number} · ${version.status}`);
@@ -105,7 +113,57 @@
       });
       if (!(proposal.versions || []).length) root.querySelector("[data-versions-empty]").classList.remove("hidden");
       const followups = root.querySelector('[data-field="followups"]');
+      followups.replaceChildren();
       (proposal.followups || []).forEach((item) => appendText(followups, "p", `${item.channel} · ${new Date(item.occurred_at).toLocaleString("pt-PT")}`, "subtle"));
+
+      const form = root.querySelector("[data-proposal-pipeline-form]");
+      if (form && root.dataset.canWriteProposals === "true" && root.dataset.csrfToken) {
+        form.elements.status.value = proposal.status;
+        form.elements.probability.value = proposal.probability ?? "";
+        form.elements.forecast_category.value = proposal.forecast_category ?? "";
+        form.elements.next_action.value = proposal.next_action ?? "";
+        form.elements.next_action_due_at.value = localDateTime(proposal.next_action_due_at);
+        form.elements.lost_reason.value = proposal.lost_reason ?? "";
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const commandState = root.querySelector("[data-proposal-command-state]");
+          const button = form.querySelector('button[type="submit"]');
+          const commandId = crypto.randomUUID();
+          const data = new FormData(form);
+          const textOrNull = (name) => String(data.get(name) || "").trim() || null;
+          const dueAt = textOrNull("next_action_due_at");
+          const body = {
+            command_id: commandId,
+            expected_version: proposal.version,
+            status: String(data.get("status")),
+            probability: textOrNull("probability"),
+            forecast_category: textOrNull("forecast_category"),
+            next_action: textOrNull("next_action"),
+            next_action_due_at: dueAt ? new Date(dueAt).toISOString() : null,
+            lost_reason: textOrNull("lost_reason"),
+          };
+          button.disabled = true;
+          commandState.textContent = "A guardar…";
+          try {
+            const commandResponse = await fetch(`/api/v1/commands/proposals/${encodeURIComponent(proposal.id)}/update-pipeline`, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                "X-CSRF-Token": root.dataset.csrfToken,
+                "Idempotency-Key": commandId,
+              },
+              body: JSON.stringify(body),
+            });
+            if (!commandResponse.ok) throw new Error("proposal command failed");
+            window.location.reload();
+          } catch (_error) {
+            commandState.textContent = "Não foi possível guardar. Atualize a página e tente novamente.";
+            button.disabled = false;
+          }
+        });
+      }
       show(root, "ready");
     } catch (_error) {
       show(root, "error");

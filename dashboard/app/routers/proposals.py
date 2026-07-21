@@ -17,6 +17,7 @@ from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from dashboard.app.db import create_database_engine
+from dashboard.app.config import get_settings
 from dashboard.app.feature_flags import get_feature_flags
 from dashboard.app.schemas.proposals import (
     DimensionTotals,
@@ -139,6 +140,7 @@ def _summary_statement(workspace_id: UUID):
     return (
         select(
             Proposal.id,
+            Proposal.version,
             Proposal.account_id,
             Account.display_name.label("account_name"),
             Account.commercial_vertical,
@@ -179,6 +181,7 @@ def _summary_statement(workspace_id: UUID):
 def _to_summary(row) -> ProposalSummary:
     return ProposalSummary(
         id=row.id,
+        version=row.version,
         account_id=row.account_id,
         account_name=row.account_name,
         commercial_vertical=row.commercial_vertical,
@@ -380,6 +383,33 @@ def _proposal_or_404(context: ProposalRequestContext, proposal_id: UUID):
     return row
 
 
+def _proposal_write_page_context(
+    request: Request, principal: CRMPrincipal
+) -> dict[str, object]:
+    try:
+        settings = get_settings()
+        flags = get_feature_flags()
+    except ValueError:
+        settings = None
+        flags = None
+    request_origin = str(request.base_url).rstrip("/")
+    writable = bool(
+        settings is not None
+        and flags is not None
+        and flags.command_writer == "postgres"
+        and settings.csrf_token
+        and request_origin in settings.allowed_write_origins
+        and principal.actor_id is not None
+        and "crm:proposal:write" in principal.permissions
+    )
+    return {
+        "can_write_proposals": writable,
+        "csrf_token": settings.csrf_token
+        if settings is not None and writable
+        else None,
+    }
+
+
 @router.get("/api/v1/proposals/{proposal_id}", response_model=ProposalDetail)
 def proposal_detail(
     proposal_id: UUID,
@@ -502,12 +532,14 @@ def proposal_page(
     context: Annotated[ProposalRequestContext, Depends(get_proposal_request_context)],
 ):
     _proposal_or_404(context, proposal_id)
+    page_context = {
+        "request": request,
+        "proposal_id": str(proposal_id),
+        "subject": context.principal.subject,
+        **_proposal_write_page_context(request, context.principal),
+    }
     return templates.TemplateResponse(
         request,
         "proposals/detail.html",
-        {
-            "request": request,
-            "proposal_id": str(proposal_id),
-            "subject": context.principal.subject,
-        },
+        page_context,
     )

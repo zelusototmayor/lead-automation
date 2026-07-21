@@ -7,10 +7,17 @@
   .metric { padding: 13px; border-radius: 9px; background: var(--panel-2); }
   .metric strong { display: block; font-size: 18px; }
   .version-list, .followup-list { display: grid; gap: 10px; margin-top: 10px; }
-  @media (max-width: 640px) { .shell { padding: 18px 14px 36px; } .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+  .proposal-form { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 10px; }
+  .proposal-form label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+  .proposal-form input, .proposal-form select, .proposal-form textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+  .proposal-form textarea { min-height: 70px; resize: vertical; }
+  .proposal-form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+  @media (max-width: 640px) { .shell { padding: 18px 14px 36px; } .metric-grid, .proposal-form { grid-template-columns: 1fr; } }
 {% endblock %}
 {% block content %}
-<section id="proposal-app" class="proposal-detail" data-proposal-id="{{ proposal_id }}" aria-live="polite">
+<section id="proposal-app" class="proposal-detail" data-proposal-id="{{ proposal_id }}"
+  data-can-write-proposals="{{ 'true' if can_write_proposals else 'false' }}"{% if csrf_token %}
+  data-csrf-token="{{ csrf_token }}"{% endif %} aria-live="polite">
   <a href="/propostas">← Propostas</a>
   <div class="state" data-state="loading">A carregar proposta…</div>
   <div class="state hidden" data-state="error">Não foi possível carregar esta proposta.</div>
@@ -23,6 +30,20 @@
       <div class="metric"><strong data-field="value-state">missing</strong><span>estado do valor</span></div>
     </div>
     <section class="panel"><p class="eyebrow">Envio e seguimento</p><p data-field="source-state"></p><p data-field="next-action"></p><div class="followup-list" data-field="followups"></div></section>
+    {% if can_write_proposals %}
+    <section class="panel">
+      <p class="eyebrow">Atualizar pipeline</p>
+      <form class="proposal-form" data-proposal-pipeline-form>
+        <label>Estado<select name="status" required><option value="draft">Draft</option><option value="promised">Prometida</option><option value="sent">Enviada</option><option value="viewed">Vista</option><option value="negotiation">Negociação</option><option value="lost">Perdida</option><option value="withdrawn">Retirada</option><option value="expired">Expirada</option></select></label>
+        <label>Probabilidade (%)<input name="probability" type="number" min="0" max="100" step="0.01"></label>
+        <label>Forecast<input name="forecast_category" maxlength="64"></label>
+        <label>Prazo da próxima ação<input name="next_action_due_at" type="datetime-local"></label>
+        <label>Próxima ação<textarea name="next_action" maxlength="2048"></textarea></label>
+        <label>Motivo de perda<textarea name="lost_reason" maxlength="2048"></textarea></label>
+        <div class="proposal-form-actions"><span class="subtle" data-proposal-command-state></span><button class="btn btn-primary" type="submit">Guardar proposta</button></div>
+      </form>
+    </section>
+    {% endif %}
     <section class="panel"><p class="eyebrow">Versões</p><div class="version-list" data-field="versions"></div><p class="subtle hidden" data-versions-empty>Sem versões associadas.</p></section>
   </div>
 </section>

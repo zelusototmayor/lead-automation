@@ -11,6 +11,7 @@ class ProposalSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID
+    version: int = Field(ge=1)
     account_id: UUID
     account_name: str
     commercial_vertical: str | None

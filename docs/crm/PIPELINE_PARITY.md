@@ -54,15 +54,15 @@ Estados:
 | Alterar prioridade | partial | incluída no comando de edição, mas ainda acoplada a account/contact existentes |
 | Registar email manual | implemented | comando protegido regista atividade manual sem enviar email |
 | Concluir follow-up de outreach | partial | tarefas genéricas podem ser concluídas; sem contrato específico de outreach/proposta |
-| Atualizar estado/outcome da proposta | missing | leitura existe; sem comando operacional |
-| Atualizar próxima ação da proposta | missing | leitura existe; sem comando operacional |
-| Motivo de perda | partial | modelo parcial, sem fluxo completo |
-| Valor/probabilidade/forecast com evidência | partial | domínio existe; edição operacional protegida não existe |
+| Atualizar estado/outcome da proposta | implemented | comando e formulário protegidos atualizam estado, probabilidade e forecast com expected_version, idempotência, activity, audit e outbox atómicos; `won` permanece fail-closed até existir prova oficial |
+| Atualizar próxima ação da proposta | implemented | o mesmo comando protegido atualiza ação e prazo de forma atómica e rejeita prazo sem ação |
+| Motivo de perda | implemented | o fluxo operacional exige motivo não vazio para `lost`, persiste-o e limpa estados terminais incompatíveis |
+| Valor/probabilidade/forecast com evidência | partial | probabilidade e forecast têm edição manual auditada; confirmação de valor e alterações consequentes com evidência comercial continuam dependentes da política aprovada |
 | Timeline imutável | implemented | detalhe lista atividades append-only e os comandos operacionais acrescentam nova evidência |
 | Analytics de atividade diária | missing | sem equivalente canónico |
 | Tempo por fase | partial | histórico existe parcialmente; analytics operacional ausente |
-| Writes autenticados e auditados | partial | comandos de lead/tarefa estão protegidos e auditados; proposta/outreach ainda incompletos |
-| Proteção contra edições concorrentes | partial | comandos de lead/tarefa usam expected version; superfícies restantes ainda ausentes |
+| Writes autenticados e auditados | partial | comandos de lead, tarefa e proposta estão protegidos e auditados; outreach específico ainda está incompleto |
+| Proteção contra edições concorrentes | partial | comandos de lead, tarefa e proposta usam expected version; superfícies restantes ainda estão ausentes |
 
 ## Contratos mínimos
 

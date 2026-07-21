@@ -185,6 +185,13 @@ async def require_next_action_command_access(
     return await _require_command_permission(request, principal, "crm:task:write")
 
 
+async def require_proposal_write_command_access(
+    request: Request,
+    principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
+) -> CRMPrincipal:
+    return await _require_command_permission(request, principal, "crm:proposal:write")
+
+
 async def require_task_command_access(
     request: Request,
     principal: Annotated[CRMPrincipal, Depends(require_crm_principal)],
