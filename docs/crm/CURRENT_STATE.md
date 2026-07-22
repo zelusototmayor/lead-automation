@@ -2832,3 +2832,11 @@ O staging continua na imagem funcional `crm-staging:d061ce1`; aplicação e Post
 Produção permaneceu inalterada e saudável no build pré-revamp: `/up=200`, `/contas=404` e `/api/stats=200`; o host continua com zero recursos CRM de produção. A telemetria estruturada das últimas 48 horas, limitada aos seis paths exatos, GET `2xx` e excluindo `curl`, confirmou consumidores v0 ativos: `/api/stats` 41, `/api/portfolio` 4, `/api/recommendations` 4, `/api/outreach-followups` 9, `/api/email-followups` 5 e `/api/proposal-followups` 8, com tráfego até `2026-07-22T15:50:42.79746157Z`.
 
 A primeira tarefa genuinamente incompleta continua a ser a Tarefa 19, mas o gate do próprio plano proíbe retirar contratos com consumidores observados e exige dois releases estáveis, export e aceitação dos stakeholders. Continuam também fechados os gates anteriores de dados, owner review, políticas comerciais/retenção/scopes, mapping e PostgreSQL/backup de produção, cutover e soak. A autorização autónoma não converte ausência de evidência humana ou temporal em aprovação técnica. Não houve merge, deploy/migração de produção, ativação outbound, retirada do legado nem criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Preparação do owner review em 2026-07-22T16:19:32Z
+
+A inspeção dos artefactos privados confirmou uma lacuna operacional no pacote de revisão: os exports originais de 46 Accounts e 44 Proposals não tinham colunas onde o owner pudesse registar a decisão. Os originais foram preservados byte a byte e foram criadas duas cópias privadas `review-ready`, mode `0600`, com as colunas vazias `decision` e `review_notes`. O README privado exige agora `accept` ou `conflict` em todas as 90 linhas e uma correção concisa para cada conflito; células vazias não contam como aceitação.
+
+Esta preparação remove fricção do gate humano sem certificar dados comerciais nem alterar staging, produção ou a Sheet. As novas cópias continuam com `0/90` decisões preenchidas, portanto a validação do owner, a paridade real, as decisões de `Won`/retenção/scopes, a infraestrutura e o cutover de produção, os dois releases e a ausência de consumidores v0 permanecem gates abertos. O sentinel continua proibido.
