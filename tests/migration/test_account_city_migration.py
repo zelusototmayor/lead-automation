@@ -19,8 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "migrations/alembic.ini"
 
 
-def _alembic(database_url: str, command: str, revision: str) -> None:
-    result = subprocess.run(
+def _run_alembic(
+    database_url: str, command: str, revision: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [sys.executable, "-m", "alembic", "-c", str(CONFIG), command, revision],
         cwd=ROOT,
         env={
@@ -31,6 +33,10 @@ def _alembic(database_url: str, command: str, revision: str) -> None:
         capture_output=True,
         text=True,
     )
+
+
+def _alembic(database_url: str, command: str, revision: str) -> None:
+    result = _run_alembic(database_url, command, revision)
     assert result.returncode == 0, result.stderr
 
 
@@ -118,3 +124,57 @@ def test_0010_adds_nullable_nonblank_account_city(
             engine.dispose()
     finally:
         _alembic(database_url, "upgrade", "head")
+
+
+def test_0010_downgrade_fails_closed_without_dropping_populated_city(
+    lifecycle_database_url: str,
+) -> None:
+    database_url = lifecycle_database_url
+    workspace_id, account_id = uuid4(), uuid4()
+    engine = create_engine(database_url)
+    try:
+        _alembic(database_url, "upgrade", "0010")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO workspaces (id, slug, name) "
+                    "VALUES (:id, :slug, 'Account city downgrade')"
+                ),
+                {"id": workspace_id, "slug": f"city-down-{workspace_id}"},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO accounts "
+                    "(id, workspace_id, display_name, normalized_name, city) "
+                    "VALUES (:id, :workspace_id, 'Porto Account', 'porto account', 'Porto')"
+                ),
+                {"id": account_id, "workspace_id": workspace_id},
+            )
+
+        result = _run_alembic(database_url, "downgrade", "0009")
+
+        assert result.returncode != 0
+        assert "Porto" not in result.stderr
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "0010"
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT city FROM accounts WHERE id = :id"),
+                    {"id": account_id},
+                )
+                == "Porto"
+            )
+    finally:
+        _alembic(database_url, "upgrade", "head")
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM accounts WHERE workspace_id = :workspace_id"),
+                {"workspace_id": workspace_id},
+            )
+            connection.execute(
+                text("DELETE FROM workspaces WHERE id = :id"), {"id": workspace_id}
+            )
+        engine.dispose()

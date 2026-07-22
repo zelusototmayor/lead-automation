@@ -24,5 +24,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "DO $$ BEGIN "
+        "IF EXISTS (SELECT 1 FROM accounts WHERE city IS NOT NULL) THEN "
+        "RAISE EXCEPTION 'cannot downgrade while canonical account city exists'; "
+        "END IF; END $$"
+    )
     op.drop_constraint("ck_accounts_city_nonblank", "accounts", type_="check")
     op.drop_column("accounts", "city")
