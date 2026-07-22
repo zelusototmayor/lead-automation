@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Engine, func, select, true
+from sqlalchemy import Engine, case, func, select, true
 from sqlalchemy.orm import Session, sessionmaker
 
 from dashboard.app.config import get_settings
@@ -213,6 +213,29 @@ def _summary_columns(workspace_id: UUID):
         .correlate(Account)
         .scalar_subquery()
     )
+    latest_proposal_probability = (
+        select(
+            case(
+                (
+                    Proposal.probability_source.is_not(None),
+                    Proposal.probability / 100,
+                ),
+                else_=None,
+            )
+        )
+        .where(
+            Proposal.workspace_id == workspace_id,
+            Proposal.account_id == Account.id,
+        )
+        .order_by(Proposal.updated_at.desc(), Proposal.id.desc())
+        .limit(1)
+        .correlate(Account)
+        .scalar_subquery()
+    )
+    account_probability = case(
+        (proposal_count == 1, latest_proposal_probability),
+        else_=None,
+    )
     next_action = (
         select(Task.title)
         .where(
@@ -236,6 +259,7 @@ def _summary_columns(workspace_id: UUID):
         cancelled_meeting_count,
         no_show_meeting_count,
         proposal_count,
+        account_probability,
         next_action,
     )
 
@@ -252,6 +276,7 @@ def _summary_statement(workspace_id: UUID):
         cancelled_meeting_count,
         no_show_meeting_count,
         proposal_count,
+        account_probability,
         next_action,
     ) = _summary_columns(workspace_id)
     return select(
@@ -270,6 +295,7 @@ def _summary_statement(workspace_id: UUID):
         cancelled_meeting_count.label("cancelled_meeting_count"),
         no_show_meeting_count.label("no_show_meeting_count"),
         proposal_count.label("proposal_count"),
+        account_probability.label("probability"),
         next_action.label("next_action"),
     ).where(
         Account.workspace_id == workspace_id,
@@ -294,7 +320,7 @@ def _to_summary(row) -> AccountSummary:
         cancelled_meeting_count=row.cancelled_meeting_count,
         no_show_meeting_count=row.no_show_meeting_count,
         proposal_count=row.proposal_count,
-        probability=None,
+        probability=row.probability,
         next_action=row.next_action,
     )
 

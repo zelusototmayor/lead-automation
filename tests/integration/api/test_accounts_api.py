@@ -9,7 +9,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from dashboard.app import main as dashboard_main
-from src.crm.persistence.models import Activity
+from src.crm.persistence.models import Activity, Proposal
 
 
 def test_accounts_api_fails_closed_without_trusted_principal():
@@ -134,7 +134,7 @@ def test_account_detail_includes_counts_next_action_and_allowlisted_evidence(
     assert body["cancelled_meeting_count"] == 0
     assert body["no_show_meeting_count"] == 0
     assert body["proposal_count"] == 1
-    assert body["probability"] is None
+    assert body["probability"] == 0.6
     assert body["next_action"] == "Call buyer"
     assert {item["type"] for item in body["evidence_refs"]} == {
         "email_received",
@@ -180,6 +180,29 @@ def test_canonical_open_task_is_presented_instead_of_historical_activity(
 
     assert response.status_code == 200
     assert response.json()["next_action"] == "Call buyer"
+
+
+def test_account_probability_remains_unknown_when_multiple_proposals_exist(
+    account_api_fixture,
+):
+    client, ids = account_api_fixture
+    with Session(ids["engine"]) as session, session.begin():
+        session.add(
+            Proposal(
+                workspace_id=ids["workspace_id"],
+                account_id=ids["account_id"],
+                title="Second proposal",
+                status="draft",
+                currency="EUR",
+                probability=90,
+                probability_source="sales_approved",
+            )
+        )
+
+    response = client.get(f"/api/v1/accounts/{ids['account_id']}")
+
+    assert response.status_code == 200
+    assert response.json()["probability"] is None
 
 
 def test_account_detail_has_explicit_empty_state(account_api_fixture):

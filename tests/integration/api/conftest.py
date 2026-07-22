@@ -131,6 +131,8 @@ def account_api_fixture():
             title="Account fixture proposal",
             status="draft",
             currency="EUR",
+            probability=Decimal("60.00"),
+            probability_source="sales_approved",
         )
         session.add(proposal)
         session.flush()
