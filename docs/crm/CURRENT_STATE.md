@@ -2720,3 +2720,15 @@ O staging foi revalidado no proxy/TLS final sem mutações. Continua na imagem f
 O PR `#1` permanece draft, mergeable e `CLEAN`, no SHA exato da branch, sem reviews, checks ou environments GitHub. Produção continua no build pré-revamp: `/up=200`, `/contas=404` e os contratos v0 permanecem ativos. O único delta de `d061ce1` até ao `HEAD` é documentação, portanto o staging serve o candidato funcional exato.
 
 Não foi encontrada uma lacuna técnica segura que pudesse ser fechada sem violar gates. A conclusão global continua bloqueada por `parity=false`, 39 conflitos sem resolução ou aceitação, uma Account e um Lead em falta, 1.118 fases vazias/não mapeadas, amostra sem validação do owner, políticas oficiais de `Won`/retenção/scopes por decidir, mapping final de produção ausente, inexistência de PostgreSQL CRM de produção com backup automático off-host e restore real, cutover/soak de produção e, depois, dois releases estáveis sem consumidores v0 e aceitação dos stakeholders. A autorização autónoma não transforma evidência humana, de dados ou temporal em aprovação técnica. Não houve deploy ou migração de produção, ativação de outbound, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
+
+---
+
+## Gate autónomo repetido em 2026-07-22T09:22:17Z
+
+A execução partiu do `HEAD` limpo e sincronizado `a96cbef30102e4f91b869b964e01a57341cd68da`, na branch esperada. O PR `#1` aponta para o mesmo SHA, permanece draft, mergeable e `CLEAN`, sem reviews, checks ou environments GitHub. Não existia trabalho staged, unstaged ou untracked nem processos CRM locais de worker, reconciler ou outbox publisher. Os recursos preexistentes desconhecidos foram preservados.
+
+Num PostgreSQL 16 descartável e exclusivo em `127.0.0.1:56010`, explicitamente marcado para testes, a migration de raiz chegou a `0013`; a suite Python segura completa passou com `1202 passed, 1 skipped`, uma warning de depreciação da dependência Starlette e exit `0`; o frontend Node passou `37/37`; `alembic current` devolveu `0013 (head)` e `alembic check` devolveu `No new upgrade operations detected`. O container foi removido pelo trap e a porta `56010` ficou livre.
+
+A verificação direta dos endpoints confirmou staging em `/up=200` e conteúdo protegido sem credenciais em `401`; produção permanece em `/up=200`, `/contas=404` e `/api/stats=200`. No host, `crm-staging-web` serve `crm-staging:d061ce1`, a aplicação e o PostgreSQL estão `healthy`, ambos com zero restarts, o timer de backup está `enabled`/`active` e o último serviço terminou com sucesso. Produção continua no container pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`. Não foram lidos ou impressos secrets.
+
+O único delta funcional entre staging e este `HEAD` continua a ser nenhum: `d061ce1..HEAD` altera apenas `docs/crm/CURRENT_STATE.md`. Os blockers materiais permanecem os mesmos gates de dados, decisão humana, produção e tempo descritos acima. Não houve merge, deploy/migração de produção, ativação de outbound, retirada do legado ou criação do sentinel.
