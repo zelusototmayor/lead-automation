@@ -2695,3 +2695,28 @@ A comparação read-only repetida contra a snapshot imutável continua fail-clos
 Produção permaneceu inalterada no build pré-revamp `7622a2b2b8d5e0790858208b2c3a1f119edb7328`: `/` e `/up` devolveram `200`, as novas páginas/APIs devolveram `404` e `/api/stats` devolveu `200`. Não existe PostgreSQL, mapping canónico ou timer de backup CRM de produção. Em 9.178 registos estruturados das últimas 48 horas, excluindo `curl`, continuaram consumidores v0 ativos: `/api/stats` 8 pedidos, `/api/outreach-followups` 7, `/api/email-followups` 6 e `/api/proposal-followups` 6, com tráfego até `2026-07-22T07:15:52Z`.
 
 A implementação e o staging técnico estão verdes, mas os gates globais continuam materialmente fechados: paridade real falsa e conflitos sem resolução/aceitação; amostra sem validação do owner; políticas oficiais de `Won`, retenção e scopes por decidir; mapping final de produção ausente; sem PostgreSQL CRM de produção com backup automático off-host e restore real; sem cutover ou soak de produção. A Tarefa 19 exige ainda dois releases estáveis pós-cutover, ausência comprovada de consumidores v0, export e aceitação dos stakeholders. Produção não foi alterada e `.hermes/crm-revamp-complete.json` não foi criado.
+
+---
+
+## Retoma autónoma em 2026-07-22T08:22:59Z
+
+A retoma começou no `HEAD` limpo e sincronizado `79351487ffae8b17bc906eed52d8abf80adf298b`, na branch esperada. O plano canónico, este documento, commits, testes, migrations, PR, processos, staging, produção, backup e rollback foram reinspecionados. Não existia trabalho staged, unstaged ou untracked. Não existiam workers CRM, reconcilers ou outbox publishers locais ou no staging; recursos preexistentes desconhecidos foram preservados.
+
+Num PostgreSQL 16 descartável e exclusivo em `127.0.0.1:56000`, explicitamente marcado para testes e removido no fim:
+
+```text
+Suite Python segura completa: 1202 passed, 1 skipped, 1 warning de dependência em 203,36 s, exit 0
+Frontend Node: 37 passed, exit 0
+Alembic lifecycle exclusivo: base -> 0013 -> 0011 -> 0013 -> base -> 0013
+Alembic current: 0013 (head)
+Alembic check: No new upgrade operations detected
+Restore custom-format: schema 0013, 15 tabelas obrigatórias, 0 workspaces, 0 violações
+Ruff no delta Python, compileall, node --check e git diff --check: passed
+Cleanup: container, dump e base de restore removidos; porta 56000 livre
+```
+
+O staging foi revalidado no proxy/TLS final sem mutações. Continua na imagem funcional `crm-staging:d061ce1`; aplicação e PostgreSQL estão `healthy`, com zero restarts e zero marcadores de erro nas duas horas observadas. A base está em `0013`, com um workspace, 46 Accounts, 65 Leads, 44 Proposals, 21 Tasks e 151 Activities; existem zero violações da invariante de Account, zero Outbox rows e zero eventos `failed`/`dead_letter`. Leads, Contas, Propostas, Inteligência, Operações e as APIs v1 devolveram `200` autenticado; pedidos públicos a `/up` devolveram `200` e conteúdo protegido sem credenciais continuou a devolver `401`. O timer de backup de staging permanece `enabled`/`active` e o rollback anterior continua preservado.
+
+O PR `#1` permanece draft, mergeable e `CLEAN`, no SHA exato da branch, sem reviews, checks ou environments GitHub. Produção continua no build pré-revamp: `/up=200`, `/contas=404` e os contratos v0 permanecem ativos. O único delta de `d061ce1` até ao `HEAD` é documentação, portanto o staging serve o candidato funcional exato.
+
+Não foi encontrada uma lacuna técnica segura que pudesse ser fechada sem violar gates. A conclusão global continua bloqueada por `parity=false`, 39 conflitos sem resolução ou aceitação, uma Account e um Lead em falta, 1.118 fases vazias/não mapeadas, amostra sem validação do owner, políticas oficiais de `Won`/retenção/scopes por decidir, mapping final de produção ausente, inexistência de PostgreSQL CRM de produção com backup automático off-host e restore real, cutover/soak de produção e, depois, dois releases estáveis sem consumidores v0 e aceitação dos stakeholders. A autorização autónoma não transforma evidência humana, de dados ou temporal em aprovação técnica. Não houve deploy ou migração de produção, ativação de outbound, retirada do legado ou criação de `.hermes/crm-revamp-complete.json`.
