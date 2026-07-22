@@ -164,7 +164,14 @@ def operations_page(
 ):
     del context
     return HTMLResponse(
-        """<!doctype html><html><head><title>CRM Operations</title></head>
+        """<!doctype html><html><head><title>CRM Operations</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
+          main { width: min(100%, 960px); margin: 0 auto; padding: 24px 16px; }
+          #metrics { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+        </style></head>
         <body><main><h1>CRM Operations</h1>
         <p>Admin-only workspace health. Unknown ages are shown as unavailable.</p>
         <div id="metrics" aria-live="polite">Loading operational metrics…</div>

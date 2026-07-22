@@ -201,5 +201,7 @@ def test_operations_page_is_admin_only_and_contains_no_data_payloads(
 
     assert response.status_code == 200
     assert "CRM Operations" in response.text
+    assert 'name="viewport"' in response.text
+    assert "overflow-wrap: anywhere" in response.text
     assert "foreign" not in response.text.lower()
     assert "payload" not in response.text.lower()
