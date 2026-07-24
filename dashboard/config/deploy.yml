@@ -9,8 +9,8 @@ servers:
     hosts:
       - 143.110.169.251
     options:
-      cpus: "0.25"
-      memory: "256m"
+      cpus: "0.5"
+      memory: "512m"
 
 proxy:
   ssl: true
@@ -34,7 +34,26 @@ env:
     APP_TIMEZONE: "Europe/Lisbon"
     GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
     CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
-
+    CRM_ENV: "production"
+    CRM_ALLOWED_WRITE_ORIGINS: "https://leads.zelusottomayor.com"
+    CRM_DB_ENABLED: "false"
+    CRM_ACCOUNTS_READ_MODEL: "legacy"
+    CRM_PROPOSALS_READ_MODEL: "legacy"
+    CRM_COMMAND_WRITER: "sheet"
+    CRM_SHEETS_PROJECTION_ENABLED: "false"
+    CRM_AGENT_EVENTS_ENABLED: "false"
+    # Intentionally incomplete placeholders keep every CRM browser read fail-closed
+    # until deployment supplies the approved non-secret principal mapping.
+    CRM_PRINCIPAL_USERNAME: ""
+    CRM_PRINCIPAL_WORKSPACE_ID: ""
+    CRM_PRINCIPAL_ACTOR_ID: ""
+    CRM_PRINCIPAL_PERMISSIONS: ""
+    CRM_PRINCIPAL_IS_ADMIN: "false"
+  secret:
+    - CRM_WRITE_TOKEN
+    - CRM_CSRF_TOKEN
+    - CRM_PRINCIPAL_PASSWORD
+    - DATABASE_URL
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
 

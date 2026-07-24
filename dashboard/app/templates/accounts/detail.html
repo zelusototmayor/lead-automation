@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Conta · CRM{% endblock %}
+{% block extra_styles %}
+  .profile { display: grid; gap: 16px; }
+  .panel { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 10px; }
+  .metric { padding: 13px; border-radius: 9px; background: var(--panel-2); }
+  .metric strong { display: block; font-size: 20px; }
+  .evidence-list { display: grid; gap: 8px; margin-top: 12px; }
+  @media (max-width: 640px) { .shell { padding: 18px 14px 36px; } .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+{% endblock %}
+{% block content %}
+<section id="account-app" class="profile" data-account-id="{{ account_id }}" aria-live="polite">
+  <a href="/contas">← Contas</a>
+  <div class="state" data-state="loading">A carregar perfil…</div>
+  <div class="state hidden" data-state="error">Não foi possível carregar esta conta.</div>
+  <div class="hidden" data-state="ready">
+    <header class="topbar"><div><p class="eyebrow">Conta</p><h1 data-field="display-name"></h1><p class="subtle" data-field="lifecycle"></p></div></header>
+    <div class="metric-grid">
+      <div class="metric"><strong data-field="emails">0</strong><span>emails</span></div>
+      <div class="metric"><strong data-field="meetings">0</strong><span>reuniões</span></div>
+      <div class="metric"><strong data-field="proposals">0</strong><span>propostas</span></div>
+      <div class="metric"><strong data-field="probability">—</strong><span>probabilidade</span></div>
+    </div>
+    <section class="panel"><p class="eyebrow">Próxima ação</p><p data-field="next-action">Sem próxima ação registada.</p></section>
+    <section class="panel"><p class="eyebrow">Evidência</p><div class="evidence-list" data-field="evidence"></div><p class="subtle hidden" data-evidence-empty>Sem evidência associada.</p></section>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script defer src="/static/accounts.js"></script>{% endblock %}

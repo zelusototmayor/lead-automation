@@ -1,0 +1,75 @@
+# CRM dashboard security decision
+
+## Decision
+
+Only `GET /up` remains public, returning the minimal health payload. The legacy dashboard and legacy GET APIs expose company, contact, email, proposal or meeting context and therefore now share the same scoped HTTP Basic boundary as the PostgreSQL-backed Contas, Propostas, Inteligência and Operações routes. Username, password, workspace UUID and admin role come exclusively from server configuration. Every protected read remains fail-closed until all four values are configured and verified, and authorization runs before Sheet or PostgreSQL access.
+
+This boundary does **not** authorize public writes or agent endpoints. Human writes keep bearer + CSRF protection and agent ingress keeps its scoped short-lived credential; browser Basic authentication is not a substitute for either contract.
+
+## Public/private boundary
+
+Public, unauthenticated access is limited to:
+
+- `GET /up`, returning only `{ "status": "ok" }`.
+
+Protected browser reads include the legacy dashboard and redirects, every legacy GET API, `/ready`, same-origin `/static/*` assets, `/contas`, `/propostas`, `/inteligencia`, `/operacoes` and their `/api/v1/*` APIs. They derive workspace and role only from the trusted server-side principal. Missing or malformed server configuration returns a generic `403` without an authentication challenge. Once configuration is valid, missing, malformed or wrong browser credentials return a generic `401` with `WWW-Authenticate: Basic`; valid credentials produce a principal with the configured workspace UUID, configured username as subject, and configured admin flag. Query parameters, headers, cookies and request bodies cannot select workspace or role. FastAPI's generated OpenAPI schema and documentation routes are disabled rather than left as an unlisted public surface.
+
+The required variables are `CRM_PRINCIPAL_USERNAME`, `CRM_PRINCIPAL_PASSWORD`, `CRM_PRINCIPAL_WORKSPACE_ID`, `CRM_PRINCIPAL_ACTOR_ID`, `CRM_PRINCIPAL_PERMISSIONS` and `CRM_PRINCIPAL_IS_ADMIN`. Permissions are comma-separated exact values from the application allowlist and must include `crm:read`; whitespace, duplicates and unknown permissions fail closed. The admin value accepts exactly `true` or `false`. Only the password belongs in the deployment secret list; the username, workspace/actor mappings, permissions and role are non-secret deployment configuration. The checked-in deployment values are intentionally incomplete placeholders, so they do not enable rich routes.
+
+The protected browser interface is read-only. Every existing human write endpoint is private:
+
+- `POST /api/log-call`
+- `POST /api/update-lead`
+- `POST /api/mark-email-followup`
+- `POST /api/mark-proposal-followup`
+- `POST /api/update-proposal`
+- `POST /api/mark-email-sent`
+- `POST /api/refresh`
+
+Each private write requires both a server-managed bearer token (`CRM_WRITE_TOKEN`) and a server-managed CSRF token (`CRM_CSRF_TOKEN`). If an `Origin` header is present, it must exactly match a validated entry in `CRM_ALLOWED_WRITE_ORIGINS`. Clients without an `Origin` are supported only when both credentials are valid. Credentials are never delivered to browser HTML or JavaScript and there is no credential retrieval endpoint.
+
+## Threats and limitations
+
+- HTTP Basic protects confidentiality only when the proxy terminates valid TLS. Anyone with the shared browser credential can read the protected CRM surface and may copy or redistribute it; rotate it after suspected disclosure.
+- The write gate protects the listed human `POST` routes separately. Browser authentication does not grant write or agent authority and does not replace audit attribution, rate limiting or multi-user RBAC.
+- The browser adapter represents one deployment-configured human principal. HTTP Basic is transport authentication, not SSO or multi-user RBAC; credential sharing weakens attribution, and browser logout semantics are limited. Operations still requires the mapped admin flag to be exactly true.
+- Both write credentials are shared secrets. Compromise of both permits writes; rotate both and review activity after suspected exposure.
+- Origin validation is defense in depth, not authentication. Non-browser clients may omit `Origin` but still require both secrets.
+- No permissive CORS policy is enabled.
+- The current UI relies on inline script/style, Alpine from jsDelivr, and Google Fonts. The CSP temporarily permits `'unsafe-inline'` (and Alpine's current runtime requires `'unsafe-eval'`). Removing this debt requires nonce/hash-based templates and a CSP-compatible frontend bundle.
+
+## Rejected alternatives
+
+Leaving the legacy dashboard or its GET APIs public was rejected because those responses include company, contact, email, proposal and meeting context rather than a strictly approved aggregate. SSO and multi-user RBAC remain desirable future upgrades; the single-principal Basic adapter is the smallest fail-closed boundary that can cover all browser reads now. Public agent endpoints and public writes remain prohibited.
+
+## Rollback and incident response
+
+`get_settings()` and `get_principal_settings()` are process-cached. Revoking, unsetting, remapping or rotating a secret-store value does **not** change the policy in an already-running process until a controlled restart/redeploy reloads settings (tests may explicitly clear the caches). For browser-read credential rotation, update the password and any approved mapping changes, restart every running instance, verify the old credentials receive `401`, verify the new credentials map to the intended workspace and role, and verify malformed/incomplete configuration receives generic `403` without a challenge. For suspected write-secret exposure, rotate/update **both** `CRM_WRITE_TOKEN` and `CRM_CSRF_TOKEN` as applicable, restart every running instance, then verify that the old credentials receive a generic 403. If the browser principal cannot be trusted or rotated safely, withdraw service access at the proxy until the mapping is repaired; do not restore unauthenticated legacy reads as a rollback. No restart, deploy, or production secret operation was performed for this task.
+
+## Implementation verification
+
+Task 1 was exercised locally with `.venv311/bin/python`; no production or live services were used.
+
+- Initial RED (before the Task 1 implementation): security test collection failed with `ModuleNotFoundError: dashboard.app.config` (`2 errors`).
+- Malformed-origin RED: `.venv311/bin/python -m pytest tests/security/test_csrf.py::test_settings_reject_malformed_or_unsafe_origins -q` returned `3 failed, 8 passed in 0.21s`. The new `https://:443`, `https://bad host.example`, and `https://bad..example` cases each failed because `ValueError` was not raised.
+- Malformed-origin GREEN: the same focused command returned `11 passed in 0.19s` after hostname validation was added.
+- Non-ASCII credential RED: the focused raw-ASGI credential test returned `2 failed in 0.41s`; both malformed bearer and CSRF bytes escaped as `TypeError: comparing strings with non-ASCII characters is not supported`.
+- Non-ASCII credential GREEN: the same focused test returned `2 passed in 0.19s` after byte-based ASCII comparison was made fail-closed.
+- Public read-only UI RED: the two focused route-protection tests returned `2 failed, 2 warnings in 0.24s`; the rendered model lacked `publicReadOnly: true` and the GET-only `reloadView()` action.
+- Public read-only UI GREEN: the same focused tests returned `2 passed, 2 warnings in 0.29s`; public write buttons are disabled and both manual/hourly reload paths call only GET loaders.
+- Rich identity initial RED: `.venv311/bin/python -m pytest tests/security/test_rich_route_identity.py::test_valid_basic_credentials_return_server_configured_principal -q` returned `1 failed in 0.15s`; valid Basic credentials still received the deny-only `403`.
+- Rich identity initial GREEN: the same focused command returned `1 passed in 0.17s` after the server-configured principal adapter was added.
+- Identity edge-case RED: `.venv311/bin/python -m pytest tests/security/test_rich_route_identity.py -q` returned `3 failed, 29 passed in 0.61s`; whitespace-only credentials and a Basic-incompatible username were not classified as malformed server configuration.
+- Identity edge-case GREEN: the same focused file returned `32 passed in 0.59s` after fail-closed validation was completed.
+- Unsupported Basic configuration RED: `.venv311/bin/python -m pytest tests/security/test_rich_route_identity.py::test_invalid_server_identity_configuration_fails_closed_generically -q` returned `4 failed, 7 passed in 0.56s`; non-ASCII/control-character username or password values produced a challenge instead of a configuration denial.
+- Unsupported Basic configuration GREEN: `.venv311/bin/python -m pytest tests/security/test_rich_route_identity.py -q` returned `36 passed in 0.50s` after unsupported credential configuration was rejected before parsing request credentials.
+- Deployment declaration RED: `.venv311/bin/python -m pytest tests/integration/persistence/test_database_bootstrap.py::test_deployment_secret_template_covers_all_required_secrets -q` returned `1 failed in 0.16s` because the principal password and non-secret mapping declarations were absent.
+- Deployment declaration GREEN: the same focused command returned `1 passed in 0.10s` after the secret/non-secret boundary was declared.
+- Targeted GREEN: `.venv311/bin/python -m pytest tests/security tests/test_crm_evolution.py -q` returned `91 passed, 4 warnings in 0.32s`.
+- Final relevant regression: `.venv311/bin/python -m pytest tests/security tests/test_crm_evolution.py tests/integration/api tests/integration/test_shadow_compare.py tests/integration/persistence/test_database_bootstrap.py -q` returned `218 passed, 58 skipped in 1.05s`; skips require the documented disposable PostgreSQL fixture.
+- Final lint: `.venv311/bin/ruff check dashboard/app/config.py dashboard/app/security.py tests/security/test_rich_route_identity.py tests/integration/persistence/test_database_bootstrap.py` returned `All checks passed!`.
+- Full-suite baseline blocker reproduced: `.venv311/bin/python -m pytest -q` reported the pre-existing LinkedIn script's `RESULTS: 47/47 passed, 0 failed`, then `tests/test_linkedin_system.py` called `sys.exit(0)` during collection. Pytest returned exit code `3` with `1 error in 61.67s`; this is not a passing full suite.
+
+## Required revisit
+
+Before production enables any new rich route, verify the concrete identity/role/workspace values in staging and complete the remaining data, backup/restore, browser, secret-scan, owner and rollback gates. Revisit the protection model before adding sensitive payload, bulk export/download, attachment, evidence body, connector or multiple human principals. Agent endpoints retain their separate scoped authentication gate. Do not place real PII or credentials in this document.
