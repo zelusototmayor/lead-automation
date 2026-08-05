@@ -8,7 +8,8 @@ from urllib.parse import quote
 
 import structlog
 from google.auth.transport.requests import AuthorizedSession
-from google.oauth2.service_account import Credentials
+
+from src.crm.google_credentials import load_google_credentials
 
 logger = structlog.get_logger()
 
@@ -142,9 +143,9 @@ class CallbackCalendar:
 
     def _request(self, method: str, path: str, **kwargs):
         if self._session is None:
-            creds = Credentials.from_service_account_file(
+            creds = load_google_credentials(
                 self._credentials_file,
-                scopes=[CALENDAR_SCOPE],
+                [CALENDAR_SCOPE],
             )
             self._session = AuthorizedSession(creds)
         return self._session.request(method, f"{CALENDAR_API_BASE}{path}", **kwargs)

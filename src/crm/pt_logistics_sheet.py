@@ -14,18 +14,17 @@ import time
 
 import gspread
 import structlog
-from google.oauth2.service_account import Credentials
 from gspread.cell import Cell
 from gspread.exceptions import APIError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from src.crm.callback_calendar import CallbackCalendar
+from src.crm.google_credentials import load_google_credentials
 
 logger = structlog.get_logger()
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
 ]
 
 _API_CALL_INTERVAL = 1.5
@@ -355,7 +354,7 @@ class PTLogisticsCRM:
             timezone=app_timezone,
         )
 
-        creds = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
+        creds = load_google_credentials(credentials_file, SCOPES)
         self.client = gspread.authorize(creds)
         self.spreadsheet = self._api_call(self.client.open_by_key, spreadsheet_id)
         self.sheet = self._get_or_create_sheet(sheet_name)
