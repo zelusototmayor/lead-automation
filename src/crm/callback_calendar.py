@@ -14,6 +14,7 @@ logger = structlog.get_logger()
 
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
+CALLBACK_PRIVATE_PROPERTY = "pt_logistics_callback"
 
 
 @dataclass
@@ -67,20 +68,24 @@ class CallbackCalendar:
             "description": description,
             "start": {"dateTime": start.isoformat(timespec="seconds"), "timeZone": self.timezone},
             "end": {"dateTime": end.isoformat(timespec="seconds"), "timeZone": self.timezone},
+            "extendedProperties": {
+                "private": {CALLBACK_PRIVATE_PROPERTY: "1"},
+            },
         }
 
         try:
             if event_id:
-                response = self._request(
-                    "PATCH",
-                    f"/calendars/{self._quote(self.calendar_id)}/events/{self._quote(event_id)}",
-                    json=payload,
-                )
-                if response.status_code in (404, 410):
+                event_path = f"/calendars/{self._quote(self.calendar_id)}/events/{self._quote(event_id)}"
+                existing = self._request("GET", event_path)
+                if existing.status_code in (404, 410):
                     event_id = ""
                 else:
-                    response.raise_for_status()
-                    return CalendarSyncResult(ok=True, event_id=response.json().get("id", event_id))
+                    existing.raise_for_status()
+                    if self._is_callback_event(existing.json()):
+                        response = self._request("PATCH", event_path, json=payload)
+                        response.raise_for_status()
+                        return CalendarSyncResult(ok=True, event_id=response.json().get("id", event_id))
+                    event_id = ""
 
             response = self._request(
                 "POST",
@@ -109,10 +114,21 @@ class CallbackCalendar:
             )
 
         try:
-            response = self._request(
-                "DELETE",
-                f"/calendars/{self._quote(self.calendar_id)}/events/{self._quote(event_id)}",
-            )
+            event_path = f"/calendars/{self._quote(self.calendar_id)}/events/{self._quote(event_id)}"
+            existing = self._request("GET", event_path)
+            if existing.status_code in (404, 410):
+                return CalendarSyncResult(ok=True, event_id="")
+            existing.raise_for_status()
+            if not self._is_callback_event(existing.json()):
+                return CalendarSyncResult(
+                    ok=True,
+                    event_id="",
+                    warning=(
+                        "Existing calendar event was not deleted because it is not a PT Logistics callback; "
+                        "the stale calendar_event_id was cleared."
+                    ),
+                )
+            response = self._request("DELETE", event_path)
             if response.status_code not in (200, 204, 404, 410):
                 response.raise_for_status()
             return CalendarSyncResult(ok=True, event_id="")
@@ -146,3 +162,10 @@ class CallbackCalendar:
     @staticmethod
     def _quote(value: str) -> str:
         return quote(value, safe="")
+
+    @staticmethod
+    def _is_callback_event(event: dict) -> bool:
+        private_properties = (
+            (event.get("extendedProperties") or {}).get("private") or {}
+        )
+        return private_properties.get(CALLBACK_PRIVATE_PROPERTY) == "1"
