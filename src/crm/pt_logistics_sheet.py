@@ -340,6 +340,7 @@ class PTLogisticsCRM:
         sheet_name: str = "PT Logistics",
         callback_calendar_id: str = "",
         app_timezone: str = "Europe/Lisbon",
+        callback_credentials_file: str = "",
     ):
         self.spreadsheet_id = spreadsheet_id
         self.sheet_name = sheet_name
@@ -349,7 +350,7 @@ class PTLogisticsCRM:
         self._columns: dict[str, int] = {}
         self.last_warning = ""
         self.callback_calendar = CallbackCalendar(
-            credentials_file=credentials_file,
+            credentials_file=callback_credentials_file or credentials_file,
             calendar_id=callback_calendar_id,
             timezone=app_timezone,
         )

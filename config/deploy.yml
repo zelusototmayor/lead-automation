@@ -33,11 +33,13 @@ env:
     SPREADSHEET_ID: "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8"
     SHEET_NAME: "PT Logistics"
     APP_TIMEZONE: "Europe/Lisbon"
-    GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
+    GOOGLE_CREDENTIALS_FILE: "/app/config/google_sheets_credentials.json"
+    CALLBACK_GOOGLE_CREDENTIALS_FILE: "/app/config/google_credentials.json"
     CALLBACK_CALENDAR_ID: "zelu@zelusottomayor.com"
 
 volumes:
   - "/root/lead-automation/config/google_credentials.json:/app/config/google_credentials.json:ro"
+  - "/root/lead-automation/config/google_sheets_credentials.json:/app/config/google_sheets_credentials.json:ro"
 
 builder:
   arch: amd64

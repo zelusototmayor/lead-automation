@@ -23,6 +23,7 @@ SPREADSHEET_ID = os.getenv(
     "1ZdhkP_Hq-340eVEOS-RKwHGjDaX0vNVP6vO48XzkOx8",
 )
 CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "config/google_credentials.json")
+CALLBACK_CREDENTIALS_FILE = os.getenv("CALLBACK_GOOGLE_CREDENTIALS_FILE", CREDENTIALS_FILE)
 SHEET_NAME = os.getenv("SHEET_NAME", "PT Logistics")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Lisbon")
 CALLBACK_CALENDAR_ID = os.getenv("CALLBACK_CALENDAR_ID", "")
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
             sheet_name=SHEET_NAME,
             callback_calendar_id=CALLBACK_CALENDAR_ID,
             app_timezone=APP_TIMEZONE,
+            callback_credentials_file=CALLBACK_CREDENTIALS_FILE,
         )
     except Exception as exc:
         print(f"Failed to initialize PT Logistics CRM: {exc}")
