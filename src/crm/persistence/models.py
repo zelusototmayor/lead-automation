@@ -2027,3 +2027,72 @@ event.listen(Evidence, "before_update", _reject_activity_mutation)
 event.listen(Evidence, "before_delete", _reject_activity_mutation)
 event.listen(AuditEvent, "before_update", _reject_activity_mutation)
 event.listen(AuditEvent, "before_delete", _reject_activity_mutation)
+
+
+class AgentWork(Base):
+    """Durable agent execution independent of human call/email obligations."""
+
+    __tablename__ = "agent_work"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "source_key", name="uq_agent_work_source"),
+        CheckConstraint(
+            "status IN ('queued','running','waiting','completed','failed')",
+            name="ck_agent_work_status",
+        ),
+        CheckConstraint("attempts BETWEEN 0 AND 3", name="ck_agent_work_attempts"),
+        CheckConstraint(
+            "(status = 'running') = (lease_token IS NOT NULL AND lease_until IS NOT NULL)",
+            name="ck_agent_work_lease",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "task_id"],
+            ["tasks.workspace_id", "tasks.id"],
+            name="fk_agent_work_task",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "lead_id"],
+            ["leads.workspace_id", "leads.id"],
+            name="fk_agent_work_lead",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_agent_work_due", "workspace_id", "status", "available_at"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    lead_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'queued'")
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    worker_id: Mapped[str | None] = mapped_column(String(128))
+    lease_token: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_lease_token: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    result_hash: Mapped[str | None] = mapped_column(CHAR(64))
+    error: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

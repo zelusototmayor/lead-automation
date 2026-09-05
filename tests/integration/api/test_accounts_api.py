@@ -236,3 +236,39 @@ def test_account_detail_blocks_cross_workspace_idor_as_not_found(account_api_fix
 def test_accounts_pagination_is_validated(account_api_fixture, params, expected_status):
     client, _ = account_api_fixture
     assert client.get("/api/v1/accounts", params=params).status_code == expected_status
+
+
+def test_accounts_search_filters_before_count_and_pagination(account_api_fixture):
+    client, ids = account_api_fixture
+    from src.crm.persistence.models import Contact
+
+    with Session(ids["engine"]) as session, session.begin():
+        # A second matching contact must not duplicate its account in a page.
+        session.add(
+            Contact(
+                workspace_id=ids["workspace_id"],
+                account_id=ids["account_id"],
+                full_name="Ana Search",
+                primary_email="ana2@example.test",
+            )
+        )
+    response = client.get("/api/v1/accounts", params={"search": "ANA", "limit": 1})
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["id"] == str(ids["account_id"])
+    assert (
+        client.get("/api/v1/accounts", params={"search": "ANA", "offset": 1}).json()[
+            "items"
+        ]
+        == []
+    )
+    assert client.get("/api/v1/accounts", params={"search": "%"}).json()["total"] == 0
+    assert (
+        client.get("/api/v1/accounts", params={"search": "ANA@EXAMPLE.TEST"}).json()[
+            "total"
+        ]
+        == 1
+    )
+    assert (
+        client.get("/api/v1/accounts", params={"search": "x" * 201}).status_code == 422
+    )

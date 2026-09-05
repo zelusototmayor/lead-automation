@@ -637,3 +637,35 @@ def test_time_in_stage_is_timezone_independent_and_replay_safe(analytics_api):
     assert first.json()["time_in_stage"] == replay.json()["time_in_stage"]
     assert other_timezone.json()["time_in_stage"] == first.json()["time_in_stage"]
     assert first.json()["time_in_stage"]["stages"][0]["average_hours"] == 3.0
+
+
+def test_imported_context_stays_in_timeline_without_counting_as_work(analytics_api):
+    client = analytics_api.client
+    before = client.get("/api/v1/pipeline/analytics?days=2").json()
+    before_summary = client.get("/api/v1/pipeline/summary").json()
+    with Session(analytics_api.engine) as session, session.begin():
+        for actor in ("migration", "system"):
+            for kind in ("note", "call", "email_sent", "stage_change"):
+                session.add(
+                    Activity(
+                        workspace_id=analytics_api.workspace_id,
+                        lead_id=analytics_api.lead_id,
+                        account_id=analytics_api.account_id,
+                        activity_type=kind,
+                        actor_type=actor,
+                        semantic_fingerprint=uuid4().hex * 2
+                        if kind == "stage_change"
+                        else None,
+                        title="Imported context with unknown original date",
+                        occurred_at=datetime(2026, 7, 21, 0, 15, tzinfo=UTC),
+                        from_stage="new" if kind == "stage_change" else None,
+                        to_stage="contacted" if kind == "stage_change" else None,
+                    )
+                )
+    assert client.get("/api/v1/pipeline/analytics?days=2").json() == before
+    assert client.get("/api/v1/pipeline/summary").json() == before_summary
+    timeline = client.get(f"/api/v1/leads/{analytics_api.lead_id}/timeline").json()
+    assert (
+        len([item for item in timeline["items"] if item["actor_type"] == "migration"])
+        == 4
+    )

@@ -14,7 +14,7 @@ import time
 
 import gspread
 import structlog
-from google.oauth2.service_account import Credentials
+from src.crm.google_credentials import load_google_credentials
 from gspread.cell import Cell
 from gspread.exceptions import APIError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -341,6 +341,7 @@ class PTLogisticsCRM:
         sheet_name: str = "PT Logistics",
         callback_calendar_id: str = "",
         app_timezone: str = "Europe/Lisbon",
+        sheets_credentials_file: str = "",
     ):
         self.spreadsheet_id = spreadsheet_id
         self.sheet_name = sheet_name
@@ -355,7 +356,7 @@ class PTLogisticsCRM:
             timezone=app_timezone,
         )
 
-        creds = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
+        creds = load_google_credentials(sheets_credentials_file or credentials_file, scopes=SCOPES)
         self.client = gspread.authorize(creds)
         self.spreadsheet = self._api_call(self.client.open_by_key, spreadsheet_id)
         self.sheet = self._get_or_create_sheet(sheet_name)

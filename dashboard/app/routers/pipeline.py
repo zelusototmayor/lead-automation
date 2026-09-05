@@ -35,6 +35,7 @@ from dashboard.app.schemas.pipeline import (
     TimelineItem,
     TimelinePage,
 )
+from src.crm.activity_provenance import operational_activity_filter
 from src.crm.domain.enums import CRMStage
 from src.crm.persistence.models import (
     Account,
@@ -154,6 +155,7 @@ def _activity_exists(
         Activity.workspace_id == workspace_id,
         Activity.lead_id == Lead.id,
         Activity.activity_type.in_(_QUALIFYING_ACTIVITY_TYPES),
+        operational_activity_filter(),
     ]
     if start is not None:
         conditions.append(Activity.occurred_at >= start)
@@ -316,6 +318,7 @@ def pipeline_analytics(
         Activity.occurred_at >= start_at,
         Activity.occurred_at < end_at,
         Activity.activity_type.in_(_QUALIFYING_ACTIVITY_TYPES),
+        operational_activity_filter(),
     )
     activity_groups = (
         select(
@@ -446,6 +449,7 @@ def pipeline_analytics(
         .where(
             Activity.workspace_id == workspace_id,
             Activity.activity_type == "stage_change",
+            operational_activity_filter(),
             Activity.lead_id.is_not(None),
             Activity.occurred_at >= start_at,
             Activity.occurred_at < end_at,
@@ -710,6 +714,7 @@ def lead_timeline(
             Activity.summary,
             Activity.outcome_code,
             Activity.direction,
+            Activity.actor_type,
             Activity.occurred_at,
         )
         .where(*filters)
@@ -726,6 +731,7 @@ def lead_timeline(
                 summary=row.summary,
                 outcome_code=row.outcome_code,
                 direction=row.direction,
+                actor_type=row.actor_type,
                 occurred_at=row.occurred_at,
             )
             for row in rows

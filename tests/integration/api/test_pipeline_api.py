@@ -437,6 +437,7 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "summary": "Asked for a proposal",
         "outcome_code": "connected",
         "direction": "outbound",
+        "actor_type": None,
         "occurred_at": "2026-07-20T09:00:00Z",
     }
     assert tasks.json()["total"] == 6

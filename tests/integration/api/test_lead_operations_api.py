@@ -276,7 +276,7 @@ def test_edit_pre_account_lead_updates_identity_without_creating_account(
         assert _count(session, Account, workspace_id) == 1
 
 
-def test_edit_accountful_lead_without_linked_contact_fails_closed(
+def test_edit_accountful_lead_without_contact_preserves_known_identity(
     lead_operations_api,
 ):
     client, engine, workspace_id, lead_id, _ = lead_operations_api
@@ -299,19 +299,18 @@ def test_edit_accountful_lead_without_linked_contact_fails_closed(
         headers=_headers(command_id),
     )
 
-    assert response.status_code == 409
-    assert response.json() == {"detail": "Command conflict"}
+    assert response.status_code == 200
     with Session(engine) as session:
         lead = session.get(Lead, lead_id)
         assert lead.account_id is not None
         assert lead.contact_id is None
         assert lead.company_name is None
-        assert lead.contact_name is None
-        assert lead.contact_email is None
-        assert lead.contact_phone is None
-        assert _count(session, Activity, workspace_id) == 0
-        assert _count(session, AuditEvent, workspace_id) == 0
-        assert _count(session, OutboxEvent, workspace_id) == 0
+        assert lead.contact_name == "Updated Contact"
+        assert lead.contact_email == "updated@example.com"
+        assert lead.contact_phone == "+351****9999"
+        assert _count(session, Activity, workspace_id) == 1
+        assert _count(session, AuditEvent, workspace_id) == 1
+        assert _count(session, OutboxEvent, workspace_id) == 1
 
 
 def test_log_call_records_structured_outcome_without_sending(lead_operations_api):
@@ -802,3 +801,96 @@ def test_schedule_next_action_replays_after_its_due_at_has_passed(
         assert _count(session, Activity, workspace_id) == 1
         assert _count(session, AuditEvent, workspace_id) == 1
         assert _count(session, OutboxEvent, workspace_id) == 1
+
+
+def test_call_and_callback_are_atomic_and_replay_creates_one_task(lead_operations_api):
+    from src.crm.persistence.models import AgentWork
+
+    client, engine, workspace, lead, _ = lead_operations_api
+    command_id = uuid4()
+    body = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "outcome_code": "follow_up",
+        "summary": "Voltar a ligar terça-feira",
+        "next_action": {
+            "task_type": "call",
+            "title": "Voltar a ligar",
+            "due_at": (datetime.now(UTC) + timedelta(days=3)).isoformat(),
+        },
+    }
+    first = client.post(
+        f"/api/v1/commands/leads/{lead}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["callback_sync_status"] == "pending"
+    repeated = client.post(
+        f"/api/v1/commands/leads/{lead}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert repeated.status_code == 200 and repeated.json()["replayed"] is True
+    assert first.json()["task_id"] == repeated.json()["task_id"]
+    with Session(engine) as session:
+        assert _count(session, Task, workspace) == 1
+        rows = list(
+            session.scalars(
+                select(AgentWork).where(AgentWork.workspace_id == workspace)
+            )
+        )
+        assert {row.kind for row in rows} == {"call_followup", "calendar_callback"}
+
+
+def test_invalid_callback_does_not_save_partial_call(lead_operations_api):
+    client, engine, workspace, lead, _ = lead_operations_api
+    command_id = uuid4()
+    body = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "outcome_code": "follow_up",
+        "summary": "Teste",
+        "next_action": {
+            "task_type": "call",
+            "title": "Callback passado",
+            "due_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        },
+    }
+    response = client.post(
+        f"/api/v1/commands/leads/{lead}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert response.status_code == 409
+    with Session(engine) as session:
+        assert (
+            _count(session, Activity, workspace) == 0
+            and _count(session, Task, workspace) == 0
+        )
+
+
+def test_optional_contact_fields_can_clear_while_absent_fields_are_preserved(
+    lead_operations_api,
+):
+    client, engine, workspace, lead_id, _ = lead_operations_api
+    command_id = uuid4()
+    body = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "company_name": "Empresa atualizada",
+        "priority": "medium",
+        "contact_name": "",
+        "contact_email": None,
+    }
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/edit",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        contact = session.get(Contact, lead.contact_id)
+        assert contact.full_name is None and contact.primary_email is None
+        assert contact.phone == "+351210000000"

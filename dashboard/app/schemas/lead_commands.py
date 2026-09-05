@@ -16,14 +16,22 @@ class LeadOperationBase(BaseModel):
 class EditLeadCommandBody(LeadOperationBase):
     priority: StrictStr = Field(min_length=1, max_length=64)
     company_name: StrictStr = Field(min_length=1, max_length=512)
-    contact_name: StrictStr = Field(min_length=1, max_length=512)
-    contact_email: StrictStr = Field(
-        min_length=3, max_length=320, pattern=r"^[^\s@]+@[^\s@]+$"
+    contact_name: StrictStr | None = Field(default=None, max_length=512)
+    contact_email: StrictStr | None = Field(
+        default=None, max_length=320, pattern=r"^(?:[^\s@]+@[^\s@]+)?$"
     )
-    contact_phone: StrictStr = Field(min_length=1, max_length=64)
+    contact_phone: StrictStr | None = Field(default=None, max_length=64)
+
+
+class CallNextAction(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    task_type: StrictStr = Field(pattern="^call$")
+    title: StrictStr = Field(min_length=1, max_length=512)
+    due_at: AwareDatetime
 
 
 class LogCallCommandBody(LeadOperationBase):
+    next_action: CallNextAction | None = None
     outcome_code: StrictStr = Field(min_length=1, max_length=64)
     summary: StrictStr | None = Field(default=None, min_length=1, max_length=2000)
     occurred_at: AwareDatetime | None = None
@@ -53,4 +61,5 @@ class LeadOperationResult(BaseModel):
     version: int = Field(ge=1)
     replayed: bool
     task_id: UUID | None = None
+    callback_sync_status: str | None = None
     occurred_at: datetime | None = None

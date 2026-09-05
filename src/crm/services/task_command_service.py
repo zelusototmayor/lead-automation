@@ -8,6 +8,7 @@ import hashlib
 import json
 from uuid import UUID, uuid5
 
+from src.crm.services.agent_work_service import enqueue_task_work
 from src.crm.ingestion.outbox import enqueue_outbox_event
 from src.crm.persistence.models import Activity, AuditEvent
 from src.crm.services.command_service import (
@@ -142,6 +143,7 @@ class TaskCommandService:
             action="completed",
             version=task.version,
         )
+        enqueue_task_work(self.uow.session, task)
         return CommandResult(command.command_id, task.id, task.version, False)
 
     def reschedule(
@@ -207,6 +209,7 @@ class TaskCommandService:
             version=task.version,
             due_at=due_at,
         )
+        enqueue_task_work(self.uow.session, task)
         return CommandResult(command.command_id, task.id, task.version, False)
 
     def cancel(
@@ -263,6 +266,7 @@ class TaskCommandService:
             action="cancelled",
             version=task.version,
         )
+        enqueue_task_work(self.uow.session, task)
         return CommandResult(command.command_id, task.id, task.version, False)
 
     def _authorize(self, principal, command) -> None:

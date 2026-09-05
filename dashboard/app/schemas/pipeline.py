@@ -169,6 +169,7 @@ class TimelineItem(BaseModel):
     summary: str | None
     outcome_code: str | None
     direction: str | None
+    actor_type: str | None = None
     occurred_at: datetime
 
 

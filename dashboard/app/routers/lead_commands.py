@@ -125,6 +125,7 @@ def _result(result) -> LeadOperationResult:
         version=result.version,
         replayed=result.replayed,
         task_id=result.task_id,
+        callback_sync_status=result.callback_sync_status,
         occurred_at=result.occurred_at,
     )
 
@@ -155,6 +156,10 @@ def edit_lead(
                     contact_name=body.contact_name,
                     contact_email=body.contact_email,
                     contact_phone=body.contact_phone,
+                    updated_fields=frozenset(
+                        body.model_fields_set
+                        & {"contact_name", "contact_email", "contact_phone"}
+                    ),
                 ),
             )
             uow.commit()
@@ -189,6 +194,9 @@ def log_call(
                     outcome_code=body.outcome_code,
                     summary=body.summary,
                     occurred_at=body.occurred_at,
+                    next_action=body.next_action.model_dump()
+                    if body.next_action
+                    else None,
                 ),
             )
             uow.commit()

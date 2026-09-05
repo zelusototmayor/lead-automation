@@ -10,6 +10,7 @@ from uuid import UUID, uuid5
 
 from src.crm.ingestion.outbox import enqueue_outbox_event
 from src.crm.persistence.models import Activity, AuditEvent, Task
+from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work
 from src.crm.services.account_service import normalize_company_name, normalize_email
 from src.crm.services.command_service import (
     CommandAuthorizationError,
@@ -27,9 +28,10 @@ class EditLeadCommand:
     expected_version: int
     priority: str
     company_name: str
-    contact_name: str
-    contact_email: str
-    contact_phone: str
+    contact_name: str | None
+    contact_email: str | None
+    contact_phone: str | None
+    updated_fields: frozenset[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +43,7 @@ class LogCallCommand:
     outcome_code: str
     summary: str | None
     occurred_at: datetime | None = None
+    next_action: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +85,7 @@ class LeadOperationResult:
     replayed: bool
     task_id: UUID | None = None
     occurred_at: datetime | None = None
+    callback_sync_status: str | None = None
 
 
 def _conflict() -> CommandConflictError:
@@ -138,19 +142,36 @@ class LeadOperationService:
             raise _conflict() from None
         priority = _bounded_text(command.priority, maximum=64)
         company_name = _bounded_text(command.company_name, maximum=512)
-        contact_name = _bounded_text(command.contact_name, maximum=512)
+
+        def optional_text(value, maximum):
+            if value is None or value == "":
+                return None
+            return _bounded_text(value, maximum=maximum)
+
+        updated_fields = command.updated_fields
+        if updated_fields is None:
+            updated_fields = frozenset(
+                {"contact_name", "contact_email", "contact_phone"}
+            )
+        if type(updated_fields) is not frozenset or not updated_fields.issubset(
+            {"contact_name", "contact_email", "contact_phone"}
+        ):
+            raise _conflict()
+        contact_name = optional_text(command.contact_name, 512)
         try:
-            contact_email = normalize_email(
-                _bounded_text(command.contact_email, maximum=320)
+            raw_email = optional_text(command.contact_email, 320)
+            contact_email = (
+                normalize_email(raw_email) if raw_email is not None else None
             )
         except ValueError:
             raise _conflict() from None
-        contact_phone = _bounded_text(command.contact_phone, maximum=64)
+        contact_phone = optional_text(command.contact_phone, 64)
         semantic_hash = _semantic_hash(
             "edit",
             command,
             {
                 "company_name": company_name,
+                "updated_fields": sorted(updated_fields),
                 "contact_email": contact_email,
                 "contact_name": contact_name,
                 "contact_phone": contact_phone,
@@ -180,8 +201,7 @@ class LeadOperationService:
             else None
         )
         if (
-            (account is None) != (contact is None)
-            or (lead.account_id is not None and account is None)
+            (lead.account_id is not None and account is None)
             or (lead.contact_id is not None and contact is None)
             or (
                 account is not None
@@ -198,13 +218,19 @@ class LeadOperationService:
         else:
             lead.company_name = company_name
         if contact is not None:
-            contact.full_name = contact_name
-            contact.primary_email = contact_email
-            contact.phone = contact_phone
+            if "contact_name" in updated_fields:
+                contact.full_name = contact_name
+            if "contact_email" in updated_fields:
+                contact.primary_email = contact_email
+            if "contact_phone" in updated_fields:
+                contact.phone = contact_phone
         else:
-            lead.contact_name = contact_name
-            lead.contact_email = contact_email
-            lead.contact_phone = contact_phone
+            if "contact_name" in updated_fields:
+                lead.contact_name = contact_name
+            if "contact_email" in updated_fields:
+                lead.contact_email = contact_email
+            if "contact_phone" in updated_fields:
+                lead.contact_phone = contact_phone
         lead.updated_at = datetime.now(UTC)
         self.uow.session.flush()
         self._record(
@@ -249,6 +275,25 @@ class LeadOperationService:
             )
         ):
             raise _conflict() from None
+        callback = command.next_action
+        callback_due = None
+        if callback is not None:
+            self._authorize(principal, command, "crm:task:write")
+            if (
+                type(callback) is not dict
+                or set(callback) != {"task_type", "title", "due_at"}
+                or callback.get("task_type") != "call"
+            ):
+                raise _conflict()
+            _bounded_text(callback.get("title"), maximum=512)
+            callback_due = callback.get("due_at")
+            if (
+                type(callback_due) is not datetime
+                or callback_due.tzinfo is None
+                or callback_due.utcoffset() is None
+            ):
+                raise _conflict()
+            callback_due = callback_due.astimezone(UTC)
         occurred_at = command.occurred_at or datetime.now(UTC)
         if (
             type(occurred_at) is not datetime
@@ -267,6 +312,17 @@ class LeadOperationService:
                 else None,
                 "outcome_code": command.outcome_code,
                 "summary": command.summary,
+                **(
+                    {
+                        "next_action": {
+                            "task_type": "call",
+                            "title": callback["title"],
+                            "due_at": callback_due.isoformat(),
+                        }
+                    }
+                    if callback
+                    else {}
+                ),
             },
         )
         replay = self._claim_or_replay(principal, command, semantic_hash)
@@ -277,6 +333,26 @@ class LeadOperationService:
         )
         if lead is None or lead.version != command.expected_version:
             raise _conflict() from None
+        task_id = None
+        if callback is not None:
+            if callback_due <= _now():
+                raise _conflict()
+            task_id = uuid5(command.workspace_id, f"{command.command_id}:call-callback")
+            task = Task(
+                id=task_id,
+                workspace_id=command.workspace_id,
+                lead_id=lead.id,
+                account_id=lead.account_id,
+                task_type="call",
+                title=callback["title"],
+                due_at=callback_due,
+                owner_user_id=principal.actor_id,
+                status="open",
+                source_rule="human_call_callback",
+            )
+            self.uow.tasks.add(task)
+            self.uow.session.flush()
+            enqueue_task_work(self.uow.session, task)
         lead.updated_at = datetime.now(UTC)
         self.uow.session.flush()
         self._record(
@@ -286,6 +362,7 @@ class LeadOperationService:
             event_type="lead.call_logged",
             version=lead.version,
             activity_title="Call logged",
+            task_id=task_id,
             activity_type="call",
             occurred_at=occurred_at,
             direction="outbound",
@@ -294,6 +371,19 @@ class LeadOperationService:
             payload={
                 "occurred_at": occurred_at.isoformat(),
                 "outcome_code": command.outcome_code,
+                **({"callback_sync_status": "pending"} if task_id else {}),
+            },
+        )
+        enqueue_work(
+            self.uow.session,
+            workspace_id=command.workspace_id,
+            source_key=f"call:{command.command_id}",
+            kind="call_followup",
+            lead_id=lead.id,
+            payload={
+                "outcome_code": command.outcome_code,
+                "summary": command.summary,
+                "callback_task_id": str(task_id) if task_id else None,
             },
         )
         return LeadOperationResult(
@@ -301,7 +391,9 @@ class LeadOperationService:
             lead.id,
             lead.version,
             False,
+            task_id=task_id,
             occurred_at=occurred_at,
+            callback_sync_status="pending" if task_id else None,
         )
 
     def log_email(
@@ -497,15 +589,26 @@ class LeadOperationService:
             version=lead.version,
             activity_title="Next action scheduled",
             activity_type="task",
-            payload={"due_at": due_at.isoformat(), "task_type": command.task_type},
+            payload={
+                "due_at": due_at.isoformat(),
+                "task_type": command.task_type,
+                **(
+                    {"callback_sync_status": "pending"}
+                    if command.task_type == "call"
+                    else {}
+                ),
+            },
             task_id=task_id,
         )
+        task = self.uow.tasks.get(command.workspace_id, task_id)
+        enqueue_task_work(self.uow.session, task)
         return LeadOperationResult(
             command.command_id,
             lead.id,
             lead.version,
             False,
             task_id=task_id,
+            callback_sync_status="pending" if command.task_type == "call" else None,
         )
 
     def _authorize(self, principal, command, permission: str) -> None:
@@ -550,6 +653,7 @@ class LeadOperationService:
             datetime.fromisoformat(replay.payload["occurred_at"])
             if replay.payload.get("occurred_at")
             else None,
+            replay.payload.get("callback_sync_status"),
         )
 
     def _record(

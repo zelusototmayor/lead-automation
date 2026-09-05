@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, select
 
+from src.crm.activity_provenance import operational_activity_filter
 from src.crm.persistence.models import (
     RECOMMENDATION_RULE_CODES,
     Activity,
@@ -201,6 +202,7 @@ class RecommendationService:
             select(Activity).where(
                 Activity.workspace_id == workspace_id,
                 Activity.activity_type == "meeting",
+                operational_activity_filter(),
                 Activity.account_id.is_not(None),
                 Activity.occurred_at <= now,
             )
@@ -257,6 +259,7 @@ class RecommendationService:
             .where(
                 Activity.workspace_id == workspace_id,
                 Activity.activity_type.in_(("email_received", "email_sent")),
+                operational_activity_filter(),
                 Activity.account_id.is_not(None),
             )
             .group_by(Activity.account_id)

@@ -11,6 +11,7 @@ from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import Session
 
 from src.crm.persistence.models import (
+    AgentWork,
     Account,
     Activity,
     Contact,
@@ -93,6 +94,7 @@ def cleanup_workspace(engine: Engine, workspace_id: UUID) -> None:
         session.execute(text("SET LOCAL session_replication_role = replica"))
         from src.crm.persistence.models import AuditEvent, OutboxEvent
 
+        session.execute(delete(AgentWork).where(AgentWork.workspace_id == workspace_id))
         session.execute(
             delete(AuditEvent).where(AuditEvent.workspace_id == workspace_id)
         )

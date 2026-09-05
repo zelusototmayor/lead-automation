@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Engine, case, func, select, true
+from sqlalchemy import Engine, case, func, or_, select, true
 from sqlalchemy.orm import Session, sessionmaker
 
 from dashboard.app.config import get_settings
@@ -509,6 +509,7 @@ def leads_page(
         and context.principal.actor_id is not None
     )
     command_permissions = {
+        "can_create_lead": "crm:lead:create",
         "can_edit_lead": "crm:lead:edit",
         "can_transition_stage": "crm:lead-stage:write",
         "can_log_call": "crm:call:log",
@@ -551,19 +552,47 @@ def leads_page(
 @router.get("/api/v1/accounts", response_model=AccountPage)
 def list_accounts(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    search: Annotated[
+        str | None, Query(min_length=1, max_length=200, pattern=r"^\S(?:.*\S)?$")
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AccountPage:
     workspace_id = context.principal.workspace_id
-    total = context.session.scalar(
-        select(func.count(Account.id)).where(
-            Account.workspace_id == workspace_id,
-            Account.merged_into_account_id.is_(None),
+    statement = _summary_statement(workspace_id)
+    if search is not None:
+        pattern = (
+            "%"
+            + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            + "%"
         )
+        contact_match = (
+            select(Contact.id)
+            .where(
+                Contact.workspace_id == workspace_id,
+                Contact.account_id == Account.id,
+                or_(
+                    Contact.full_name.ilike(pattern, escape="\\"),
+                    Contact.primary_email.ilike(pattern, escape="\\"),
+                    Contact.phone.ilike(pattern, escape="\\"),
+                ),
+            )
+            .correlate(Account)
+            .exists()
+        )
+        statement = statement.where(
+            or_(
+                Account.display_name.ilike(pattern, escape="\\"),
+                Account.sector.ilike(pattern, escape="\\"),
+                Account.city.ilike(pattern, escape="\\"),
+                contact_match,
+            )
+        )
+    total = context.session.scalar(
+        select(func.count()).select_from(statement.subquery())
     )
     rows = context.session.execute(
-        _summary_statement(workspace_id)
-        .order_by(Account.display_name.asc(), Account.id.asc())
+        statement.order_by(Account.display_name.asc(), Account.id.asc())
         .limit(limit)
         .offset(offset)
     ).all()
