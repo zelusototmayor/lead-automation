@@ -25,7 +25,7 @@ from psycopg import sql
 
 _DISPOSABLE_MARKER = "CRM_DISPOSABLE_TEST_DATABASE"
 _RESTORE_PREFIX = "crm_restore_verify_"
-EXPECTED_SCHEMA_REVISION = "0013"
+EXPECTED_SCHEMA_REVISION = "0014"
 REQUIRED_TABLES = frozenset(
     {
         "workspaces",
@@ -41,6 +41,7 @@ REQUIRED_TABLES = frozenset(
         "email_messages",
         "meetings",
         "tasks",
+        "agent_work",
         "reconciliation_runs",
         "alembic_version",
     }

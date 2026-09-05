@@ -27,6 +27,10 @@ from dashboard.app.routers.accounts import router as accounts_router
 from dashboard.app.routers.proposals import router as proposals_router
 from dashboard.app.routers.intelligence import router as intelligence_router
 from dashboard.app.routers.agent_events import router as agent_events_router
+from dashboard.app.routers.agent_work import router as agent_work_router
+from dashboard.app.routers.lead_create import router as lead_create_router
+from dashboard.app.routers.legacy_bridge import router as legacy_bridge_router
+from dashboard.app.routers.archive_views import router as archive_views_router
 from dashboard.app.routers.operations import router as operations_router
 from dashboard.app.routers.pipeline import router as pipeline_router
 from dashboard.app.routers.tasks import router as tasks_router
@@ -176,6 +180,7 @@ async def add_security_headers(request: Request, call_next):
             "/propostas",
             "/inteligencia",
             "/operacoes",
+            "/arquivo",
         )
     ):
         response.headers["Cache-Control"] = "no-store"
@@ -204,6 +209,10 @@ app.include_router(accounts_router)
 app.include_router(proposals_router)
 app.include_router(intelligence_router)
 app.include_router(agent_events_router)
+app.include_router(agent_work_router)
+app.include_router(lead_create_router)
+app.include_router(legacy_bridge_router)
+app.include_router(archive_views_router)
 app.include_router(operations_router)
 app.include_router(pipeline_router)
 app.include_router(tasks_router)
