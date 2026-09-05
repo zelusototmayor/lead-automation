@@ -174,7 +174,7 @@ def test_valid_populated_upgrade_and_constraint_lifecycle(
     linked_lead_id = str(uuid4())
     config = Config(str(CONFIG))
     head_revision = ScriptDirectory.from_config(config).get_current_head()
-    assert head_revision == "0013"
+    assert head_revision == "0014"
 
     _alembic(database_url, "upgrade", "0012")
     engine = create_engine(database_url)

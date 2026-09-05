@@ -186,7 +186,7 @@ def test_backup_smoke_accepts_valid_canonical_mailbox_identity(engine):
     result = _smoke_restored_database(target, target.database)
 
     assert result["status"] == "verified"
-    assert result["schema_revision"] == "0013"
+    assert result["schema_revision"] == "0014"
     assert result["invariant_violations"] == 0
 
 

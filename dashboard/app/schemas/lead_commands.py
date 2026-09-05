@@ -30,7 +30,14 @@ class CallNextAction(BaseModel):
     due_at: AwareDatetime
 
 
+class CompletedCallTask(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    id: UUID
+    expected_version: StrictInt = Field(ge=1)
+
+
 class LogCallCommandBody(LeadOperationBase):
+    completed_task: CompletedCallTask | None = None
     next_action: CallNextAction | None = None
     outcome_code: StrictStr = Field(min_length=1, max_length=64)
     summary: StrictStr | None = Field(default=None, min_length=1, max_length=2000)

@@ -44,6 +44,7 @@ class LogCallCommand:
     summary: str | None
     occurred_at: datetime | None = None
     next_action: dict | None = None
+    completed_task: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +276,17 @@ class LeadOperationService:
             )
         ):
             raise _conflict() from None
+        completed = command.completed_task
+        if completed is not None:
+            self._authorize(principal, command, "crm:task:write")
+            if (
+                type(completed) is not dict
+                or set(completed) != {"id", "expected_version"}
+                or type(completed.get("id")) is not UUID
+                or type(completed.get("expected_version")) is not int
+                or completed["expected_version"] < 1
+            ):
+                raise _conflict()
         callback = command.next_action
         callback_due = None
         if callback is not None:
@@ -314,6 +326,16 @@ class LeadOperationService:
                 "summary": command.summary,
                 **(
                     {
+                        "completed_task": {
+                            "id": str(completed["id"]),
+                            "expected_version": completed["expected_version"],
+                        }
+                    }
+                    if completed
+                    else {}
+                ),
+                **(
+                    {
                         "next_action": {
                             "task_type": "call",
                             "title": callback["title"],
@@ -333,6 +355,30 @@ class LeadOperationService:
         )
         if lead is None or lead.version != command.expected_version:
             raise _conflict() from None
+        if completed is not None:
+            from src.crm.services.task_command_service import (
+                TaskCommandService,
+                CompleteTaskCommand,
+            )
+
+            existing_task = self.uow.tasks.get(
+                command.workspace_id, completed["id"], for_update=True
+            )
+            if (
+                not existing_task
+                or existing_task.lead_id != lead.id
+                or existing_task.task_type != "call"
+            ):
+                raise _conflict()
+            TaskCommandService(self.uow).complete(
+                principal,
+                CompleteTaskCommand(
+                    command_id=uuid5(command.command_id, "complete-selected-callback"),
+                    workspace_id=command.workspace_id,
+                    task_id=completed["id"],
+                    expected_version=completed["expected_version"],
+                ),
+            )
         task_id = None
         if callback is not None:
             if callback_due <= _now():

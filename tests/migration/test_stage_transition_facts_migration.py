@@ -288,7 +288,7 @@ def test_divergent_staging_lineage_can_be_repaired_without_recreating_schema(
         _alembic(database_url, "stamp", "0009")
         _alembic(database_url, "upgrade", "head")
 
-        assert _current_revision(database_url) == "0013"
+        assert _current_revision(database_url) == "0014"
         assert "city" in {
             column["name"] for column in inspect(engine).get_columns("accounts")
         }

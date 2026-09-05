@@ -194,6 +194,9 @@ def log_call(
                     outcome_code=body.outcome_code,
                     summary=body.summary,
                     occurred_at=body.occurred_at,
+                    completed_task=body.completed_task.model_dump()
+                    if body.completed_task
+                    else None,
                     next_action=body.next_action.model_dump()
                     if body.next_action
                     else None,

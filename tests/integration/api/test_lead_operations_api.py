@@ -894,3 +894,106 @@ def test_optional_contact_fields_can_clear_while_absent_fields_are_preserved(
         contact = session.get(Contact, lead.contact_id)
         assert contact.full_name is None and contact.primary_email is None
         assert contact.phone == "+351210000000"
+
+
+def test_log_call_completes_only_selected_callback_and_replays_atomically(
+    lead_operations_api,
+):
+    from src.crm.persistence.models import AgentWork
+
+    client, engine, workspace, lead_id, actor_id = lead_operations_api
+    selected, other = uuid4(), uuid4()
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        for task_id in (selected, other):
+            session.add(
+                Task(
+                    id=task_id,
+                    workspace_id=workspace,
+                    account_id=lead.account_id,
+                    lead_id=lead_id,
+                    task_type="call",
+                    title="Independent callback",
+                    due_at=datetime.now(UTC),
+                    owner_user_id=actor_id,
+                )
+            )
+    command_id = uuid4()
+    body = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "outcome_code": "connected",
+        "completed_task": {"id": str(selected), "expected_version": 1},
+        "next_action": {
+            "task_type": "call",
+            "title": "Next callback",
+            "due_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        },
+    }
+    first = client.post(
+        f"/api/v1/commands/leads/{lead_id}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert first.status_code == 200, first.text
+    replay = client.post(
+        f"/api/v1/commands/leads/{lead_id}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert replay.json() == first.json() | {"replayed": True}
+    with Session(engine) as session:
+        assert session.get(Task, selected).status == "completed"
+        assert session.get(Task, selected).completion_activity_id is not None
+        assert session.get(Task, other).status == "open"
+        assert _count(session, Task, workspace) == 3
+        assert (
+            session.scalar(
+                select(func.count(AgentWork.id)).where(
+                    AgentWork.workspace_id == workspace,
+                    AgentWork.kind == "calendar_callback",
+                )
+            )
+            == 2
+        )
+
+
+def test_changed_callback_rolls_back_entire_call_and_replacement(lead_operations_api):
+    client, engine, workspace, lead_id, actor_id = lead_operations_api
+    task_id, command_id = uuid4(), uuid4()
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        session.add(
+            Task(
+                id=task_id,
+                workspace_id=workspace,
+                account_id=lead.account_id,
+                lead_id=lead_id,
+                task_type="call",
+                title="Callback",
+                due_at=datetime.now(UTC),
+                owner_user_id=actor_id,
+            )
+        )
+    body = {
+        "command_id": str(command_id),
+        "expected_version": 1,
+        "outcome_code": "connected",
+        "completed_task": {"id": str(task_id), "expected_version": 2},
+        "next_action": {
+            "task_type": "call",
+            "title": "Next callback",
+            "due_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        },
+    }
+    response = client.post(
+        f"/api/v1/commands/leads/{lead_id}/log-call",
+        json=body,
+        headers=_headers(command_id),
+    )
+    assert response.status_code == 409
+    with Session(engine) as session:
+        assert session.get(Task, task_id).status == "open"
+        assert _count(session, Activity, workspace) == 0
+        assert _count(session, Task, workspace) == 1
+        assert session.get(Lead, lead_id).version == 1
