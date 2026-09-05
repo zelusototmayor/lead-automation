@@ -180,3 +180,75 @@ def test_unowned_cancelled_tombstone_is_not_claimed_as_our_cleanup():
     with pytest.raises(CalendarProjectionError):
         calendar.sync_task(t)
     assert all(method == "GET" for method, _ in calendar.calls)
+
+
+def legacy_fixture(calendar, t):
+    from datetime import timedelta
+
+    event_id = "premarkercallback"
+    proof = {
+        "event_id": event_id,
+        "company": "Old Company",
+        "due_at": t.due_at,
+        "snapshot_sha256": "a" * 64,
+        "source_scope": "frozen-sheet:PT Logistics",
+    }
+    event = {
+        "id": event_id,
+        "summary": "Call: Old Company",
+        "description": "Company: Old Company\nContact: Buyer\n\nCreated from the PT Logistics dashboard callback workflow.",
+        "start": {"dateTime": t.due_at.isoformat()},
+        "end": {"dateTime": (t.due_at + timedelta(minutes=10)).isoformat()},
+        "organizer": {"email": calendar.calendar_id},
+        "status": "confirmed",
+    }
+    return event_id, proof, event
+
+
+def test_frozen_premarker_callback_requires_exact_historical_template_and_date():
+    calendar = Calendar()
+    t = task()
+    event_id, proof, event = legacy_fixture(calendar, t)
+    calendar.events[event_id] = event
+    result = calendar.sync_task(t, legacy_event_id=event_id, legacy_proof=proof)
+    assert result["event_id"] == event_id and len(calendar.events) == 1
+    assert event["extendedProperties"]["private"]["crm_task_id"] == str(t.id)
+    assert not any(method == "POST" for method, _ in calendar.calls)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "company",
+        "date",
+        "description",
+        "attendees",
+        "organizer",
+        "snapshot",
+        "foreign_owner",
+    ],
+)
+def test_premarker_mismatch_never_adopts_or_creates_a_duplicate(change):
+    calendar = Calendar()
+    t = task()
+    event_id, proof, event = legacy_fixture(calendar, t)
+    if change == "company":
+        event["summary"] = "Call: Another Company"
+    elif change == "date":
+        event["start"]["dateTime"] = "2020-01-01T10:00:00+00:00"
+    elif change == "description":
+        event["description"] = "Unrelated appointment"
+    elif change == "attendees":
+        event["attendees"] = [{"email": "buyer@example.test"}]
+    elif change == "organizer":
+        event["organizer"]["email"] = "foreign@example.test"
+    elif change == "snapshot":
+        proof["snapshot_sha256"] = ""
+    elif change == "foreign_owner":
+        event["extendedProperties"] = {"private": {"crm_task_id": str(uuid4())}}
+    calendar.events[event_id] = event
+    with pytest.raises(CalendarProjectionError):
+        calendar.sync_task(t, legacy_event_id=event_id, legacy_proof=proof)
+    assert len(calendar.events) == 1 and all(
+        method == "GET" for method, _ in calendar.calls
+    )

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+import re
 import os
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -20,7 +21,7 @@ class CalendarProjectionError(RuntimeError):
 class CanonicalCallbackCalendar(CallbackCalendar):
     """A provider retry uses the same event ID, even after an uncertain POST."""
 
-    def sync_task(self, task, *, legacy_event_id=""):
+    def sync_task(self, task, *, legacy_event_id="", legacy_proof=None):
         if not self.configured():
             raise CalendarProjectionError("Calendar integration is not configured")
         canonical_id = "crm" + task.id.hex
@@ -39,16 +40,9 @@ class CanonicalCallbackCalendar(CallbackCalendar):
         if existing.status_code not in {404, 410}:
             existing.raise_for_status()
             if legacy_event_id and event_id == legacy_event_id:
-                private = (
-                    existing.json().get("extendedProperties", {}).get("private", {})
+                self._assert_legacy_owner(
+                    existing.json(), owner, event_id, legacy_proof
                 )
-                if private.get("pt_logistics_callback") != "1" or any(
-                    private.get(key) not in (None, value)
-                    for key, value in owner.items()
-                ):
-                    raise CalendarProjectionError(
-                        "Legacy Calendar event is not an owned callback"
-                    )
             else:
                 self._assert_owner(existing.json(), owner)
         exists = existing.status_code not in {404, 410}
@@ -79,8 +73,12 @@ class CanonicalCallbackCalendar(CallbackCalendar):
         zone = ZoneInfo(self.timezone)
         start = task.due_at.astimezone(zone)
         payload = {
-            "summary": task.title,
-            "description": "Callback registado no CRM. " + f"Task {task.id}",
+            "summary": existing.json().get("summary", task.title)
+            if legacy_event_id and exists
+            else task.title,
+            "description": existing.json().get("description", "")
+            if legacy_event_id and exists
+            else "Callback registado no CRM. " + f"Task {task.id}",
             "start": {"dateTime": start.isoformat(), "timeZone": self.timezone},
             "end": {
                 "dateTime": (
@@ -111,7 +109,10 @@ class CanonicalCallbackCalendar(CallbackCalendar):
         observed_start = datetime.fromisoformat(
             observed.get("start", {}).get("dateTime", "").replace("Z", "+00:00")
         )
-        if observed_start != task.due_at or observed.get("summary") != task.title:
+        if (
+            observed_start != task.due_at
+            or observed.get("summary") != payload["summary"]
+        ):
             raise CalendarProjectionError("Calendar callback verification failed")
         return {
             "provider": "google_calendar",
@@ -122,11 +123,80 @@ class CanonicalCallbackCalendar(CallbackCalendar):
             "due_at": task.due_at.isoformat(),
         }
 
+    def _assert_legacy_owner(self, event, owner, event_id, proof=None):
+        private = (event.get("extendedProperties") or {}).get("private") or {}
+        if any(private.get(key) not in (None, value) for key, value in owner.items()):
+            raise CalendarProjectionError("Legacy Calendar event has another CRM owner")
+        if private.get("pt_logistics_callback") == "1":
+            return
+        # Pre-marker dashboard events can be adopted only through frozen import
+        # provenance plus the exact historical event template and original date.
+        try:
+            company = proof["company"]
+            description = event.get("description", "").strip().splitlines()
+            observed_start = datetime.fromisoformat(
+                event["start"]["dateTime"].replace("Z", "+00:00")
+            )
+            observed_end = datetime.fromisoformat(
+                event["end"]["dateTime"].replace("Z", "+00:00")
+            )
+            valid = (
+                proof["event_id"] == event_id == event.get("id")
+                and bool(re.fullmatch(r"[0-9a-f]{64}", proof["snapshot_sha256"]))
+                and proof["source_scope"].endswith(":PT Logistics")
+                and company
+                and event.get("summary") == "Call: " + company
+                and description[0] == "Company: " + company
+                and description[-1]
+                == "Created from the PT Logistics dashboard callback workflow."
+                and observed_start == proof["due_at"]
+                and observed_end - observed_start == timedelta(minutes=10)
+                and event.get("organizer", {}).get("email") == self.calendar_id
+                and event.get("status") == "confirmed"
+                and not event.get("attendees")
+            )
+        except (TypeError, KeyError, IndexError, ValueError):
+            valid = False
+        if not valid:
+            raise CalendarProjectionError(
+                "Legacy Calendar event is not a proven callback"
+            )
+
     @staticmethod
     def _assert_owner(event, owner):
-        actual = event.get("extendedProperties", {}).get("private", {})
+        actual = (event.get("extendedProperties") or {}).get("private") or {}
         if any(actual.get(key) != value for key, value in owner.items()):
             raise CalendarProjectionError("Calendar event belongs to another workflow")
+
+
+def legacy_proof_from_source(source, lead):
+    """Only canonical frozen Sheets rows can authorize pre-marker adoption."""
+    metadata = source.metadata_json or {}
+    row = metadata.get("legacy_row") or {}
+    if (
+        source.source_system != "google_sheets"
+        or source.canonical_entity_type != "lead"
+        or source.canonical_entity_id != lead.id
+        or metadata.get("suppressed")
+        or not row.get("Due Time")
+        or row.get("Calendar Event ID") != metadata.get("calendar_event_id")
+    ):
+        return None
+    for date_format in ("%Y/%m/%d", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            due = datetime.strptime(
+                row["Due"] + " " + row["Due Time"], date_format + " %H:%M"
+            ).replace(tzinfo=ZoneInfo("Europe/Lisbon"))
+            return {
+                "company": row["Company"],
+                "event_id": row["Calendar Event ID"],
+                "due_at": due,
+                "snapshot_sha256": metadata.get("snapshot_sha256", ""),
+                "source_scope": source.source_scope,
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
 
 
 def calendar_from_environment():
@@ -158,6 +228,7 @@ def execute_callback(session, workspace_id, work_id, lease_token, *, calendar=No
     if task is None:
         raise CalendarProjectionError("Callback task is unavailable")
     legacy_event_id = ""
+    legacy_proof = None
     if task.source_rule == "release:legacy_callback" and task.lead_id:
         lead = session.scalar(
             select(Lead).where(
@@ -175,8 +246,9 @@ def execute_callback(session, workspace_id, work_id, lease_token, *, calendar=No
                 legacy_event_id = str(
                     (source.metadata_json or {}).get("calendar_event_id") or ""
                 )
+                legacy_proof = legacy_proof_from_source(source, lead)
     evidence = (calendar or calendar_from_environment()).sync_task(
-        task, legacy_event_id=legacy_event_id
+        task, legacy_event_id=legacy_event_id, legacy_proof=legacy_proof
     )
     return finish_work(
         session,
