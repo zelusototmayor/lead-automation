@@ -52,14 +52,19 @@ class CanonicalCallbackCalendar(CallbackCalendar):
             else:
                 self._assert_owner(existing.json(), owner)
         exists = existing.status_code not in {404, 410}
+        already_cancelled = exists and existing.json().get("status") == "cancelled"
         if task.status != "open":
-            if exists:
+            if exists and not already_cancelled:
                 deleted = self._request("DELETE", path, timeout=20)
                 if deleted.status_code not in {200, 204, 404, 410}:
                     deleted.raise_for_status()
                 verified = self._request("GET", path, timeout=20)
                 if verified.status_code not in {404, 410}:
-                    raise CalendarProjectionError("Calendar deletion not confirmed")
+                    verified.raise_for_status()
+                    tombstone = verified.json()
+                    self._assert_owner(tombstone, owner)
+                    if tombstone.get("status") != "cancelled":
+                        raise CalendarProjectionError("Calendar deletion not confirmed")
             return {
                 "provider": "google_calendar",
                 "calendar_id": self.calendar_id,
@@ -67,6 +72,10 @@ class CanonicalCallbackCalendar(CallbackCalendar):
                 "status": "deleted",
                 "verified": True,
             }
+        if already_cancelled:
+            raise CalendarProjectionError(
+                "Calendar callback was cancelled; review required"
+            )
         zone = ZoneInfo(self.timezone)
         start = task.due_at.astimezone(zone)
         payload = {

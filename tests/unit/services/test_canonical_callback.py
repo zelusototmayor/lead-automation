@@ -146,3 +146,37 @@ def test_missing_legacy_id_falls_back_to_same_deterministic_event():
     second = calendar.sync_task(t, legacy_event_id="deletedcallback")
     assert first["event_id"] == second["event_id"] == "crm" + t.id.hex
     assert len(calendar.events) == 1
+
+
+class TombstoneCalendar(Calendar):
+    def _request(self, method, path, **kwargs):
+        if method == "DELETE":
+            self.calls.append((method, path))
+            self.events[path.rsplit("/", 1)[-1]]["status"] = "cancelled"
+            return Response(204)
+        return super()._request(method, path, **kwargs)
+
+
+def test_owned_google_cancelled_tombstone_confirms_delete_and_retry():
+    calendar = TombstoneCalendar()
+    t = task()
+    calendar.sync_task(t)
+    t.status = "completed"
+    first = calendar.sync_task(t)
+    retry = calendar.sync_task(t)
+    assert first["status"] == retry["status"] == "deleted"
+    assert first["verified"] is retry["verified"] is True
+    assert sum(method == "DELETE" for method, _ in calendar.calls) == 1
+    t.status = "open"
+    with pytest.raises(CalendarProjectionError):
+        calendar.sync_task(t)
+
+
+def test_unowned_cancelled_tombstone_is_not_claimed_as_our_cleanup():
+    calendar = TombstoneCalendar()
+    t = task()
+    calendar.events["crm" + t.id.hex] = {"status": "cancelled"}
+    t.status = "completed"
+    with pytest.raises(CalendarProjectionError):
+        calendar.sync_task(t)
+    assert all(method == "GET" for method, _ in calendar.calls)
