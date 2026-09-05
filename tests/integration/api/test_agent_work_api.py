@@ -462,3 +462,335 @@ def test_deterministic_callback_claim_is_separate_from_reasoning_budget(work_api
             )
         )
         assert remaining.status == "queued" and remaining.attempts == 0
+
+
+def waiting_review(work_api, *, kind="proposal_review", result=None):
+    client, engine, workspace, lead = work_api
+    with Session(engine) as session, session.begin():
+        work_id = enqueue_work(
+            session,
+            workspace_id=workspace,
+            source_key=str(uuid4()),
+            kind=kind,
+            lead_id=lead,
+        )
+    item = claim(client).json()["items"][0]
+    result = result or {
+        "summary": "Documento precisa de revisão",
+        "evidence": [{"message_id": "mail-1"}],
+    }
+    response = client.post(
+        f"/api/v1/agent/work/{work_id}/finish",
+        headers=headers(),
+        json={
+            "lease_token": item["lease_token"],
+            "status": "waiting",
+            "result": result,
+        },
+    )
+    assert response.status_code == 200
+    return client.get(f"/api/v1/agent/work/{work_id}", headers=headers()).json()
+
+
+def review_resolution(item):
+    return {
+        "resolution_id": str(uuid4()),
+        "expected_result_hash": item["result_hash"],
+        "result": {
+            "summary": "Documento confirmado como apresentação, sem proposta financeira",
+            "evidence": [
+                {
+                    "attachment_sha256": "a" * 64,
+                    "classification": "brochure",
+                    "verified": True,
+                }
+            ],
+        },
+    }
+
+
+def test_review_resolution_auth_scope_and_foreign_workspace(work_api, monkeypatch):
+    client, engine, workspace, lead = work_api
+    item = waiting_review(work_api)
+    body = review_resolution(item)
+    uri = f"/api/v1/agent/work/{item['id']}"
+    assert client.get(uri).status_code == 401
+    assert client.post(uri + "/resolve", json=body).status_code == 401
+    assert (
+        client.get(
+            uri, headers=headers() | {"Origin": "https://example.test"}
+        ).status_code
+        == 401
+    )
+    other = uuid4()
+    with Session(engine) as session, session.begin():
+        session.add(Workspace(id=other, slug=f"foreign-review-{other}", name="Foreign"))
+        session.flush()
+        foreign = enqueue_work(
+            session, workspace_id=other, source_key=str(uuid4()), kind="proposal_review"
+        )
+    try:
+        assert (
+            client.get(f"/api/v1/agent/work/{foreign}", headers=headers()).status_code
+            == 404
+        )
+        assert (
+            client.post(
+                f"/api/v1/agent/work/{foreign}/resolve", json=body, headers=headers()
+            ).status_code
+            == 409
+        )
+    finally:
+        cleanup_workspace(engine, other)
+    monkeypatch.setenv("CRM_AUTOMATION_SCOPES", "work:read")
+    assert client.get(uri, headers=headers()).status_code == 200
+    assert (
+        client.post(uri + "/resolve", json=body, headers=headers()).status_code == 403
+    )
+
+
+def test_review_resolution_preserves_audit_and_cannot_change_suppressed_business_state(
+    work_api,
+):
+    from uuid import UUID
+    from src.crm.persistence.models import AuditEvent
+
+    client, engine, workspace, lead_id = work_api
+    item = waiting_review(work_api)
+    body = review_resolution(item)
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        lead.stage = "not_a_fit"
+        session.get(Contact, lead.contact_id).status = "inactive"
+        session.flush()
+        version = lead.version
+    uri = f"/api/v1/agent/work/{item['id']}/resolve"
+    forbidden = body | {
+        "result": body["result"] | {"next_action": {"task_type": "email"}}
+    }
+    assert client.post(uri, json=forbidden, headers=headers()).status_code == 422
+    response = client.post(uri, json=body, headers=headers())
+    assert response.status_code == 200, response.text
+    resolved = response.json()
+    assert resolved["status"] == "completed" and resolved["result"] == body["result"]
+    assert (
+        resolved["result_hash"] != item["result_hash"]
+        and resolved["resolution_id"] == body["resolution_id"]
+    )
+    with Session(engine) as session:
+        audit = session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace,
+                AuditEvent.command_id == UUID(body["resolution_id"]),
+            )
+        )
+        assert (
+            audit.action == "agent.review_resolved"
+            and str(audit.entity_id) == item["id"]
+        )
+        assert audit.details["previous_result"] == item["result"]
+        assert audit.details["resolution_result"] == body["result"]
+        assert audit.details["previous_result_hash"] == item["result_hash"]
+        lead = session.get(Lead, lead_id)
+        assert lead.version == version and lead.stage == "not_a_fit"
+        assert session.get(Contact, lead.contact_id).status == "inactive"
+        assert not list(
+            session.scalars(select(Task).where(Task.workspace_id == workspace))
+        )
+        assert not list(
+            session.scalars(select(Proposal).where(Proposal.workspace_id == workspace))
+        )
+
+
+def test_review_resolution_replay_requires_same_uuid_target_and_payload(work_api):
+    from src.crm.persistence.models import AuditEvent
+
+    client, engine, workspace, _ = work_api
+    item = waiting_review(work_api)
+    body = review_resolution(item)
+    uri = f"/api/v1/agent/work/{item['id']}/resolve"
+    first = client.post(uri, json=body, headers=headers())
+    replay = client.post(uri, json=body, headers=headers())
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json() | {"replayed": True}
+    changed = body | {"result": body["result"] | {"summary": "Different resolution"}}
+    assert client.post(uri, json=changed, headers=headers()).status_code == 409
+    another = waiting_review(work_api)
+    assert (
+        client.post(
+            f"/api/v1/agent/work/{another['id']}/resolve", json=body, headers=headers()
+        ).status_code
+        == 409
+    )
+    with Session(engine) as session:
+        assert (
+            len(
+                list(
+                    session.scalars(
+                        select(AuditEvent).where(AuditEvent.workspace_id == workspace)
+                    )
+                )
+            )
+            == 1
+        )
+
+
+def test_review_resolution_rejects_stale_hash_and_requires_new_evidence(work_api):
+    client, _, _, _ = work_api
+    item = waiting_review(work_api)
+    body = review_resolution(item)
+    uri = f"/api/v1/agent/work/{item['id']}/resolve"
+    assert (
+        client.post(
+            uri, json=body | {"expected_result_hash": "0" * 64}, headers=headers()
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            uri,
+            json=body
+            | {
+                "result": {
+                    "summary": "Reviewed",
+                    "evidence": item["result"]["evidence"],
+                }
+            },
+            headers=headers(),
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            uri,
+            json=body | {"result": {"summary": "Reviewed", "evidence": [{}]}},
+            headers=headers(),
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            uri,
+            json=body | {"result": {"summary": "Reviewed", "evidence": []}},
+            headers=headers(),
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(uri.removesuffix("/resolve"), headers=headers()).json()["status"]
+        == "waiting"
+    )
+
+
+@pytest.mark.parametrize(
+    "kind,status",
+    [
+        ("calendar_callback", "waiting"),
+        ("calendar_review", "waiting"),
+        ("call_followup", "waiting"),
+        ("followup_due", "waiting"),
+        ("proposal_review", "queued"),
+        ("proposal_review", "running"),
+        ("proposal_review", "completed"),
+        ("proposal_review", "failed"),
+    ],
+)
+def test_review_resolution_rejects_nonreview_and_nonwaiting_items(
+    work_api, kind, status
+):
+    from uuid import UUID
+
+    client, engine, _, _ = work_api
+    item = waiting_review(work_api, kind=kind)
+    body = review_resolution(item)
+    with Session(engine) as session, session.begin():
+        row = session.get(AgentWork, UUID(item["id"]))
+        row.status = status
+        if status == "running":
+            row.lease_token, row.lease_until = (
+                uuid4(),
+                datetime.now(UTC) + timedelta(minutes=1),
+            )
+    response = client.post(
+        f"/api/v1/agent/work/{item['id']}/resolve", json=body, headers=headers()
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.parametrize("same_resolution", [False, True])
+def test_concurrent_review_resolution_has_one_audited_winner(work_api, same_resolution):
+    from src.crm.persistence.models import AuditEvent
+
+    client, engine, workspace, _ = work_api
+    item = waiting_review(work_api)
+    first = review_resolution(item)
+    second = first if same_resolution else first | {"resolution_id": str(uuid4())}
+
+    def resolve(body):
+        return client.post(
+            f"/api/v1/agent/work/{item['id']}/resolve", json=body, headers=headers()
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(resolve, [first, second]))
+    assert sorted(response.status_code for response in responses) == (
+        [200, 200] if same_resolution else [200, 409]
+    )
+    if same_resolution:
+        assert sorted(response.json()["replayed"] for response in responses) == [
+            False,
+            True,
+        ]
+    with Session(engine) as session:
+        assert (
+            len(
+                list(
+                    session.scalars(
+                        select(AuditEvent).where(AuditEvent.workspace_id == workspace)
+                    )
+                )
+            )
+            == 1
+        )
+
+
+def test_review_resolution_keeps_long_evidence_lossless_in_bounded_audit_parts(
+    work_api,
+):
+    import base64, json
+    from src.crm.persistence.models import AuditEvent
+
+    client, engine, workspace, _ = work_api
+    old = {"summary": "ç" * 1200, "evidence": [{"source_text": "x" * 2000}]}
+    item = waiting_review(work_api, result=old)
+    body = review_resolution(item)
+    body["result"] = {
+        "summary": "New review",
+        "evidence": [{"verified_text": "y" * 2500}],
+    }
+    response = client.post(
+        f"/api/v1/agent/work/{item['id']}/resolve", json=body, headers=headers()
+    )
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        rows = list(
+            session.scalars(
+                select(AuditEvent).where(AuditEvent.workspace_id == workspace)
+            )
+        )
+        main = next(row for row in rows if row.action == "agent.review_resolved")
+        parts = sorted(
+            (row for row in rows if row.action == "agent.review_resolution_evidence"),
+            key=lambda row: row.details["part"],
+        )
+        assert len(parts) == main.details["history_parts"] > 1
+        history = json.loads(
+            base64.b64decode(
+                "".join(row.details["history_json_base64"] for row in parts)
+            )
+        )
+        assert history == {"previous_result": old, "resolution_result": body["result"]}
+        assert all(
+            len(json.dumps(row.details, ensure_ascii=False).encode()) <= 4096
+            for row in rows
+        )

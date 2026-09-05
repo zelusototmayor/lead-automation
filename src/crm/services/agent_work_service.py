@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import base64
 import hashlib
 import json
 from uuid import uuid4, uuid5
 
 from sqlalchemy import select, true
 from sqlalchemy.dialects.postgresql import insert
-from src.crm.persistence.models import AgentWork, Task, Lead, Contact, SourceIdentity
+from src.crm.persistence.models import (
+    AgentWork,
+    Task,
+    Lead,
+    Contact,
+    SourceIdentity,
+    AuditEvent,
+)
 
 
 class WorkConflict(ValueError):
@@ -112,6 +120,7 @@ def serialize_work(row, *, include_lease=False):
         "attempt": row.attempts,
         "available_at": row.available_at.isoformat(),
         "result": row.result,
+        "result_hash": row.result_hash,
         "error": row.error,
         "updated_at": row.updated_at.isoformat(),
     }
@@ -282,3 +291,144 @@ def fail_work(
     row.lease_token = row.lease_until = None
     session.flush()
     return serialize_work(row) | {"replayed": False}
+
+
+_REVIEW_KINDS = frozenset(
+    {"reply_review", "proposal_review", "identity_review", "sent_review"}
+)
+
+
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def resolve_waiting_review(
+    session,
+    workspace_id,
+    work_id,
+    *,
+    actor_id,
+    resolution_id,
+    expected_result_hash,
+    result,
+):
+    """Close a reviewed waiting item; never mutate business entities or send work."""
+    if (
+        not isinstance(result, dict)
+        or set(result) != {"summary", "evidence"}
+        or not isinstance(result.get("summary"), str)
+        or not result["summary"].strip()
+        or len(result["summary"]) > 2000
+        or not isinstance(result.get("evidence"), list)
+        or not 1 <= len(result["evidence"]) <= 20
+        or any(not isinstance(item, dict) or not item for item in result["evidence"])
+    ):
+        raise WorkConflict("Review requires evidence and a summary")
+    encoded = _canonical_json({"status": "completed", "result": result})
+    if len(encoded.encode()) > 16000:
+        raise WorkConflict("Review result too large")
+    fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+    request_hash = hashlib.sha256(
+        _canonical_json(
+            {
+                "work_id": str(work_id),
+                "expected_result_hash": expected_result_hash,
+                "result": result,
+            }
+        ).encode()
+    ).hexdigest()
+    row = locked_work(session, workspace_id, work_id)
+    prior = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace_id,
+            AuditEvent.command_id == resolution_id,
+        )
+    )
+    if prior is not None:
+        if (
+            prior.action != "agent.review_resolved"
+            or prior.entity_id != work_id
+            or prior.actor_id != actor_id
+            or prior.details.get("request_hash") != request_hash
+            or row.status != "completed"
+            or row.result_hash != fingerprint
+        ):
+            raise WorkConflict("Resolution id was already used")
+        return serialize_work(row) | {
+            "resolution_id": str(resolution_id),
+            "replayed": True,
+        }
+    if (
+        row.status != "waiting"
+        or row.kind not in _REVIEW_KINDS
+        or row.result_hash != expected_result_hash
+    ):
+        raise WorkConflict("Review state changed or is not resolvable")
+    previous = row.result or {}
+    prior_evidence = {_canonical_json(item) for item in previous.get("evidence", [])}
+    if not any(
+        _canonical_json(item) not in prior_evidence for item in result["evidence"]
+    ):
+        raise WorkConflict("Resolution requires new evidence")
+    history = {"previous_result": previous, "resolution_result": result}
+    details = {
+        "resolution_id": str(resolution_id),
+        "request_hash": request_hash,
+        "previous_status": "waiting",
+        "previous_result_hash": row.result_hash,
+        "result_hash": fingerprint,
+    }
+    # Each immutable audit row is limited to 4096 bytes by the existing schema.
+    # Preserve longer legitimate results losslessly in deterministic audit parts.
+    if len(json.dumps(details | history, ensure_ascii=False).encode()) <= 3900:
+        details.update(history)
+    else:
+        history_bytes = _canonical_json(history).encode()
+        encoded_history = base64.b64encode(history_bytes).decode("ascii")
+        parts = [
+            encoded_history[i : i + 2800] for i in range(0, len(encoded_history), 2800)
+        ]
+        details.update(
+            history_encoding="base64-json",
+            history_parts=len(parts),
+            history_sha256=hashlib.sha256(history_bytes).hexdigest(),
+        )
+        for index, part in enumerate(parts):
+            session.add(
+                AuditEvent(
+                    id=uuid5(
+                        resolution_id, f"review-audit-part:{workspace_id}:{index}"
+                    ),
+                    workspace_id=workspace_id,
+                    command_id=uuid5(resolution_id, f"review-audit-command:{index}"),
+                    actor_id=actor_id,
+                    action="agent.review_resolution_evidence",
+                    entity_type="agent_work",
+                    entity_id=work_id,
+                    details={
+                        "resolution_id": str(resolution_id),
+                        "part": index,
+                        "parts": len(parts),
+                        "history_json_base64": part,
+                    },
+                )
+            )
+    session.add(
+        AuditEvent(
+            id=uuid5(resolution_id, f"review-audit:{workspace_id}"),
+            workspace_id=workspace_id,
+            command_id=resolution_id,
+            actor_id=actor_id,
+            action="agent.review_resolved",
+            entity_type="agent_work",
+            entity_id=work_id,
+            details=details,
+        )
+    )
+    row.status, row.result, row.result_hash = "completed", result, fingerprint
+    row.error, row.updated_at = None, datetime.now(UTC)
+    session.flush()
+    return serialize_work(row) | {
+        "resolution_id": str(resolution_id),
+        "replayed": False,
+    }

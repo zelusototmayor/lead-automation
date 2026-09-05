@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import select, case
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from dashboard.app.db import create_database_engine
 from dashboard.app.feature_flags import require_postgres_command_writer
@@ -33,6 +34,7 @@ from src.crm.services.agent_work_service import (
     lead_is_suppressed,
     fail_work,
     finish_work,
+    resolve_waiting_review,
     locked_work,
     serialize_work,
     validate_lease,
@@ -145,6 +147,17 @@ class FinishBody(LeaseBody):
     status: Literal["completed", "waiting"] = "completed"
 
 
+class ReviewResolutionResult(StrictBody):
+    summary: str = Field(min_length=1, max_length=2000)
+    evidence: list[dict[str, Any]] = Field(min_length=1, max_length=20)
+
+
+class ResolveReviewBody(StrictBody):
+    resolution_id: UUID
+    expected_result_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    result: ReviewResolutionResult
+
+
 class FailBody(LeaseBody):
     reason: str = Field(default="Execution failed", min_length=1, max_length=256)
     retryable: bool = True
@@ -198,6 +211,20 @@ def list_work(
     return {
         "items": _list(session, principal.workspace_id, status, max(1, min(limit, 100)))
     }
+
+
+@router.get("/api/v1/agent/work/{work_id}")
+def read_work(work_id: UUID, principal: Principal, session: Database):
+    require_scope(principal, "work:read")
+    row = session.scalar(
+        select(AgentWork).where(
+            AgentWork.workspace_id == principal.workspace_id,
+            AgentWork.id == work_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Work not found")
+    return serialize_work(row)
 
 
 @router.get("/api/v1/agent-work")
@@ -277,6 +304,28 @@ def finish(work_id: UUID, body: FinishBody, principal: Principal, session: Datab
             )
     except (WorkConflict, ValueError):
         raise HTTPException(status_code=409, detail="Work conflict") from None
+
+
+@router.post("/api/v1/agent/work/{work_id}/resolve")
+def resolve_review(
+    work_id: UUID, body: ResolveReviewBody, principal: Principal, session: Database
+):
+    require_scope(principal, "work:write")
+    try:
+        with session.begin():
+            return resolve_waiting_review(
+                session,
+                principal.workspace_id,
+                work_id,
+                actor_id=principal.actor_id,
+                resolution_id=body.resolution_id,
+                expected_result_hash=body.expected_result_hash,
+                result=body.result.model_dump(),
+            )
+    except (WorkConflict, ValueError, IntegrityError):
+        raise HTTPException(
+            status_code=409, detail="Review resolution conflict"
+        ) from None
 
 
 @router.post("/api/v1/agent/work/{work_id}/fail")
