@@ -144,7 +144,8 @@ def test_leads_page_has_future_queues_and_dedicated_strict_priority_filter(
     assert 'searchParams.set("priority", requestState.priority)' in script
     assert 'priorityFilter.addEventListener("change",' in script
     assert 'search.addEventListener("input", () =>' in script
-    assert "markViewIntent();\n      applyFilters();" in script
+    assert 'searchParams.set("search", requestState.search)' in script
+    assert 'loadQueue({ search: value, offset: 0 })' in script
     assert 'stageFilter.addEventListener("change", () => {' in script
 
 

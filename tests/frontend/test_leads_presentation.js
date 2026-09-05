@@ -19,7 +19,7 @@ test("stage and priority values are presented as Portuguese operational labels",
   assert.equal(stageLabel("meeting_booked"), "Reunião marcada");
   assert.equal(stageLabel("meeting_held"), "Reunião feita");
   assert.equal(stageLabel("proposal_sent"), "Proposta enviada");
-  assert.equal(stageLabel("not_a_fit"), "Sem fit");
+  assert.equal(stageLabel("not_a_fit"), "Sem enquadramento");
   assert.equal(priorityLabel("high"), "Alta");
   assert.equal(priorityLabel("medium"), "Média");
   assert.equal(priorityLabel("low"), "Baixa");

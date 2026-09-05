@@ -171,8 +171,8 @@
   </nav>
   <div class="queue-heading"><div><h2>A tua fila</h2><span class="subtle"><span data-lead-total>—</span> contactos · escolhe por onde começar</span></div><button class="btn" type="button" data-start-calls>Começar chamadas <span aria-hidden="true">→</span></button></div>
   <div class="lead-tools">
-    <label>Encontrar um contacto<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
-    <label>Fase<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
+    <label>Encontrar um contacto<input type="search" data-lead-search maxlength="200" placeholder="Pesquisar em todos os contactos, empresas ou localidades"></label>
+    <label>Fase<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem enquadramento</option></select></label>
     <label>Prioridade<select data-priority-filter><option value="">Todas</option><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
   </div>
   <div class="pipeline-layout">
@@ -273,7 +273,7 @@
           <details class="command-disclosure">
             <summary>Alterar fase</summary>
           <form class="command-form" data-stage-transition-form>
-            <label>Fase<select name="target_stage" required><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
+            <label>Fase<select name="target_stage" required><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem enquadramento</option></select></label>
             <label><span><input name="reviewed_correction" type="checkbox"> Correção revista de estado terminal</span></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Alterar fase</button></div>
           </form>

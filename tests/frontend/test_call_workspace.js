@@ -86,3 +86,30 @@ test("a newer contact selection while fetching the next server page wins", async
   await behavior.loadLead("C");resolvePage({leadId:"B",rowKey:"B"});await saving;
   assert.deepEqual(loads,["C"]);
 });
+
+test("contact search goes to the entire server queue and remains on subsequent pages", async () => {
+  const { createLatestQueueLoader } = require("../../dashboard/app/static/leads.js"); const urls=[];
+  const loader=createLatestQueueLoader({requestJson:async url=>{urls.push(url);return {items:[],total:101,limit:50,offset:urls.length===1?0:50};}});
+  await loader.load({search:"Paula Lisboa",offset:0});await loader.next();
+  assert.equal(new URL(urls[0],"https://crm.test").searchParams.get("search"),"Paula Lisboa");
+  assert.equal(new URL(urls[1],"https://crm.test").searchParams.get("search"),"Paula Lisboa");
+  assert.equal(new URL(urls[1],"https://crm.test").searchParams.get("offset"),"50");
+});
+
+test("only the selected call obligation is completed, never an email or generic lead task", () => {
+  const values={outcome_code:"no_answer"};
+  const task={id:"call-1",version:3,type:"call"};
+  assert.deepEqual(buildCallPayload(values,{queue:"calls_overdue",task}).completed_task,{id:"call-1",expected_version:3});
+  assert.equal(buildCallPayload(values,{queue:"all",task}).completed_task,undefined);
+  assert.equal(buildCallPayload(values,{queue:"emails_today",task:{...task,type:"email"}}).completed_task,undefined);
+});
+
+test("retry after a call task disappears preserves the original atomic completion payload", async () => {
+  const store=createCallDraftStore(memoryStorage());const requests=[];
+  const send=async(_,body)=>{requests.push(body);if(requests.length===1)throw Error("lost response");return {replayed:true};};
+  const call=createCallCommandBehavior({store,createId:()=>"call-command",send});
+  const fields={outcome_code:"connected",summary:"Called"};
+  await assert.rejects(call.submit("A",1,{...fields,completed_task:{id:"task-1",expected_version:2}}));
+  await call.submit("A",2,fields);
+  assert.deepEqual(requests[0],requests[1]);
+});

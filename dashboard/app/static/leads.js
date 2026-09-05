@@ -106,6 +106,7 @@
       queue: "all",
       stage: "",
       priority: "",
+      search: "",
       limit,
       offset: 0,
       total: 0,
@@ -124,6 +125,7 @@
       });
       if (requestState.stage) searchParams.set("stage", requestState.stage);
       if (requestState.priority) searchParams.set("priority", requestState.priority);
+      if (requestState.search) searchParams.set("search", requestState.search);
 
       let page;
       try {
@@ -332,7 +334,10 @@
     negotiation: "Negociação",
     won: "Ganho",
     lost: "Perdido",
-    not_a_fit: "Sem fit",
+    not_a_fit: "Sem enquadramento",
+    call: "Chamada", email: "Email", follow_up: "Acompanhamento", proposal_followup: "Acompanhar proposta",
+    open: "Por fazer", completed: "Concluída", cancelled: "Cancelada", connected: "Atendeu", no_answer: "Não atendeu",
+    voicemail: "Caixa de mensagens", wrong_number: "Número errado", not_interested: "Sem interesse", outbound: "Enviado", inbound: "Recebido",
   });
   const PRIORITY_LABELS = Object.freeze({ high: "Alta", medium: "Média", low: "Baixa" });
   const stageLabel = (value) => STAGE_LABELS[value] || String(value || "Sem estado").replaceAll("_", " ");
@@ -403,7 +408,7 @@
     };
   };
 
-  const buildCallPayload = (values) => {
+  const buildCallPayload = (values, selectedTask = null) => {
     const outcomes = ["connected", "no_answer", "voicemail", "wrong_number", "not_interested", "follow_up"];
     if (!outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
     const payload = { outcome_code: values.outcome_code, summary: String(values.summary || "").trim() || null };
@@ -412,21 +417,25 @@
       if (Number.isNaN(due.getTime())) throw new Error("Escolhe a data e hora para voltar a ligar.");
       payload.next_action = { task_type: "call", title: String(values.callback_title || "").trim() || "Retomar a conversa", due_at: due.toISOString() };
     }
+    if (selectedTask?.queue?.startsWith("calls_") && selectedTask.task?.type === "call") {
+      payload.completed_task = { id: selectedTask.task.id, expected_version: selectedTask.task.version };
+    }
     return payload;
   };
 
   // Keep the exact command across a lost response. Retrying never logs a second call.
   const createCallCommandBehavior = ({ createId, store, send }) => ({
     submit: async (leadId, expectedVersion, payload) => {
-      const fingerprint = JSON.stringify(payload);
+      const { completed_task, ...userIntent } = payload;
+      const fingerprint = JSON.stringify(userIntent);
       let pending = store.read(leadId)?.pending;
       if (!pending || pending.fingerprint !== fingerprint) {
-        pending = { fingerprint, commandId: createId(), expectedVersion };
+        pending = { fingerprint, commandId: createId(), expectedVersion, payload };
         store.write(leadId, { pending });
       }
       try {
         const result = await send(leadId, {
-          command_id: pending.commandId, expected_version: pending.expectedVersion, ...payload,
+          command_id: pending.commandId, expected_version: pending.expectedVersion, ...(pending.payload || payload),
         });
         store.remove(leadId);
         return result;
@@ -555,6 +564,11 @@
       if (leadId) { url.searchParams.set("lead", leadId); url.searchParams.set("row", rowKey || leadId); }
       else { url.searchParams.delete("lead"); url.searchParams.delete("row"); }
       url.searchParams.set("queue", activeQueue);
+      const state = queueLoader.getState();
+      for (const key of ["search", "stage", "priority"]) {
+        if (state[key]) url.searchParams.set(key, state[key]); else url.searchParams.delete(key);
+      }
+      if (state.offset) url.searchParams.set("offset", String(state.offset)); else url.searchParams.delete("offset");
       window.history.replaceState({}, "", url);
     };
     const markViewIntent = () => { viewIntentGeneration += 1; };
@@ -627,18 +641,9 @@
       show(root, rows.length ? "ready" : "empty");
     };
 
-    const applyFilters = () => {
-      const query = search.value.trim().toLocaleLowerCase("pt-PT");
-      renderRows(
-        queueItems.filter((lead) => {
-          const searchable = [lead.company, lead.contact_name, lead.email, lead.phone]
-            .filter(Boolean)
-            .join(" ")
-            .toLocaleLowerCase("pt-PT");
-          return !query || searchable.includes(query);
-        }),
-      );
-    };
+    // Search, stage and priority are applied to the full CRM by the server.
+    // Re-filtering only this page would hide valid city/contact matches.
+    const applyFilters = () => renderRows(queueItems);
 
     const loadSummary = async () => renderSummary(await fetchJson("/api/v1/pipeline/summary"));
 
@@ -656,6 +661,7 @@
         activeQueue = state.queue;
         stageFilter.value = state.stage;
         priorityFilter.value = state.priority;
+        search.value = state.search;
         selectQueueButton();
         previousPageButton.disabled = true;
         nextPageButton.disabled = true;
@@ -803,7 +809,7 @@
         event.preventDefault();
         if (savingCall || !currentLead) return;
         let payload;
-        try { payload = buildCallPayload(readCallForm()); }
+        try { payload = buildCallPayload(readCallForm(), { queue: activeQueue, task: queueItems.find(item => leadRowKey(item) === selectedRowKey)?.task }); }
         catch (error) { window.notify(error.message, "err"); return; }
         persistCallDraft();
         savingCall = true;
@@ -927,11 +933,11 @@
       timeline.forEach((activity) => {
         const item = document.createElement("div");
         item.className = "timeline-item";
-        appendText(item, "task-title", activity.title);
+        appendText(item, "task-title", ({ "Call logged": "Chamada registada", "Email logged": "Email registado", "Note added": "Nota adicionada", "Stage changed": "Fase atualizada", "Next action scheduled": "Próximo passo marcado" })[activity.title] || activity.title);
         appendText(
           item,
           "",
-          [formatDateTime(activity.occurred_at), activity.outcome_code, activity.direction]
+          [activity.actor_type === "migration" ? "Nota importada · data original desconhecida" : formatDateTime(activity.occurred_at), activity.outcome_code ? stageLabel(activity.outcome_code) : null, activity.direction ? stageLabel(activity.direction) : null]
             .filter(Boolean)
             .join(" · "),
         );
@@ -985,7 +991,10 @@
       const recent = (timeline.items || []).find(item => item.summary);
       const context = root.querySelector("[data-call-context]");
       context.classList.toggle("hidden", !recent);
-      if (recent) context.querySelector("p").textContent = recent.summary;
+      if (recent) {
+        context.querySelector("p").textContent = recent.summary;
+        context.querySelector(".eyebrow").textContent = recent.actor_type === "migration" ? "Contexto importado · data original por confirmar" : "Última nota";
+      }
       populateCommandForms(detail);
       root.querySelector("[data-detail-company]").textContent = detail.company;
       root.querySelector("[data-detail-contact]").textContent =
@@ -1084,9 +1093,12 @@
         }).catch(() => show(root, "error"));
       });
     });
+    let searchTimer;
     search.addEventListener("input", () => {
       markViewIntent();
-      applyFilters();
+      window.clearTimeout(searchTimer);
+      const value = search.value.trim().slice(0, 200);
+      searchTimer = window.setTimeout(() => loadQueue({ search: value, offset: 0 }).catch(() => show(root, "error")), 250);
     });
     stageFilter.addEventListener("change", () => {
       markViewIntent();
@@ -1158,7 +1170,7 @@
           callDrafts.remove("__new-contact__"); newContactForm.reset(); newContactDialog.close();
           search.value = ""; markViewIntent();
           window.notify("Contacto criado.");
-          await loadQueue({queue:"all",stage:"",priority:"",offset:0}).catch(() => {});
+          await loadQueue({queue:"all",stage:"",priority:"",search:"",offset:0}).catch(() => {});
           await loadLead(result.lead_id).catch(() => window.notify("Contacto criado. Não foi possível abrir o detalhe; atualiza a fila.","err"));
         } catch(error) {
           if (error.status >= 400 && error.status < 500) callDrafts.write("__new-contact__", { pending:null });
@@ -1171,7 +1183,10 @@
     const initialParams = new URLSearchParams(window.location.search);
     const knownQueues = [...root.querySelectorAll("[data-pipeline-queue]")].map(button => button.dataset.pipelineQueue);
     const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : "all";
-    Promise.all([loadSummary(), loadQueue({ queue: initialQueue })]).then(() => {
+    const initialStage = [...stageFilter.options].some(option => option.value === initialParams.get("stage")) ? initialParams.get("stage") : "";
+    const initialPriority = ["low","medium","high"].includes(initialParams.get("priority")) ? initialParams.get("priority") : "";
+    const initialOffset = Math.max(0, Math.min(1000000, parseInt(initialParams.get("offset"), 10) || 0));
+    Promise.all([loadSummary(), loadQueue({ queue: initialQueue, search: (initialParams.get("search") || "").trim().slice(0,200), stage: initialStage, priority: initialPriority, offset: initialOffset })]).then(() => {
       const leadId = initialParams.get("lead");
       if (leadId) return loadLead(leadId, initialParams.get("row") || leadId);
     }).catch(() => show(root, "error"));
