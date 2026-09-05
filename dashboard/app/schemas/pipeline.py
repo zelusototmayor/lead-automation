@@ -158,6 +158,7 @@ class LeadDetail(BaseModel):
     stage: str
     priority: str | None
     version: int = Field(ge=1)
+    suppressed: bool = False
 
 
 class TimelineItem(BaseModel):

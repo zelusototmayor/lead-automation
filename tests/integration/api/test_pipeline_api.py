@@ -239,7 +239,7 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "proposal_followups_overdue": 0,
         "proposal_followups_today": 0,
         "touched_today": 1,
-        "untouched": 2,
+        "untouched": 1,
         "all": 3,
     }
     assert summary.json()["queue_units"] == {
@@ -427,6 +427,7 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "stage": "contacted",
         "priority": "high",
         "version": 1,
+        "suppressed": False,
     }
     assert timeline.json()["total"] == 1
     activity = timeline.json()["items"][0]

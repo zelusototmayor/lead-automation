@@ -43,6 +43,7 @@ from src.crm.persistence.models import (
     Contact,
     Lead,
     Proposal,
+    SourceIdentity,
     Task,
     Workspace,
 )
@@ -164,6 +165,36 @@ def _activity_exists(
     return exists(select(Activity.id).where(*conditions))
 
 
+def _lead_suppressed(workspace_id):
+    source_protected = exists(
+        select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == workspace_id,
+            SourceIdentity.id == Lead.source_identity_id,
+            SourceIdentity.metadata_json["suppressed"].as_boolean().is_(True),
+        )
+    )
+    return or_(
+        Lead.stage.in_(("lost", "not_a_fit", "won")),
+        func.coalesce(Contact.status == "inactive", False),
+        source_protected,
+    )
+
+
+def _legacy_contact_exists(workspace_id):
+    raw = SourceIdentity.metadata_json["legacy_row"]
+    date_fields = (
+        "Initial Email Sent", "Outreach FU1 Sent", "Outreach FU2 Sent",
+        "Proposal Sent", "Proposal Email Sent", "Last Contact",
+    )
+    return exists(
+        select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == workspace_id,
+            SourceIdentity.id == Lead.source_identity_id,
+            or_(*(func.length(func.trim(raw[key].astext)) > 0 for key in date_fields)),
+        )
+    )
+
+
 def _pipeline_statement(
     workspace_id, queue: PipelineQueue, start: datetime, end: datetime
 ):
@@ -195,6 +226,8 @@ def _pipeline_statement(
         )
         .where(Lead.workspace_id == workspace_id)
     )
+    if queue != "all":
+        statement = statement.where(~_lead_suppressed(workspace_id))
     if queue in _TASK_QUEUES:
         return statement.add_columns(
             Task.id.label("task_id"),
@@ -211,7 +244,11 @@ def _pipeline_statement(
     if queue == "touched_today":
         statement = statement.where(_activity_exists(workspace_id, start, end))
     elif queue == "untouched":
-        statement = statement.where(~_activity_exists(workspace_id))
+        statement = statement.where(
+            Lead.stage == "new",
+            ~_activity_exists(workspace_id),
+            ~_legacy_contact_exists(workspace_id),
+        )
     next_task = (
         select(Task)
         .where(
@@ -650,6 +687,7 @@ def _lead_detail_row(context: AccountRequestContext, lead_id: UUID):
             Lead.stage,
             Lead.priority,
             Lead.version,
+            _lead_suppressed(context.principal.workspace_id).label("suppressed"),
         )
         .outerjoin(
             Account,
@@ -688,6 +726,7 @@ def lead_detail(
         stage=row.stage,
         priority=row.priority,
         version=row.version,
+        suppressed=bool(row.suppressed),
     )
 
 

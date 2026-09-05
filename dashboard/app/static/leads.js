@@ -807,7 +807,7 @@
       callForm?.addEventListener("change", () => { syncCallback(); persistCallDraft(); });
       callForm?.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (savingCall || !currentLead) return;
+        if (savingCall || !currentLead || currentLead.suppressed) return;
         let payload;
         try { payload = buildCallPayload(readCallForm(), { queue: activeQueue, task: queueItems.find(item => leadRowKey(item) === selectedRowKey)?.task }); }
         catch (error) { window.notify(error.message, "err"); return; }
@@ -949,13 +949,13 @@
     const renderContactActions = (detail) => {
       const phoneLink = root.querySelector("[data-detail-phone-link]");
       const emailLink = root.querySelector("[data-detail-email-link]");
-      phoneLink.classList.toggle("hidden", !detail.phone);
-      emailLink.classList.toggle("hidden", !detail.email);
+      phoneLink.classList.toggle("hidden", !detail.phone || detail.suppressed);
+      emailLink.classList.toggle("hidden", !detail.email || detail.suppressed);
       phoneLink.removeAttribute("href");
       emailLink.removeAttribute("href");
-      if (detail.phone) phoneLink.href = `tel:${detail.phone.replace(/[^+\d*#;,]/g, "")}`;
+      if (detail.phone && !detail.suppressed) phoneLink.href = `tel:${detail.phone.replace(/[^+\d*#;,]/g, "")}`;
       root.querySelector("[data-call-phone-number]").textContent = detail.phone || "";
-      if (detail.email) emailLink.href = `mailto:${detail.email}`;
+      if (detail.email && !detail.suppressed) emailLink.href = `mailto:${detail.email}`;
     };
 
     const requestLead = async (leadId, rowKey) => {
@@ -980,6 +980,10 @@
 
     const commitSelection = (_leadId, { detail, timeline, tasks, queueItem }) => {
       currentLead = detail;
+      root.querySelector(".detail-head .eyebrow").textContent = detail.suppressed ? "Histórico do contacto" : "Em conversa";
+      root.querySelector("[data-contact-protected]").classList.toggle("hidden", !detail.suppressed);
+      callForm?.classList.toggle("hidden", !!detail.suppressed);
+      root.querySelector("[data-next-action-form]")?.closest("details")?.classList.toggle("hidden", !!detail.suppressed);
       restoreCallDraft(selectedLeadId);
       root.classList.add("contact-open");
       document.body.classList.add("call-focus");
@@ -1182,7 +1186,7 @@
     analyticsBehavior.load();
     const initialParams = new URLSearchParams(window.location.search);
     const knownQueues = [...root.querySelectorAll("[data-pipeline-queue]")].map(button => button.dataset.pipelineQueue);
-    const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : "all";
+    const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : (initialParams.has("search") || initialParams.has("lead") ? "all" : "calls_overdue");
     const initialStage = [...stageFilter.options].some(option => option.value === initialParams.get("stage")) ? initialParams.get("stage") : "";
     const initialPriority = ["low","medium","high"].includes(initialParams.get("priority")) ? initialParams.get("priority") : "";
     const initialOffset = Math.max(0, Math.min(1000000, parseInt(initialParams.get("offset"), 10) || 0));

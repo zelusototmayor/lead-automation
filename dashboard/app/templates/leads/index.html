@@ -166,7 +166,7 @@
   </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
-      <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ 'Trabalhados hoje' if value == 'touched_today' else label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
+      <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'calls_overdue' else 'false' }}">{{ 'Trabalhados hoje' if value == 'touched_today' else label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
     {% endfor %}
   </nav>
   <div class="queue-heading"><div><h2>A tua fila</h2><span class="subtle"><span data-lead-total>—</span> contactos · escolhe por onde começar</span></div><button class="btn" type="button" data-start-calls>Começar chamadas <span aria-hidden="true">→</span></button></div>
@@ -217,6 +217,7 @@
           <div class="detail-summary-line"><span>Próxima ação</span><strong data-detail-next-action>Sem próxima ação</strong></div>
           <div class="detail-summary-line"><span>Prazo</span><strong data-detail-next-due>—</strong></div>
         </div>
+        <p class="notice hidden" data-contact-protected>Contacto encerrado ou protegido. O histórico está disponível; as ações de contacto estão suspensas.</p>
         <div class="task-actions" data-detail-contact-actions>
           <a class="btn btn-primary call-phone hidden" data-detail-phone-link><span aria-hidden="true">↗</span> Ligar <span data-call-phone-number></span></a>
           <a class="btn hidden" data-detail-email-link>Email</a>
