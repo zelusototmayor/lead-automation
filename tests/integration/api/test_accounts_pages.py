@@ -253,7 +253,7 @@ def test_leads_page_only_exposes_csrf_to_authorized_postgres_writer(
     assert "data-stage-transition-form" not in response.text
     assert "data-call-log-form" not in response.text
     assert "data-email-log-form" not in response.text
-    assert "Writes canónicos ativos" in response.text
+    assert "O teu espaço de trabalho" in response.text
 
 
 def test_leads_javascript_uses_canonical_pipeline_and_task_command_contracts():

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Proposta · CRM{% endblock %}
+{% block title %}Proposta · Comercial{% endblock %}
 {% block extra_styles %}
   .proposal-detail { display: grid; gap: 16px; }
   .panel, .state { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
@@ -24,19 +24,19 @@
   <div class="hidden" data-state="ready">
     <header class="topbar"><div><p class="eyebrow">Proposta</p><h1 data-field="title"></h1><p class="subtle"><a data-field="account-link"><span data-field="account-name"></span></a> · <span data-field="status"></span></p></div></header>
     <div class="metric-grid">
-      <div class="metric"><strong data-field="one-off">—</strong><span>one-off</span></div>
-      <div class="metric"><strong data-field="mrr">—</strong><span>MRR</span></div>
-      <div class="metric"><strong data-field="arr">—</strong><span>ARR</span></div>
-      <div class="metric"><strong data-field="value-state">missing</strong><span>estado do valor</span></div>
+      <div class="metric"><strong data-field="one-off">—</strong><span>valor inicial</span></div>
+      <div class="metric"><strong data-field="mrr">—</strong><span>mensal recorrente</span></div>
+      <div class="metric"><strong data-field="arr">—</strong><span>anual recorrente</span></div>
+      <div class="metric"><strong data-field="value-state">Por apurar</strong><span>confirmação do valor</span></div>
     </div>
     <section class="panel"><p class="eyebrow">Envio e seguimento</p><p data-field="source-state"></p><p data-field="next-action"></p><div class="followup-list" data-field="followups"></div></section>
     {% if can_write_proposals %}
     <section class="panel">
       <p class="eyebrow">Atualizar pipeline</p>
       <form class="proposal-form" data-proposal-pipeline-form>
-        <label>Estado<select name="status" required><option value="draft">Draft</option><option value="promised">Prometida</option><option value="sent">Enviada</option><option value="viewed">Vista</option><option value="negotiation">Negociação</option><option value="lost">Perdida</option><option value="withdrawn">Retirada</option><option value="expired">Expirada</option></select></label>
+        <label>Estado<select name="status" required><option value="draft">Em preparação</option><option value="promised">Prometida</option><option value="sent">Enviada</option><option value="viewed">Vista</option><option value="negotiation">Negociação</option><option value="lost">Perdida</option><option value="withdrawn">Retirada</option><option value="expired">Expirada</option></select></label>
         <label>Probabilidade (%)<input name="probability" type="number" min="0" max="100" step="0.01"></label>
-        <label>Forecast<input name="forecast_category" maxlength="64"></label>
+        <label>Previsão<input name="forecast_category" maxlength="64"></label>
         <label>Prazo da próxima ação<input name="next_action_due_at" type="datetime-local"></label>
         <label>Próxima ação<textarea name="next_action" maxlength="2048"></textarea></label>
         <label>Motivo de perda<textarea name="lost_reason" maxlength="2048"></textarea></label>

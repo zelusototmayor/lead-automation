@@ -151,10 +151,12 @@ def test_intelligence_page_has_loading_empty_and_generic_error_states(
     response = client.get("/inteligencia")
     assert response.status_code == 200
     assert "A carregar recomendações" in response.text
-    assert "Sem recomendações abertas" in response.text
-    assert "Não foi possível carregar Inteligência" not in response.text
+    assert 'data-recommendation-state role="status"' in response.text
+    assert "Não foi possível atualizar os pontos a acompanhar" not in response.text
     script = client.get("/static/intelligence.js")
-    assert "Não foi possível carregar Inteligência" in script.text
+    assert "Não foi possível atualizar os pontos a acompanhar" in script.text
+    assert "Sem novos pontos a acompanhar" in script.text
+    assert "/api/v1/agent-work" in script.text
     assert "/api/v1/intelligence/recommendations" in script.text
 
 

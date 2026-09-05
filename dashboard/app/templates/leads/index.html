@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Trabalho diário · CRM{% endblock %}
+{% block title %}Hoje & chamadas · Comercial{% endblock %}
+{% block stylesheets %}<link rel="stylesheet" href="/static/calls.css?v=20260905">{% endblock %}
 {% block extra_styles %}
   .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1fr) 386px; gap: 10px; align-items: start; }
   .pipeline-layout > *, .leads-list, .lead-row > * { min-width: 0; }
@@ -144,23 +145,23 @@
   data-can-write-tasks="{{ 'true' if can_write_tasks else 'false' }}"{% if csrf_token %}
   data-csrf-token="{{ csrf_token }}"{% endif %}>
   <header class="topbar">
-    <div><p class="eyebrow">CRM</p><h1>Trabalho diário</h1><p class="subtle"><span data-lead-total>—</span> leads na fila selecionada.</p></div>
+    <div><p class="eyebrow" data-today-label>O teu dia comercial</p><h1>Chamadas</h1><p class="subtle">Uma nota curta. Um próximo passo. Segue a conversa.</p></div><div class="header-actions"><button class="btn focus-exit" type="button" data-exit-focus>Ver filas e filtros</button><a class="btn" href="/contas">Ver empresas <span aria-hidden="true">↗</span></a>{% if writable and can_create_lead|default(false) %}<button class="btn btn-primary" type="button" data-new-contact>Novo contacto <span aria-hidden="true">+</span></button>{% endif %}</div>
   </header>
   <section class="metric-strip" data-queue-metrics aria-label="Resumo operacional">
     <button class="metric-card" type="button" data-metric="all" data-metric-targets="all">
-      <span class="metric-label">Total de leads</span><strong class="metric-value" data-metric-value="all">—</strong><span class="metric-note">Base atual</span>
+      <span class="metric-label">Contactos</span><strong class="metric-value" data-metric-value="all">—</strong><span class="metric-note">Na base de contactos</span>
     </button>
     <button class="metric-card" type="button" data-metric="touchedToday" data-metric-targets="touched_today">
       <span class="metric-label">Trabalhados hoje</span><strong class="metric-value" data-metric-value="touchedToday">—</strong><span class="metric-note">Atividade registada</span>
     </button>
     <div class="metric-card" data-metric="callsDue">
-      <span class="metric-label">Chamadas pendentes</span><strong class="metric-value" data-metric-value="callsDue">—</strong><span class="metric-note">Atrasadas + hoje</span>
+      <span class="metric-label">Para ligar</span><strong class="metric-value" data-metric-value="callsDue">—</strong><span class="metric-note">Atrasadas + hoje</span>
     </div>
     <div class="metric-card" data-metric="emailsDue">
-      <span class="metric-label">Emails pendentes</span><strong class="metric-value" data-metric-value="emailsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
+      <span class="metric-label">Emails a acompanhar</span><strong class="metric-value" data-metric-value="emailsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
     <div class="metric-card" data-metric="proposalFollowupsDue">
-      <span class="metric-label">Follow-ups de proposta</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
+      <span class="metric-label">Propostas a acompanhar</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
   </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
@@ -168,13 +169,14 @@
       <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ 'Trabalhados hoje' if value == 'touched_today' else label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
     {% endfor %}
   </nav>
+  <div class="queue-heading"><div><h2>A tua fila</h2><span class="subtle"><span data-lead-total>—</span> contactos · escolhe por onde começar</span></div><button class="btn" type="button" data-start-calls>Começar chamadas <span aria-hidden="true">→</span></button></div>
   <div class="lead-tools">
-    <label>Pesquisar<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
-    <label>Estado<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
+    <label>Encontrar um contacto<input type="search" data-lead-search placeholder="Empresa, contacto ou email"></label>
+    <label>Fase<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Sem fit</option></select></label>
     <label>Prioridade<select data-priority-filter><option value="">Todas</option><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
   </div>
   <div class="pipeline-layout">
-    <div>
+    <div class="queue-pane">
       <div class="state" data-state="loading">A carregar fila…</div>
       <div class="state hidden" data-state="empty">Não existem leads nesta fila.</div>
       <div class="state hidden" data-state="error">Não foi possível carregar a fila.</div>
@@ -202,25 +204,54 @@
       </nav>
     </div>
     <aside class="detail-panel" data-lead-detail-panel>
-      <div data-detail-empty><p class="eyebrow">Lead</p><p class="subtle">Selecione um lead para abrir o contexto operacional.</p></div>
+      <div data-detail-empty><span class="empty-mark" aria-hidden="true">↗</span><p class="eyebrow">Tudo a postos</p><h2>Escolhe a próxima conversa</h2><p class="subtle">Abre um contacto da fila para ver o contexto, ligar e guardar o resultado.</p><button class="btn btn-primary" type="button" data-start-calls>Começar chamadas</button></div>
       <div class="hidden" data-detail-ready>
+        <button class="btn mobile-queue-back" type="button" data-back-to-queue>← Voltar à fila</button>
         <div class="detail-head">
-          <div><p class="eyebrow">Lead</p><h2 data-detail-company></h2></div>
+          <div><p class="eyebrow">Em conversa</p><h2 data-detail-company></h2></div>
           <div class="detail-badges"><span class="lead-stage" data-detail-stage></span><span class="detail-priority" data-detail-priority></span></div>
         </div>
         <p class="detail-contact" data-detail-contact></p>
+        <div class="call-context hidden" data-call-context><span class="eyebrow">Última nota</span><p></p></div>
         <div class="detail-summary" data-detail-summary>
           <div class="detail-summary-line"><span>Próxima ação</span><strong data-detail-next-action>Sem próxima ação</strong></div>
           <div class="detail-summary-line"><span>Prazo</span><strong data-detail-next-due>—</strong></div>
         </div>
         <div class="task-actions" data-detail-contact-actions>
-          <a class="btn btn-primary hidden" data-detail-phone-link>Telefonar</a>
-          <a class="btn hidden" data-detail-email-link>Enviar email</a>
-          <button class="btn" type="button" data-skip-lead>Saltar</button>
+          <a class="btn btn-primary call-phone hidden" data-detail-phone-link><span aria-hidden="true">↗</span> Ligar <span data-call-phone-number></span></a>
+          <a class="btn hidden" data-detail-email-link>Email</a>
+          <button class="btn skip-call" type="button" data-skip-lead>Saltar <span aria-hidden="true">→</span></button>
         </div>
+        {% if writable and can_log_call %}
+        <form class="call-workspace" data-call-log-form>
+          <div class="call-section-heading"><h3>Como correu?</h3><span class="draft-status" data-call-draft-status aria-live="polite"></span></div>
+          <fieldset class="call-outcomes"><legend class="sr-only">Resultado da chamada</legend>
+            <label><input type="radio" name="outcome_code" value="connected" required><span>✓ Atendeu</span></label>
+            <label><input type="radio" name="outcome_code" value="no_answer" required><span>↗ Não atendeu</span></label>
+          </fieldset>
+          <label class="call-note-label" for="call-note">Nota da conversa <span>opcional</span></label>
+          <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
+          {% if can_write_tasks %}
+          <div class="callback-box">
+            <label class="callback-toggle"><input type="checkbox" name="callback_enabled"><span>Voltar a ligar</span><span class="callback-hint">Marcar callback</span></label>
+            <div class="callback-fields hidden" data-callback-fields>
+              <label>Quando<input type="datetime-local" name="callback_due_at"></label>
+              <label>Motivo <span>opcional</span><input name="callback_title" maxlength="512" placeholder="Retomar a conversa"></label>
+            </div>
+          </div>
+          {% endif %}
+          <details class="call-other"><summary>Outro resultado</summary><div class="call-other-options">
+            <label><input type="radio" name="outcome_code" value="voicemail"> Caixa de mensagens</label>
+            <label><input type="radio" name="outcome_code" value="wrong_number"> Número errado</label>
+            <label><input type="radio" name="outcome_code" value="not_interested"> Sem interesse</label>
+            <label><input type="radio" name="outcome_code" value="follow_up"> Acompanhar</label>
+          </div></details>
+          <div class="call-save-bar"><span data-call-save-state role="status">Guarda o resultado para continuar.</span><button class="btn btn-primary" type="submit" data-call-save>Guardar e seguinte <span aria-hidden="true">→</span></button></div>
+        </form>
+        {% endif %}
         {% if writable %}
         <div class="detail-section" data-lead-commands>
-          <h3>Registar trabalho</h3>
+          <h3>Mais ações</h3>
           <div class="command-stack">
           {% if can_edit_lead %}
           <details class="command-disclosure">
@@ -228,9 +259,9 @@
           <form class="command-form" data-lead-edit-form>
             <label>Prioridade<select name="priority" required><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
             <label>Empresa<input name="company_name" maxlength="512" required></label>
-            <label>Contacto<input name="contact_name" maxlength="512" required></label>
-            <label>Email<input name="contact_email" type="email" maxlength="320" required></label>
-            <label>Telefone completo<input name="contact_phone" maxlength="64" required autocomplete="tel"></label>
+            <label>Contacto<input name="contact_name" maxlength="512"></label>
+            <label>Email<input name="contact_email" type="email" maxlength="320"></label>
+            <label>Telefone completo<input name="contact_phone" maxlength="64" autocomplete="tel"></label>
             <div class="command-form-actions">
               <button class="btn" type="submit">Guardar dados</button>
               <button class="btn btn-primary" type="submit" data-advance-after-save="true">Guardar e seguinte</button>
@@ -248,16 +279,6 @@
           </form>
           </details>
           {% endif %}
-          {% if can_log_call %}
-          <details class="command-disclosure" open>
-            <summary>Registar chamada</summary>
-          <form class="command-form" data-call-log-form>
-            <label>Resultado<select name="outcome_code" required><option value="connected">Atendeu</option><option value="no_answer">Não atendeu</option><option value="voicemail">Voice mail</option><option value="wrong_number">Número errado</option><option value="not_interested">Sem interesse</option><option value="follow_up">Follow-up</option></select></label>
-            <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
-            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar chamada</button></div>
-          </form>
-          </details>
-          {% endif %}
           {% if can_log_email %}
           <details class="command-disclosure">
             <summary>Registar email</summary>
@@ -270,7 +291,7 @@
           {% endif %}
           {% if can_add_note %}
           <form class="command-form" data-note-form>
-            <label>Nota livre<textarea name="summary" maxlength="2000" required></textarea></label>
+            <label>Adicionar nota ao histórico<textarea name="summary" maxlength="2000" required></textarea></label>
             <div class="command-form-actions"><button class="btn btn-primary" type="submit">Adicionar nota</button></div>
           </form>
           {% endif %}
@@ -288,12 +309,13 @@
           </div>
         </div>
         {% endif %}
-        <details class="detail-section" open><summary>Próximas tarefas</summary><div data-lead-tasks></div></details>
+        <details class="detail-section"><summary>Próximos passos</summary><div data-lead-tasks></div></details>
         <details class="detail-section"><summary>Histórico</summary><div data-lead-timeline></div></details>
       </div>
     </aside>
   </div>
-  <section class="analytics-panel" data-pipeline-analytics aria-labelledby="analytics-title">
+  <details class="analytics-panel" data-pipeline-analytics><summary>Ver evolução comercial <span class="subtle">Últimos 30 dias</span></summary>
+  <div class="analytics-expanded">
     <div class="analytics-panel-header">
       <h2 id="analytics-title">Indicadores operacionais</h2>
       <span class="analytics-caption">Janela móvel de 30 dias</span>
@@ -303,7 +325,24 @@
       <p class="analytics-caption" data-analytics-loading>A sincronizar indicadores…</p>
       <p class="analytics-unavailable">Tempo em fase indisponível — a aguardar cobertura estruturada.</p>
     </div>
-  </section>
+  </div></details>
+  {% if writable and can_create_lead|default(false) %}
+  <dialog class="contact-dialog" data-new-contact-dialog aria-labelledby="new-contact-title">
+    <form data-new-contact-form>
+      <div class="dialog-header"><div><p class="eyebrow">A próxima oportunidade</p><h2 id="new-contact-title">Novo contacto</h2></div><button class="btn" type="button" data-close-contact aria-label="Fechar">×</button></div>
+      <p class="subtle">Começa pelo essencial. Podes completar o resto depois.</p>
+      <div class="contact-form-grid">
+        <label class="full-width">Empresa<input name="company" maxlength="512" required autocomplete="organization" placeholder="Nome da empresa"></label>
+        <label>Pessoa de contacto<input name="contact_name" maxlength="512" autocomplete="name"></label>
+        <label>Telefone<input name="phone" type="tel" maxlength="64" autocomplete="tel"></label>
+        <label>Email<input name="email" type="email" maxlength="320" autocomplete="email"></label>
+        <label>Localidade<input name="city" maxlength="255" autocomplete="address-level2"></label>
+        <label class="full-width">Contexto inicial <span>opcional</span><textarea name="notes" maxlength="2000" rows="3" placeholder="Como surgiu este contacto?"></textarea></label>
+      </div>
+      <div class="dialog-actions"><span class="subtle" data-new-contact-state role="status"></span><button class="btn btn-primary" type="submit">Criar e abrir contacto →</button></div>
+    </form>
+  </dialog>
+  {% endif %}
   <template data-task-actions-template>
     <div class="task-actions">
       <button class="btn btn-primary" type="button" data-task-complete>Concluir</button>
@@ -313,4 +352,4 @@
   </template>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="/static/leads.js"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/leads.js?v=20260905"></script>{% endblock %}

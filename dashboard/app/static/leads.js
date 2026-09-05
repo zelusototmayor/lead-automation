@@ -14,6 +14,7 @@
     refreshQueue = async () => {},
     onLoad = () => {},
     onReadFailure = () => {},
+    nextPageRow = async () => null,
   }) => {
     let loadSequence = 0;
 
@@ -46,10 +47,12 @@
       return true;
     };
 
-    const skip = () => {
+    const skip = async () => {
+      const sequence = loadSequence, intent = getViewIntentGeneration();
       const { leadId, rowKey } = getSelection();
-      const nextLead = nextVisibleLead(leadId, rowKey);
-      return nextLead ? loadLead(nextLead.leadId, nextLead.rowKey) : Promise.resolve(false);
+      const nextLead = nextVisibleLead(leadId, rowKey) || await nextPageRow();
+      if (sequence !== loadSequence || intent !== getViewIntentGeneration()) return false;
+      return nextLead ? loadLead(nextLead.leadId, nextLead.rowKey) : false;
     };
 
     const save = async (operation, payload, advanceAfterSave) => {
@@ -70,8 +73,9 @@
       ) return true;
 
       const capturedTarget = advanceAfterSave
-        ? nextLead
+        ? (nextLead || await nextPageRow())
         : { leadId, rowKey: rowKey || leadId };
+      if (saveSequence !== loadSequence || saveViewIntentGeneration !== getViewIntentGeneration()) return true;
       const refreshedRows = visibleRows();
       const targetLead = capturedTarget
         ? refreshedRows.find((row) => row.rowKey === capturedTarget.rowKey)
@@ -374,8 +378,70 @@
     due: queueItem?.task?.due_at ? formatDateTime(queueItem.task.due_at) : "—",
   });
 
+  const createCallDraftStore = (storage, now = () => Date.now()) => {
+    const prefix = "zelus.crm.call-draft.v1:";
+    const read = (leadId) => {
+      try {
+        const draft = JSON.parse(storage?.getItem(prefix + leadId) || "null");
+        if (!draft || typeof draft !== "object" || now() - draft.updatedAt > 7 * 86400000) {
+          storage?.removeItem(prefix + leadId);
+          return null;
+        }
+        return draft;
+      } catch (_) { return null; }
+    };
+    return {
+      read,
+      write: (leadId, values) => {
+        if (!leadId) return false;
+        try {
+          storage?.setItem(prefix + leadId, JSON.stringify({ ...read(leadId), ...values, updatedAt: now() }));
+          return !!storage;
+        } catch (_) { return false; }
+      },
+      remove: (leadId) => { try { storage?.removeItem(prefix + leadId); } catch (_) {} },
+    };
+  };
+
+  const buildCallPayload = (values) => {
+    const outcomes = ["connected", "no_answer", "voicemail", "wrong_number", "not_interested", "follow_up"];
+    if (!outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
+    const payload = { outcome_code: values.outcome_code, summary: String(values.summary || "").trim() || null };
+    if (values.callback_enabled) {
+      const due = new Date(values.callback_due_at || "");
+      if (Number.isNaN(due.getTime())) throw new Error("Escolhe a data e hora para voltar a ligar.");
+      payload.next_action = { task_type: "call", title: String(values.callback_title || "").trim() || "Retomar a conversa", due_at: due.toISOString() };
+    }
+    return payload;
+  };
+
+  // Keep the exact command across a lost response. Retrying never logs a second call.
+  const createCallCommandBehavior = ({ createId, store, send }) => ({
+    submit: async (leadId, expectedVersion, payload) => {
+      const fingerprint = JSON.stringify(payload);
+      let pending = store.read(leadId)?.pending;
+      if (!pending || pending.fingerprint !== fingerprint) {
+        pending = { fingerprint, commandId: createId(), expectedVersion };
+        store.write(leadId, { pending });
+      }
+      try {
+        const result = await send(leadId, {
+          command_id: pending.commandId, expected_version: pending.expectedVersion, ...payload,
+        });
+        store.remove(leadId);
+        return result;
+      } catch (error) {
+        if (error.status >= 400 && error.status < 500) store.write(leadId, { pending: null });
+        throw error;
+      }
+    },
+  });
+
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
+      createCallDraftStore,
+      createCallCommandBehavior,
+      buildCallPayload,
       createLatestQueueLoader,
       createLeadQueueBehavior,
       createLeadAnalyticsBehavior,
@@ -403,7 +469,7 @@
       ...options,
       headers: { Accept: "application/json", ...(options.headers || {}) },
     });
-    if (!response.ok) throw new Error("CRM request unavailable");
+    if (!response.ok) { const error = new Error("CRM request unavailable"); error.status = response.status; throw error; }
     return response.json();
   };
 
@@ -437,6 +503,60 @@
     let viewIntentGeneration = 0;
     let currentLead = null;
     let currentSummary = { queues: {} };
+    let draftStorage = null;
+    try { draftStorage = window.localStorage; } catch (_) {}
+    const callDrafts = createCallDraftStore(draftStorage);
+    const callForm = root.querySelector("[data-call-log-form]");
+    let savingCall = false;
+    const readCallForm = () => callForm ? {
+      outcome_code: callForm.elements.outcome_code.value,
+      summary: callForm.elements.summary.value,
+      callback_enabled: !!callForm.elements.callback_enabled?.checked,
+      callback_due_at: callForm.elements.callback_due_at?.value || "",
+      callback_title: callForm.elements.callback_title?.value || "",
+    } : null;
+    const syncCallback = () => {
+      if (!callForm?.elements.callback_enabled) return;
+      const enabled = callForm.elements.callback_enabled.checked;
+      callForm.querySelector("[data-callback-fields]").classList.toggle("hidden", !enabled);
+      callForm.elements.callback_due_at.required = enabled;
+    };
+    const persistCallDraft = () => {
+      if (!selectedLeadId || !currentLead || !callForm) return;
+      const values = readCallForm();
+      if (!values.outcome_code && !values.summary && !values.callback_enabled && !values.callback_due_at && !values.callback_title) {
+        if (callDrafts.read(selectedLeadId)?.pending) callDrafts.write(selectedLeadId, values);
+        else callDrafts.remove(selectedLeadId);
+        root.querySelector("[data-call-draft-status]").textContent = "";
+        return;
+      }
+      const saved = callDrafts.write(selectedLeadId, values);
+      root.querySelector("[data-call-draft-status]").textContent = saved ? "Rascunho guardado" : "Rascunho nesta página";
+    };
+    const restoreCallDraft = (leadId) => {
+      if (!callForm) return;
+      callForm.reset();
+      const draft = callDrafts.read(leadId);
+      if (draft) {
+        callForm.elements.outcome_code.value = draft.outcome_code || "";
+        callForm.elements.summary.value = draft.summary || "";
+        if (callForm.elements.callback_enabled) {
+          callForm.elements.callback_enabled.checked = !!draft.callback_enabled;
+          callForm.elements.callback_due_at.value = draft.callback_due_at || "";
+          callForm.elements.callback_title.value = draft.callback_title || "";
+        }
+      }
+      syncCallback();
+      root.querySelector("[data-call-draft-status]").textContent = draft ? "Rascunho recuperado" : "";
+      root.querySelector("[data-call-save-state]").textContent = "Guarda o resultado para continuar.";
+    };
+    const setContactLocation = (leadId, rowKey) => {
+      const url = new URL(window.location.href);
+      if (leadId) { url.searchParams.set("lead", leadId); url.searchParams.set("row", rowKey || leadId); }
+      else { url.searchParams.delete("lead"); url.searchParams.delete("row"); }
+      url.searchParams.set("queue", activeQueue);
+      window.history.replaceState({}, "", url);
+    };
     const markViewIntent = () => { viewIntentGeneration += 1; };
 
     const renderSummary = (summary) => {
@@ -606,8 +726,20 @@
       "schedule-next-action": `/api/v1/commands/leads/${leadId}/schedule-next-action`,
     })[operation];
 
+    const callCommands = createCallCommandBehavior({
+      createId: () => crypto.randomUUID(), store: callDrafts,
+      send: (leadId, body) => fetchJson(leadCommandPath(leadId, "log-call"), {
+        method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken, "Idempotency-Key": body.command_id }, body: JSON.stringify(body),
+      }),
+    });
     const postLeadCommand = async ({ operation, leadId, lead, payload }) => {
       if (!writable || !csrfToken || !leadId || !lead) return;
+      if (operation === "log-call") {
+        await callCommands.submit(leadId, lead.version, payload);
+        if (selectedLeadId === leadId && callForm) { callForm.reset(); syncCallback(); }
+        window.notify(payload.next_action ? "Chamada e callback guardados." : "Chamada guardada.");
+        return;
+      }
       const path = leadCommandPath(leadId, operation);
       if (!path) throw new Error("Unsupported command");
       const commandId = crypto.randomUUID();
@@ -665,19 +797,35 @@
         }
       });
 
-      const callForm = root.querySelector("[data-call-log-form]");
+      callForm?.addEventListener("input", () => { syncCallback(); persistCallDraft(); });
+      callForm?.addEventListener("change", () => { syncCallback(); persistCallDraft(); });
       callForm?.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const data = new FormData(callForm);
+        if (savingCall || !currentLead) return;
+        let payload;
+        try { payload = buildCallPayload(readCallForm()); }
+        catch (error) { window.notify(error.message, "err"); return; }
+        persistCallDraft();
+        savingCall = true;
+        const button = callForm.querySelector("[data-call-save]");
+        const saveState = root.querySelector("[data-call-save-state]");
+        button.disabled = true;
+        saveState.textContent = "A guardar chamada…";
         try {
-          await queueBehavior.save("log-call", {
-            outcome_code: data.get("outcome_code"),
-            summary: optionalText(callForm, "summary"),
-          }, false);
-          callForm.reset();
-        } catch (_error) {
-          window.notify("Não foi possível registar a chamada.", "err");
-        }
+          await queueBehavior.save("log-call", payload, true);
+          if (!currentLead) {
+            root.classList.remove("contact-open");
+            document.body.classList.remove("call-focus");
+            setContactLocation(null);
+            window.notify("Chamada guardada. Chegaste ao fim desta fila.");
+          }
+        } catch (error) {
+          const message = error.status === 409
+            ? "Este contacto foi atualizado. O teu rascunho está guardado; abre-o de novo antes de guardar."
+            : "Não foi possível confirmar. O rascunho está guardado; tenta novamente.";
+          saveState.textContent = message;
+          window.notify(message, "err");
+        } finally { savingCall = false; button.disabled = false; }
       });
 
       const emailForm = root.querySelector("[data-email-log-form]");
@@ -799,7 +947,8 @@
       emailLink.classList.toggle("hidden", !detail.email);
       phoneLink.removeAttribute("href");
       emailLink.removeAttribute("href");
-      if (detail.phone) phoneLink.href = `tel:${detail.phone}`;
+      if (detail.phone) phoneLink.href = `tel:${detail.phone.replace(/[^+\d*#;,]/g, "")}`;
+      root.querySelector("[data-call-phone-number]").textContent = detail.phone || "";
       if (detail.email) emailLink.href = `mailto:${detail.email}`;
     };
 
@@ -814,6 +963,7 @@
     };
 
     const clearSelection = (leadId, rowKey = leadId) => {
+      persistCallDraft();
       selectedLeadId = leadId;
       selectedRowKey = rowKey;
       currentLead = null;
@@ -824,8 +974,18 @@
 
     const commitSelection = (_leadId, { detail, timeline, tasks, queueItem }) => {
       currentLead = detail;
+      restoreCallDraft(selectedLeadId);
+      root.classList.add("contact-open");
+      document.body.classList.add("call-focus");
+      setContactLocation(selectedLeadId, selectedRowKey);
       const taskItems = Array.isArray(tasks.items) ? tasks.items : [];
-      const nextAction = leadNextActionView(queueItem);
+      const selectedAction = queueItem?.task || taskItems.find(task => task.status === "open");
+      const nextAction = leadNextActionView({ task: selectedAction });
+      root.querySelector("[data-detail-summary]").dataset.empty = String(!selectedAction);
+      const recent = (timeline.items || []).find(item => item.summary);
+      const context = root.querySelector("[data-call-context]");
+      context.classList.toggle("hidden", !recent);
+      if (recent) context.querySelector("p").textContent = recent.summary;
       populateCommandForms(detail);
       root.querySelector("[data-detail-company]").textContent = detail.company;
       root.querySelector("[data-detail-contact]").textContent =
@@ -864,6 +1024,11 @@
       postLead: postLeadCommand,
       refreshSummary: loadSummary,
       refreshQueue: loadQueue,
+      nextPageRow: async () => {
+        if (!await queueLoader.next()) return null;
+        const row = list.querySelector(".lead-row[data-lead-id]");
+        return row ? { leadId: row.dataset.leadId, rowKey: row.dataset.rowKey } : null;
+      },
       onReadFailure: () => window.notify(
         "Alteração guardada, mas não foi possível atualizar todos os dados.",
         "err",
@@ -945,10 +1110,70 @@
       markViewIntent();
       queueLoader.next().catch(() => show(root, "error"));
     });
-    skipButton.addEventListener("click", () => queueBehavior.skip().catch(() => show(root, "error")));
+    skipButton.addEventListener("click", async () => {
+      persistCallDraft();
+      try { if (!await queueBehavior.skip()) window.notify("Chegaste ao fim desta fila. O rascunho fica guardado."); }
+      catch (_) { window.notify("Não foi possível abrir o próximo contacto.", "err"); }
+    });
+    root.querySelectorAll("[data-start-calls]").forEach(button => button.addEventListener("click", () => {
+      const first = list.querySelector(".lead-row[data-lead-id]");
+      if (first) loadLead(first.dataset.leadId, first.dataset.rowKey).catch(() => window.notify("Não foi possível abrir o contacto.", "err"));
+      else window.notify("Não há contactos nesta fila.");
+    }));
+    root.querySelector("[data-exit-focus]").addEventListener("click", () => { root.classList.remove("contact-open"); document.body.classList.remove("call-focus"); });
+    root.querySelector("[data-back-to-queue]").addEventListener("click", () => {
+      persistCallDraft(); root.classList.remove("contact-open");
+            document.body.classList.remove("call-focus"); setContactLocation(null);
+      root.querySelector(".queue-heading").scrollIntoView({ block: "start" });
+    });
+    root.querySelector("[data-detail-phone-link]").addEventListener("click", persistCallDraft);
+    window.addEventListener("pagehide", persistCallDraft);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persistCallDraft(); });
+    root.querySelector("[data-today-label]").textContent = new Date().toLocaleDateString("pt-PT", { weekday:"long", day:"numeric", month:"long" });
     bindCommandForms();
+    const newContactDialog = root.querySelector("[data-new-contact-dialog]");
+    const newContactForm = root.querySelector("[data-new-contact-form]");
+    if (newContactDialog && newContactForm) {
+      const readNewContact = () => Object.fromEntries([...new FormData(newContactForm)].map(([key,value]) => [key,String(value).trim() || null]));
+      root.querySelector("[data-new-contact]").addEventListener("click", () => {
+        const draft = callDrafts.read("__new-contact__");
+        if (draft?.values) Object.entries(draft.values).forEach(([key,value]) => { if (newContactForm.elements[key]) newContactForm.elements[key].value = value || ""; });
+        newContactDialog.showModal();
+      });
+      root.querySelector("[data-close-contact]").addEventListener("click", () => newContactDialog.close());
+      newContactForm.addEventListener("input", () => callDrafts.write("__new-contact__", { values: readNewContact() }));
+      newContactForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = newContactForm.querySelector('[type="submit"]');
+        if (button.disabled) return;
+        const values = readNewContact();
+        const fingerprint = JSON.stringify(values);
+        let pending = callDrafts.read("__new-contact__")?.pending;
+        if (!pending || pending.fingerprint !== fingerprint) pending = { fingerprint, commandId: crypto.randomUUID() };
+        callDrafts.write("__new-contact__", { values, pending });
+        button.disabled = true;
+        const state = root.querySelector("[data-new-contact-state]"); state.textContent = "A criar contacto…";
+        try {
+          const result = await fetchJson("/api/v1/commands/leads", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRF-Token":csrfToken, "Idempotency-Key":pending.commandId }, body:JSON.stringify({command_id:pending.commandId,...values}) });
+          callDrafts.remove("__new-contact__"); newContactForm.reset(); newContactDialog.close();
+          search.value = ""; markViewIntent();
+          window.notify("Contacto criado.");
+          await loadQueue({queue:"all",stage:"",priority:"",offset:0}).catch(() => {});
+          await loadLead(result.lead_id).catch(() => window.notify("Contacto criado. Não foi possível abrir o detalhe; atualiza a fila.","err"));
+        } catch(error) {
+          if (error.status >= 400 && error.status < 500) callDrafts.write("__new-contact__", { pending:null });
+          state.textContent = "Não foi possível confirmar. Os dados ficam guardados; tenta novamente.";
+        } finally { button.disabled = false; }
+      });
+    }
 
     analyticsBehavior.load();
-    Promise.all([loadSummary(), loadQueue()]).catch(() => show(root, "error"));
+    const initialParams = new URLSearchParams(window.location.search);
+    const knownQueues = [...root.querySelectorAll("[data-pipeline-queue]")].map(button => button.dataset.pipelineQueue);
+    const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : "all";
+    Promise.all([loadSummary(), loadQueue({ queue: initialQueue })]).then(() => {
+      const leadId = initialParams.get("lead");
+      if (leadId) return loadLead(leadId, initialParams.get("row") || leadId);
+    }).catch(() => show(root, "error"));
   });
 })();

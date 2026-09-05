@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  const LABELS = { draft:"Em preparação",promised:"Prometida",sent:"Enviada",viewed:"Vista",negotiation:"Em negociação",won:"Ganha",lost:"Perdida",withdrawn:"Retirada",expired:"Expirada",missing:"Por apurar",candidate:"Por validar",confirmed:"Confirmado",legacy_unverified:"Histórico por verificar",verified:"Verificado",unverified:"Por verificar",manual:"Registo manual",source_verified:"Confirmado na origem" };
+  const label = value => LABELS[value] || String(value || "Por apurar").replaceAll("_"," ");
+  let proposalOffset = 0;
   const show = (root, state) => {
     root.querySelectorAll("[data-state]").forEach((element) => {
       element.classList.toggle("hidden", element.dataset.state !== state);
@@ -58,7 +61,7 @@
     const target = root.querySelector('[data-field="portfolio"]');
     target.replaceChildren();
     const counts = portfolio.value_counts || {};
-    [["Propostas", portfolio.proposal_count], ["Sem valor", counts.missing || 0], ["Candidato", counts.candidate || 0], ["Confirmado", counts.confirmed || 0]].forEach(([label, value]) => {
+    [["Propostas", portfolio.proposal_count], ["Valor por apurar", counts.missing || 0], ["Por validar", counts.candidate || 0], ["Confirmadas", counts.confirmed || 0]].forEach(([label, value]) => {
       const card = document.createElement("div");
       card.className = "portfolio-card";
       appendText(card, "strong", String(value));
@@ -69,7 +72,7 @@
       const card = document.createElement("div");
       card.className = "portfolio-card";
       appendText(card, "strong", `${currency} · pipeline aberto`);
-      appendText(card, "p", `One-off ${money(dimensions.one_off, currency)} · MRR ${money(dimensions.mrr, currency)} · ARR ${money(dimensions.arr, currency)}`, "subtle");
+      appendText(card, "p", `Inicial ${money(dimensions.one_off, currency)} · Mensal ${money(dimensions.mrr, currency)} · Anual ${money(dimensions.arr, currency)}`, "subtle");
       target.appendChild(card);
     });
   };
@@ -82,7 +85,7 @@
         if (String(value).trim()) params.set(key, String(value).trim());
       });
       params.set("limit", "100");
-      params.set("offset", "0");
+      params.set("offset", String(proposalOffset));
       const [pageResponse, portfolioResponse] = await Promise.all([
         fetch(`/api/v1/proposals?${params}`, { credentials: "same-origin", headers: { Accept: "application/json" } }),
         fetch("/api/v1/proposals/portfolio", { credentials: "same-origin", headers: { Accept: "application/json" } }),
@@ -90,6 +93,9 @@
       if (!pageResponse.ok || !portfolioResponse.ok) throw new Error("proposals unavailable");
       const [page, portfolio] = await Promise.all([pageResponse.json(), portfolioResponse.json()]);
       renderPortfolio(root, portfolio);
+      root.querySelector("[data-proposals-range]").textContent = page.total ? `${Number(page.offset)+1}–${Number(page.offset)+(page.items || []).length} de ${page.total}` : "0 propostas";
+      root.querySelector("[data-proposals-previous]").disabled = !Number(page.offset);
+      root.querySelector("[data-proposals-next]").disabled = Number(page.offset) + Number(page.limit) >= Number(page.total);
       const list = root.querySelector('[data-state="ready"]');
       list.replaceChildren();
       if (!Array.isArray(page.items) || page.items.length === 0) return show(root, "empty");
@@ -101,8 +107,8 @@
         appendText(heading, "strong", proposal.title);
         appendText(heading, "p", proposal.account_name, "subtle");
         card.appendChild(heading);
-        appendText(card, "span", proposal.status);
-        appendText(card, "span", proposal.value_state);
+        appendText(card, "span", label(proposal.status), "proposal-status");
+        appendText(card, "span", label(proposal.value_state), "subtle");
         appendText(card, "span", proposal.age_days == null ? "Envio não verificado" : `${proposal.age_days} dias`);
         list.appendChild(card);
       });
@@ -127,19 +133,19 @@
       setText(root, "title", proposal.title);
       setText(root, "account-name", proposal.account_name);
       root.querySelector('[data-field="account-link"]').href = `/contas/${encodeURIComponent(proposal.account_id)}`;
-      setText(root, "status", proposal.status);
+      setText(root, "status", label(proposal.status));
       setText(root, "one-off", money(proposal.one_off_amount, proposal.currency));
       setText(root, "mrr", money(proposal.mrr_amount, proposal.currency));
       setText(root, "arr", money(proposal.arr_amount, proposal.currency));
-      setText(root, "value-state", proposal.value_state);
-      setText(root, "source-state", proposal.sent_verification_state ? `Origem do envio: ${proposal.sent_verification_state}` : "Ainda sem envio registado.");
+      setText(root, "value-state", label(proposal.value_state));
+      setText(root, "source-state", proposal.sent_verification_state ? `Envio: ${label(proposal.sent_verification_state)}` : "Ainda sem envio registado.");
       setText(root, "next-action", proposal.next_action || "Sem próxima ação registada.");
       const versions = root.querySelector('[data-field="versions"]');
       versions.replaceChildren();
       (proposal.versions || []).forEach((version) => {
         const card = document.createElement("div");
-        appendText(card, "strong", `Versão ${version.version_number} · ${version.status}`);
-        appendText(card, "p", `One-off ${money(version.one_off_amount, proposal.currency)} · MRR ${money(version.mrr_amount, proposal.currency)} · ARR ${money(version.arr_amount, proposal.currency)}`, "subtle");
+        appendText(card, "strong", `Versão ${version.version_number} · ${label(version.status)}`);
+        appendText(card, "p", `Inicial ${money(version.one_off_amount, proposal.currency)} · Mensal ${money(version.mrr_amount, proposal.currency)} · Anual ${money(version.arr_amount, proposal.currency)}`, "subtle");
         appendText(card, "p", version.source_document_evidence_id ? "Evidência associada" : "Sem evidência documental", "subtle");
         versions.appendChild(card);
       });
@@ -207,8 +213,28 @@
     const index = document.getElementById("proposals-app");
     const detail = document.getElementById("proposal-app");
     if (index) {
-      index.querySelector("[data-filters]").addEventListener("submit", (event) => { event.preventDefault(); loadIndex(index); });
-      loadIndex(index);
+      index.querySelector("[data-filters]").addEventListener("submit", (event) => { event.preventDefault(); proposalOffset=0; loadIndex(index); });
+      index.querySelector("[data-proposals-previous]").addEventListener("click", () => { proposalOffset=Math.max(0,proposalOffset-100); loadIndex(index); });
+      index.querySelector("[data-proposals-next]").addEventListener("click", () => { proposalOffset+=100; loadIndex(index); });
+      const initialAccount = new URLSearchParams(location.search).get("account_id");
+      const select = index.querySelector("[data-proposal-account-filter]");
+      if (initialAccount) { const option=document.createElement("option"); option.value=initialAccount;option.textContent="Empresa selecionada";select.appendChild(option);select.value=initialAccount; }
+      const loadAccounts = async () => {
+        let offset=0, total=1;
+        try {
+          while (offset<total) {
+            const response=await fetch(`/api/v1/accounts?limit=100&offset=${offset}`,{credentials:"same-origin",headers:{Accept:"application/json"}});
+            if (!response.ok) break; const page=await response.json(); total=page.total;
+            if (!page.items?.length) break;
+            page.items.forEach(account=>{
+              let option=[...select.options].find(option=>option.value===account.id);
+              if (!option) { option=document.createElement("option");option.value=account.id;select.appendChild(option); }
+              option.textContent=account.display_name;
+            }); offset+=page.items.length;
+          }
+        } catch (_) {}
+      };
+      loadAccounts(); loadIndex(index);
     }
     if (detail) loadDetail(detail);
   });

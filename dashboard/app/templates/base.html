@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-PT">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}PT Logistics Dashboard{% endblock %}</title>
+  <title>{% block title %}Comercial · Zelus{% endblock %}</title>
   <link rel="icon" href="data:,">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -67,17 +67,28 @@
     ::-webkit-scrollbar-thumb { background: #cbbfae; border-radius: 999px; }
     {% block extra_styles %}{% endblock %}
   </style>
+  <link rel="stylesheet" href="/static/workspace.css?v=20260905">
+  {% block stylesheets %}{% endblock %}
 </head>
 <body>
-  <aside class="read-only-banner" role="status">
-    {% if writable|default(false) %}Writes canónicos ativos. Todas as alterações são autenticadas, auditadas e versionadas.{% else %}Esta interface protegida é apenas de leitura. Alterações exigem um canal autenticado no servidor.{% endif %}
-  </aside>
-  <div id="notif" class="notif hidden"></div>
-  <main class="shell">
-    <nav class="primary-nav" aria-label="CRM"><a href="/leads">Leads</a><a href="/contas">Contas</a><a href="/propostas">Propostas</a><a href="/inteligencia">Inteligência</a></nav>
+  {% set can_change = writable|default(false) or can_write_proposals|default(false) %}
+  {% set read_only = (writable is defined and not writable) or (can_write_proposals is defined and not can_write_proposals) or sheet_name is defined %}
+  <header class="workspace-header">
+    <a class="workspace-brand" href="/leads" aria-label="Zelus Comercial — início"><span class="brand-mark" aria-hidden="true">z</span><span>Zelus <span class="brand-divider">/</span> <strong>Comercial</strong></span></a>
+    <nav class="primary-nav" aria-label="Navegação comercial">
+      <a href="/leads" data-nav="/leads">Hoje & chamadas</a><a href="/contas" data-nav="/contas">Empresas</a><a href="/propostas" data-nav="/propostas">Propostas</a><a href="/inteligencia" data-nav="/inteligencia">Agentes</a>
+    </nav>
+    <span class="workspace-status">{% if can_change %}<span class="status-dot" aria-hidden="true"></span>O teu espaço de trabalho{% elif read_only %}Consulta{% else %}Espaço comercial{% endif %}</span>
+  </header>
+  {% if read_only %}<aside class="read-only-banner" role="status">Estás em modo de consulta. As alterações estão desativadas.</aside>{% endif %}
+  <div id="notif" class="notif hidden" role="status" aria-live="polite"></div>
+  <main class="shell" id="main-content">
     {% block content %}{% endblock %}
   </main>
   <script>
+    document.querySelectorAll('[data-nav]').forEach(link => {
+      if (location.pathname.startsWith(link.dataset.nav)) link.setAttribute('aria-current', 'page');
+    });
     function notify(message, type = 'ok') {
       const el = document.getElementById('notif');
       el.textContent = message;

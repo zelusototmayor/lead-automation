@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Contas · CRM{% endblock %}
+{% block title %}Empresas · Comercial{% endblock %}
 {% block extra_styles %}
   .accounts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .account-card { display: block; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); }
@@ -11,12 +11,14 @@
 {% block content %}
 <section id="accounts-app" aria-live="polite">
   <header class="topbar">
-    <div><p class="eyebrow">CRM</p><h1>Contas</h1><p class="subtle">Empresas com progresso comercial confirmado.</p></div>
+    <div><p class="eyebrow">CRM</p><h1>Empresas</h1><p class="subtle">Relações, oportunidades e o contexto que interessa.</p></div>
   </header>
-  <div class="state" data-state="loading">A carregar contas…</div>
-  <div class="state hidden" data-state="empty">Ainda não existem contas neste workspace.</div>
-  <div class="state hidden" data-state="error">Não foi possível carregar as contas.</div>
+  <div class="accounts-tools"><input type="search" data-account-search aria-label="Pesquisar empresas" placeholder="Pesquisar empresa ou setor…"><span class="subtle" data-account-count></span></div>
+  <div class="state" data-state="loading">A carregar empresas…</div>
+  <div class="state hidden" data-state="empty">Ainda não há empresas para mostrar. Adiciona o primeiro contacto em Hoje & chamadas.</div>
+  <div class="state hidden" data-state="error">Não foi possível carregar as empresas.</div>
   <div class="accounts-grid" data-state="ready"></div>
+  <div class="accounts-footer"><button class="btn hidden" type="button" data-accounts-more>Carregar mais empresas</button></div>
 </section>
 {% endblock %}
 {% block scripts %}<script defer src="/static/accounts.js"></script>{% endblock %}

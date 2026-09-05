@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Inteligência · CRM{% endblock %}
+{% block title %}Agentes · Comercial{% endblock %}
 {% block content %}
-<section x-data="intelligenceWorkspace()" x-init="load()">
-  <div class="topbar"><div><div class="eyebrow">Workspace separado</div><h1>Inteligência</h1><p class="subtle">Recomendações determinísticas com evidência rastreável.</p></div></div>
-  <p x-show="loading" role="status">A carregar recomendações…</p>
-  <p x-show="error" x-text="error" role="alert"></p>
-  <p x-show="!loading && !error && items.length === 0">Sem recomendações abertas.</p>
-  <div class="cards" x-show="!loading && !error">
-    <template x-for="item in items" :key="item.id">
-      <article class="card">
-        <div class="eyebrow" x-text="item.priority"></div>
-        <h2 x-text="labels[item.rule_code] || item.rule_code"></h2>
-        <p class="subtle" x-text="item.account_name"></p>
-        <p><strong>Estado:</strong> <span x-text="item.state"></span></p>
-        <p><strong>Evidência:</strong> <span x-text="item.evidence.join(', ')"></span></p>
-      </article>
-    </template>
-  </div>
+<section id="agent-workspace">
+  <header class="topbar"><div><p class="eyebrow">Head of Sales</p><h1>O acompanhamento continua.</h1><p class="subtle">O trabalho dos agentes, os resultados e o que precisa da tua atenção.</p></div><button class="btn" type="button" data-refresh-agents>Atualizar ↻</button></header>
+  <div class="agent-intro"><h2>Um espaço partilhado.</h2><p class="section-note">As chamadas ficam contigo. Aqui acompanhas o seguimento, as atualizações e as decisões que surgem em cada oportunidade.</p></div>
+  <section class="agent-work-section" aria-labelledby="agent-work-title">
+    <div class="agent-section-heading"><h2 id="agent-work-title">Trabalho dos agentes</h2><span class="subtle" data-work-updated></span></div>
+    <nav class="agent-filters" aria-label="Estado do trabalho"><button class="btn" type="button" data-work-filter="all" aria-pressed="true">Tudo</button><button class="btn" type="button" data-work-filter="active" aria-pressed="false">Em curso</button><button class="btn" type="button" data-work-filter="attention" aria-pressed="false">Precisa de atenção</button><button class="btn" type="button" data-work-filter="completed" aria-pressed="false">Concluído</button></nav>
+    <p class="state" data-work-state role="status">A carregar trabalho…</p><div class="agent-work-grid" data-work-list></div>
+    <p class="section-note agent-limit-note">Esta vista mostra as 50 tarefas mais recentes.</p>
+  </section>
+  <section class="agent-work-section" aria-labelledby="recommendation-title">
+    <div class="agent-section-heading"><div><p class="eyebrow">Olhar comercial</p><h2 id="recommendation-title">Pontos a acompanhar</h2></div></div>
+    <p class="state" data-recommendation-state role="status">A carregar recomendações…</p><div class="agent-work-grid" data-recommendation-list></div>
+  </section>
 </section>
 {% endblock %}
-{% block extra_styles %}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow)}.card h2{font-size:17px;margin:5px 0 10px}.card p{margin-top:8px}{% endblock %}
-{% block scripts %}<script src="/static/intelligence.js"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/intelligence.js?v=20260905"></script>{% endblock %}

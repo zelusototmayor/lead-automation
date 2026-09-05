@@ -335,8 +335,8 @@ def test_dashboard_warns_that_protected_legacy_ui_is_read_only_without_exposing_
     )
 
     assert response.status_code == 200
-    assert "interface protegida é apenas de leitura" in response.text.lower()
-    assert "canal autenticado no servidor" in response.text.lower()
+    assert "modo de consulta" in response.text.lower()
+    assert "alterações estão desativadas" in response.text.lower()
     assert WRITE_TOKEN not in response.text
     assert CSRF_TOKEN not in response.text
 

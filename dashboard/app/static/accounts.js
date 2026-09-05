@@ -12,46 +12,43 @@
     if (element) element.textContent = value;
   };
 
+  const labels = { new:"Nova", contacted:"Contactada", qualified:"Qualificada", meeting_booked:"Reunião marcada", meeting_held:"Reunião realizada", proposal_requested:"Proposta pedida", proposal_sent:"Proposta enviada", negotiation:"Em negociação", won:"Cliente", lost:"Perdida", not_a_fit:"Sem enquadramento", prospect:"Potencial cliente", customer:"Cliente", active:"Ativa" };
+  const label = value => labels[value] || String(value || "Por classificar").replaceAll("_"," ");
+
   const loadIndex = async (root) => {
-    try {
-      const response = await fetch("/api/v1/accounts?limit=100&offset=0", {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
+    let accounts = [], total = 0, loading = false;
+    const search = root.querySelector("[data-account-search]");
+    const more = root.querySelector("[data-accounts-more]");
+    const render = () => {
+      const query = search.value.trim().toLocaleLowerCase("pt-PT");
+      const visible = accounts.filter(account => [account.display_name, account.sector].filter(Boolean).join(" ").toLocaleLowerCase("pt-PT").includes(query));
+      const grid = root.querySelector('[data-state="ready"]'); grid.replaceChildren();
+      visible.forEach(account => {
+        const card = document.createElement("a"); card.className = "account-card"; card.href = `/contas/${encodeURIComponent(account.id)}`;
+        const title = document.createElement("strong"); title.textContent = account.display_name;
+        const stage = document.createElement("p"); stage.className = "subtle"; stage.textContent = [label(account.lifecycle_stage), account.sector].filter(Boolean).join(" · ");
+        const metrics = document.createElement("div"); metrics.className = "metrics";
+        [`${account.contact_count} contactos`, `${account.email_count} emails`, `${account.meeting_count} reuniões`, `${account.proposal_count} propostas`].forEach(value => { const span = document.createElement("span"); span.textContent=value; metrics.appendChild(span); });
+        const next = document.createElement("p"); next.className="account-next-action"; next.textContent=account.next_action || "Próximo passo por definir";
+        card.append(title,stage,metrics,next); grid.appendChild(card);
       });
-      if (!response.ok) throw new Error("accounts unavailable");
-      const page = await response.json();
-      if (!Array.isArray(page.items) || page.items.length === 0) {
-        show(root, "empty");
-        return;
-      }
-      const grid = root.querySelector('[data-state="ready"]');
-      page.items.forEach((account) => {
-        const card = document.createElement("a");
-        card.className = "account-card";
-        card.href = `/contas/${encodeURIComponent(account.id)}`;
-        const title = document.createElement("strong");
-        title.textContent = account.display_name;
-        const stage = document.createElement("p");
-        stage.className = "subtle";
-        stage.textContent = account.lifecycle_stage;
-        const metrics = document.createElement("div");
-        metrics.className = "metrics";
-        [
-          `${account.email_count} emails`,
-          `${account.meeting_count} reuniões`,
-          `${account.proposal_count} propostas`,
-        ].forEach((label) => {
-          const item = document.createElement("span");
-          item.textContent = label;
-          metrics.appendChild(item);
-        });
-        card.append(title, stage, metrics);
-        grid.appendChild(card);
-      });
-      show(root, "ready");
-    } catch (_error) {
-      show(root, "error");
-    }
+      root.querySelector("[data-account-count]").textContent = query ? `${visible.length} resultados nas ${accounts.length} empresas carregadas` : `${accounts.length} de ${total} empresas`;
+      const empty = root.querySelector('[data-state="empty"]');
+      empty.textContent = query ? "Sem resultados entre as empresas carregadas." : "Ainda não há empresas para mostrar. Adiciona um contacto em Hoje & chamadas.";
+      show(root, visible.length ? "ready" : "empty");
+      more.classList.toggle("hidden",accounts.length >= total); more.disabled=loading;
+    };
+    const loadPage = async () => {
+      if (loading) return; loading=true; more.disabled=true;
+      try {
+        const response = await fetch(`/api/v1/accounts?limit=100&offset=${accounts.length}`, { credentials:"same-origin",headers:{Accept:"application/json"} });
+        if (!response.ok) throw Error("accounts unavailable");
+        const page = await response.json(); total = Number(page.total || 0);
+        accounts.push(...(page.items || [])); loading=false; render();
+      } catch (_) { loading=false; more.disabled=false; if (!accounts.length) show(root,"error"); else window.notify("Não foi possível carregar mais empresas.","err"); }
+    };
+    search.addEventListener("input",render); more.addEventListener("click",loadPage);
+    await loadPage();
   };
 
   const loadDetail = async (root) => {
@@ -64,7 +61,8 @@
       if (!response.ok) throw new Error("account unavailable");
       const account = await response.json();
       text(root, "display-name", account.display_name);
-      text(root, "lifecycle", account.lifecycle_stage);
+      text(root, "lifecycle", label(account.lifecycle_stage));
+      root.querySelector('[data-field="account-proposals-link"]').href = `/propostas?account_id=${encodeURIComponent(account.id)}`;
       text(root, "emails", String(account.email_count));
       text(root, "meetings", String(account.meeting_count));
       text(root, "proposals", String(account.proposal_count));
@@ -80,7 +78,7 @@
           const item = document.createElement("p");
           item.className = "subtle";
           const occurred = new Date(reference.occurred_at).toLocaleString("pt-PT");
-          item.textContent = `${reference.type} · ${occurred}`;
+          item.textContent = `${({email:"Email",call:"Chamada",meeting:"Reunião",note:"Nota",stage_transition:"Mudança de fase"})[reference.type] || label(reference.type)} · ${occurred}`;
           evidence.appendChild(item);
         });
       } else {
