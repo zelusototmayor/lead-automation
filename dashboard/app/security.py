@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import os
 from dataclasses import dataclass, field
 from typing import Annotated
 from uuid import UUID
@@ -84,6 +85,17 @@ async def require_crm_principal(request: Request) -> CRMPrincipal:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN
         ) from None
+
+    # Explicit owner-selected public browser access; agent bearer and command
+    # CSRF/Origin checks remain separate and unchanged. False unless enabled.
+    if os.getenv("CRM_PUBLIC_BROWSER_ACCESS") == "true" and not request.headers.get("authorization"):
+        return CRMPrincipal(
+            workspace_id=settings.workspace_id,
+            actor_id=settings.actor_id,
+            subject="public-browser",
+            permissions=settings.permissions,
+            is_admin=False,
+        )
 
     try:
         credentials: HTTPBasicCredentials | None = await _basic(request)
