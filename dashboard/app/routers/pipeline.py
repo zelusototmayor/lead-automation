@@ -80,6 +80,13 @@ _QUALIFYING_ACTIVITY_TYPES = (
     "stage_change",
     "note",
 )
+_EXTERNAL_CONTACT_ACTIVITY_TYPES = (
+    "call",
+    "email_sent",
+    "email_received",
+    "meeting",
+    "proposal",
+)
 _ANALYTICS_OUTCOMES = (
     "connected",
     "no_answer",
@@ -165,6 +172,17 @@ def _activity_exists(
     return exists(select(Activity.id).where(*conditions))
 
 
+def _external_contact_exists(workspace_id):
+    return exists(
+        select(Activity.id).where(
+            Activity.workspace_id == workspace_id,
+            Activity.lead_id == Lead.id,
+            Activity.activity_type.in_(_EXTERNAL_CONTACT_ACTIVITY_TYPES),
+            operational_activity_filter(),
+        )
+    )
+
+
 def _lead_suppressed(workspace_id):
     source_protected = exists(
         select(SourceIdentity.id).where(
@@ -246,7 +264,7 @@ def _pipeline_statement(
     elif queue == "untouched":
         statement = statement.where(
             Lead.stage == "new",
-            ~_activity_exists(workspace_id),
+            ~_external_contact_exists(workspace_id),
             ~_legacy_contact_exists(workspace_id),
         )
     next_task = (
