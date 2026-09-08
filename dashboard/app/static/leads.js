@@ -412,6 +412,7 @@
       decision_maker: decisionMaker,
       interlocutor_role: role,
       repeat_reason: repeatReason || null,
+      ...(Object.hasOwn(values, "contact_kind") ? { contact_kind: ["first_contact", "follow_up", "unknown"].includes(values.contact_kind) ? values.contact_kind : "unknown" } : {}),
       ...(Object.hasOwn(values, "first_conversation") ? { first_conversation: triState(values.first_conversation) } : {}),
     };
   };
@@ -437,10 +438,11 @@
       generated_at: metrics?.generated_at || null,
       source_status: ["available", "partial", "unavailable"].includes(metrics?.source_status) ? metrics.source_status : "partial",
       counts: Object.fromEntries(["attempts", "answered", "first_answered_confirmed", "first_answered_recorded", "first_answered_certified", "answered_novelty_unknown", "useful", "decision_maker", "followups_due", "followups_executed", "followups_pending"].map((key) => [key, metricNumber(counts[key])])),
+      contact_counts: Object.fromEntries(["first_contact", "follow_up", "unknown", "new_companies"].map(key => [key, metricNumber(metrics?.contact_counts?.[key])])),
       target_first_answered: metricNumber(metrics?.target_first_answered),
       deficit: metricNumber(metrics?.deficit),
       confirmed_deficit: metricNumber(metrics?.confirmed_deficit),
-      coverage: Object.fromEntries(["answer_unknown", "useful_unknown", "decision_maker_unknown", "history_unknown_leads"].map((key) => [key, metricNumber(coverage[key])])),
+      coverage: Object.fromEntries(["answer_unknown", "useful_unknown", "decision_maker_unknown", "legacy_history_unknown"].map((key) => [key, metricNumber(coverage[key])])),
       blockers: Array.isArray(metrics?.blockers) ? metrics.blockers.map((item) => String(item)) : [],
     };
   };
@@ -450,28 +452,44 @@
     const wrapper = analyticsElement(documentObject, "section", `call-metrics call-metrics-${data.source_status}`);
     const heading = analyticsElement(documentObject, "div", "analytics-heading");
     heading.append(
-      analyticsElement(documentObject, "strong", "", `Meta chamadas ${data.date}`),
+      analyticsElement(documentObject, "strong", "", `Chamadas ${data.date}`),
       analyticsElement(documentObject, "span", "analytics-caption", `Fonte ${data.source_status}`),
     );
     wrapper.appendChild(heading);
     const cards = analyticsElement(documentObject, "div", "analytics-breakdown");
+    const contactCards = analyticsElement(documentObject, "div", "analytics-breakdown");
+    [["1º contacto",data.contact_counts.first_contact],["Follow-ups",data.contact_counts.follow_up],
+     ["Histórico desconhecido",data.contact_counts.unknown],["Empresas novas",data.contact_counts.new_companies]]
+      .forEach(([label,value]) => {
+        const chip = analyticsElement(documentObject, "span", "analytics-chip");
+        chip.append(analyticsElement(documentObject,"span","analytics-chip-label",label),
+          analyticsElement(documentObject,"strong","",displayMetric(value)));
+        contactCards.appendChild(chip);
+      });
+    wrapper.appendChild(analyticsElement(documentObject,"p","analytics-caption","Tipo de contacto · empresas novas = únicas confirmadas; não são oportunidades qualificadas"));
+    wrapper.appendChild(contactCards);
+    wrapper.appendChild(analyticsElement(documentObject,"p","analytics-caption","Resultado das chamadas · independente do tipo de contacto"));
     [
       ["Tentativas", data.counts.attempts],
-      ["Atendidas", data.counts.answered],
-      ["1ª confirmadas", data.counts.first_answered_confirmed],
-      ["Úteis", data.counts.useful],
-      ["Decisores", data.counts.decision_maker],
-      ["Faltam para 10", data.confirmed_deficit],
-    ].forEach(([label, value]) => {
+      ["Atendidas", data.counts.answered, data.coverage.answer_unknown],
+      ["1ª confirmadas", data.counts.first_answered_confirmed, (data.coverage.legacy_history_unknown || 0) + (data.coverage.answer_unknown || 0)],
+      ["Úteis", data.counts.useful, data.coverage.useful_unknown],
+      ["Decisores", data.counts.decision_maker, data.coverage.decision_maker_unknown],
+      ["Faltam para 10", data.deficit],
+    ].forEach(([label, value, unknown]) => {
+      const shown = label === "Faltam para 10" && value === null ? "Por apurar"
+        : unknown > 0 && value === 0 ? "Desconhecido"
+        : unknown > 0 && value !== null ? `${displayMetric(value)} (+${unknown} desconhecidas)`
+        : displayMetric(value);
       const chip = analyticsElement(documentObject, "span", "analytics-chip");
       chip.append(
         analyticsElement(documentObject, "span", "analytics-chip-label", label),
-        analyticsElement(documentObject, "strong", "", displayMetric(value)),
+        analyticsElement(documentObject, "strong", "", shown),
       );
       cards.appendChild(chip);
     });
     wrapper.appendChild(cards);
-    const coverage = analyticsElement(documentObject, "p", "analytics-caption", `Unknowns: atendimento ${displayMetric(data.coverage.answer_unknown)}, útil ${displayMetric(data.coverage.useful_unknown)}, decisor ${displayMetric(data.coverage.decision_maker_unknown)}, histórico ${displayMetric(data.coverage.history_unknown_leads)}`);
+    const coverage = analyticsElement(documentObject, "p", "analytics-caption", `Por confirmar: atendimento ${displayMetric(data.coverage.answer_unknown)}, útil ${displayMetric(data.coverage.useful_unknown)}, decisor ${displayMetric(data.coverage.decision_maker_unknown)}, histórico ${displayMetric(data.coverage.legacy_history_unknown)}`);
     wrapper.appendChild(coverage);
     if (data.blockers.length) wrapper.appendChild(analyticsElement(documentObject, "p", "analytics-warning", data.blockers.join(" · ")));
     root.appendChild(wrapper);
@@ -482,13 +500,23 @@
     onFailure = () => {},
     now = () => new Date(),
     timeZone = "Europe/Lisbon",
-  }) => ({
-    load: async () => {
-      const date = formatDateInTimezone(now(), timeZone);
+  }) => {
+    let selectedDate = null;
+    let sequence = 0;
+    return {load: async (requestedDate) => {
+      if (requestedDate !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) || !Number.isFinite(Date.parse(requestedDate)) || new Date(requestedDate).toISOString().slice(0,10) !== requestedDate) return false;
+        selectedDate = requestedDate;
+      }
+      const date = selectedDate || formatDateInTimezone(now(), timeZone);
+      const current = ++sequence;
       try {
-        renderMetrics(normaliseCallMetrics(await requestJson(`/api/v1/pipeline/call-metrics?date=${date}`), date));
+        const response = await requestJson(`/api/v1/pipeline/call-metrics?date=${date}`);
+        if (current !== sequence) return false;
+        renderMetrics(normaliseCallMetrics(response, date));
         return true;
       } catch (error) {
+        if (current !== sequence) return false;
         if (error?.status === 404 || error?.status === 503) {
           renderMetrics(normaliseCallMetrics({
             date,
@@ -503,8 +531,8 @@
         onFailure("Não foi possível sincronizar as métricas de chamadas.");
         return false;
       }
-    },
-  });
+    }};
+  };
   const queueMetricValues = (summary) => {
     const queues = summary?.queues || {};
     const count = (name) => Math.max(0, Number(queues[name]) || 0);
@@ -712,6 +740,7 @@
       occurred_at: callForm.elements.occurred_at?.value || "",
       answer_kind: callForm.elements.answer_kind?.value || "unknown",
       first_conversation: callForm.elements.first_conversation?.value || "unknown",
+      contact_kind: callForm.elements.contact_kind?.value || "unknown",
       useful: callForm.elements.useful?.value || "unknown",
       decision_maker: callForm.elements.decision_maker?.value || "unknown",
       interlocutor_role: callForm.elements.interlocutor_role?.value || "unknown",
@@ -1259,6 +1288,12 @@
       renderMetrics: (metrics) => renderCallMetrics({ document, root: callMetricsContent, metrics }),
       onFailure: (message) => window.notify(message, "err"),
     });
+    const callMetricsDate = root.querySelector('[data-call-metrics-date]');
+    if (callMetricsDate) {
+      callMetricsDate.value = formatDateInTimezone(new Date());
+      callMetricsDate.addEventListener('change', () => callMetricsBehavior.load(callMetricsDate.value));
+      root.querySelector('[data-call-metrics-refresh]')?.addEventListener('click', () => callMetricsBehavior.load(callMetricsDate.value));
+    }
     const analyticsContent = root.querySelector("[data-analytics-content]");
     const analyticsWarning = root.querySelector("[data-analytics-warning]");
     const analyticsBehavior = createLeadAnalyticsBehavior({

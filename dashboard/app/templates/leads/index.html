@@ -182,6 +182,7 @@
     <button class="btn" type="button" data-prepare-call-day>Preparar hoje · 120 min</button>
     <ol data-call-day-items style="padding-left:22px;max-height:280px;overflow:auto"></ol>
   </details>
+  <div class="analytics-actions"><label>Dia das chamadas <input type="date" data-call-metrics-date></label><button type="button" data-call-metrics-refresh>Atualizar chamadas</button></div>
   <section class="call-metrics-panel" data-call-metrics aria-label="Métricas canónicas de chamadas">
     <p class="analytics-caption">Métricas de chamadas indisponíveis até o backend canónico estar ativo; unknown nunca é mostrado como zero.</p>
   </section>
@@ -251,6 +252,8 @@
             <label><input type="radio" name="outcome_code" value="connected" required><span>✓ Atendeu</span></label>
             <label><input type="radio" name="outcome_code" value="no_answer" required><span>↗ Não atendeu</span></label>
           </fieldset>
+          <details class="call-other" data-call-advanced>
+          <summary>Detalhes avançados · opcional</summary>
           <div class="call-dimensions" aria-label="Dimensões telefónicas verificadas">
             <label>Hora real da chamada<input type="datetime-local" name="occurred_at" required></label>
             <label>Atendimento<select name="answer_kind" required>
@@ -261,7 +264,8 @@
               <option value="voicemail">Caixa de mensagens</option>
               <option value="wrong_number">Número errado</option>
             </select></label>
-            <label>Primeira conversa com esta empresa?<select name="first_conversation"><option value="unknown">Não sei</option><option value="yes">Sim, confirmo</option><option value="no">Não, já falámos</option></select></label>
+            <label>Antes desta chamada, já houve algum contacto?<select name="contact_kind"><option value="unknown">Histórico desconhecido</option><option value="first_contact">1º contacto — confirmo nenhum anterior</option><option value="follow_up">Follow-up — já houve contacto</option></select><small>Inclui emails, reuniões e tentativas sem resposta.</small></label>
+            <label>Primeira conversa telefónica atendida?<select name="first_conversation"><option value="unknown">Não sei</option><option value="yes">Sim, confirmo</option><option value="no">Não, já falámos</option></select></label>
               <label>Conversa útil<select name="useful" required>
               <option value="unknown">Desconhecido</option>
               <option value="yes">Sim</option>
@@ -280,6 +284,7 @@
             </select></label>
             <label class="full-width">Razão para repetir no mesmo dia <span>opcional</span><input name="repeat_reason" maxlength="500" placeholder="Só quando há retorno pedido ou exceção legítima"></label>
           </div>
+          </details>
           <label class="call-note-label" for="call-note">Nota da conversa <span>opcional</span></label>
           <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
           {% if can_write_tasks %}
@@ -404,4 +409,4 @@
   </template>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="/static/leads.js?v=20260908-cadence1"></script><script defer src="/static/call-day.js?v=20260908-cadence1"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/leads.js?v=20260908-metrics2"></script><script defer src="/static/call-day.js?v=20260908-cadence1"></script>{% endblock %}

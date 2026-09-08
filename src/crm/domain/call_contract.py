@@ -10,6 +10,9 @@ class CallDetails(BaseModel):
     schema_version: Literal[1]
     attempted: Literal[True]
     first_conversation: StrictBool | None = None
+    # Operator assertion about ALL contact channels immediately before this call.
+    # Missing history is unknown; independent from whether anyone answered.
+    contact_kind: Literal["first_contact", "follow_up", "unknown"] = "unknown"
     answer_kind: Literal["unknown", "human_counterparty", "no_answer", "ivr", "voicemail", "wrong_number"]
     useful: StrictBool | None
     decision_maker: StrictBool | None

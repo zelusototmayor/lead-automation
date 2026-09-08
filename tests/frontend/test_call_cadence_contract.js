@@ -230,6 +230,49 @@ test("call metrics unavailable 503/404 becomes unavailable with nullable counts,
   assert.match(rendered[0].blockers[0], /indispon/i);
 });
 
+test("contact type is independent from attendance and explicitly captured", () => {
+  const payload=buildCallPayload(structuredCallFields({outcome_code:'no_answer', answer_kind:'no_answer', useful:'unknown',decision_maker:'unknown',interlocutor_role:'unknown', contact_kind:'first_contact'}));
+  assert.equal(payload.call_details.contact_kind,'first_contact');
+  assert.equal(payload.call_details.answer_kind,'no_answer');
+  const root=new FakeElement('section');
+  renderCallMetrics({document:fakeDocument, root, metrics:{date:'2026-09-08',
+    counts:{attempts:3,answered:1},contact_counts:{first_contact:1,follow_up:1,unknown:1,new_companies:1}}});
+  assert.match(root.textContent,/1º contacto1/);
+  assert.match(root.textContent,/Follow-ups1/);
+  assert.match(root.textContent,/Histórico desconhecido1/);
+  assert.match(root.textContent,/Empresas novas1/);
+});
+
+test("metrics selected day persists on refresh and rejects stale responses", async () => {
+  const pending=[], rendered=[];
+  const behavior=createCallMetricsBehavior({requestJson:url=>new Promise(resolve=>pending.push({url,resolve})), renderMetrics:m=>rendered.push(m)});
+  const old=behavior.load('2026-09-07');
+  const latest=behavior.load('2026-09-08');
+  pending[1].resolve({date:'2026-09-08'}); await latest;
+  pending[0].resolve({date:'2026-09-07'}); await old;
+  assert.deepEqual(rendered.map(m=>m.date),['2026-09-08']);
+  const refresh=behavior.load();
+  assert.match(pending[2].url,/date=2026-09-08$/);
+  pending[2].resolve({date:'2026-09-08'}); await refresh;
+});
+
+test("partial legacy metrics never present unknown dimensions or deficit as certified zeros", () => {
+  const root = new FakeElement("section");
+  renderCallMetrics({document: fakeDocument, root, metrics: {
+    date: "2026-09-08", source_status: "partial",
+    counts: {attempts:17, answered:15, first_answered_confirmed:0, useful:0, decision_maker:0},
+    coverage: {answer_unknown:0, useful_unknown:17, decision_maker_unknown:17, legacy_history_unknown:15},
+    target_first_answered:10, deficit:null, confirmed_deficit:10,
+  }});
+  assert.match(root.textContent, /Atendidas15/);
+  assert.match(root.textContent, /1ª confirmadasDesconhecido/);
+  assert.match(root.textContent, /ÚteisDesconhecido/);
+  assert.match(root.textContent, /DecisoresDesconhecido/);
+  assert.match(root.textContent, /Faltam para 10Por apurar/);
+  assert.doesNotMatch(root.textContent, /Faltam para 1010/);
+  assert.match(root.textContent, /histórico 15/);
+});
+
 test("call metrics rendering keeps zero distinct from unknown and treats malformed partial payload safely", () => {
   const root = new FakeElement("section");
   renderCallMetrics({
