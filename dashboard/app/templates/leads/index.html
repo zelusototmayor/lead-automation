@@ -5,7 +5,7 @@
   .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1fr) 386px; gap: 10px; align-items: start; }
   .pipeline-layout > *, .leads-list, .lead-row > * { min-width: 0; }
   .lead-company, .lead-contact, .lead-action, .detail-contact, .task-title { overflow-wrap: anywhere; }
-  .metric-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: hidden; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .metric-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); overflow: hidden; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
   .metric-card { min-height: 66px; padding: 9px 12px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
   .metric-card:last-child { border-right: 0; }
   button.metric-card:hover, button.metric-card[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -14,6 +14,8 @@
   .metric-note { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; font-weight: 600; }
   .metric-card[data-metric="touchedToday"] .metric-value { color: var(--green); }
   .metric-card[data-metric="callsDue"] .metric-value { color: var(--red); }
+  .metric-card[data-metric="phoneNew"] .metric-value { color: var(--blue); }
+  .metric-card[data-metric="phoneUnknown"] .metric-value { color: var(--amber); }
   .metric-card[data-metric="emailsDue"] .metric-value { color: var(--amber); }
   .metric-card[data-metric="proposalFollowupsDue"] .metric-value { color: var(--blue); }
   .queue-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
@@ -41,6 +43,9 @@
   .analytics-metric-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
   .analytics-unavailable { margin: 10px 0 0; }
   .analytics-stage-dwell { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 11px; }
+  .call-metrics-panel { margin: 0 0 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .call-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .call-dimensions .full-width { grid-column: 1 / -1; }
   .lead-tools { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
   .lead-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
   .lead-tools input, .lead-tools select, .task-form input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -113,7 +118,7 @@
     .metric-card { flex: 0 0 132px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); scroll-snap-align: start; }
     .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .primary-nav a, .queue-btn, .analytics-metric-btn, .queue-pagination .btn, .detail-actions .btn, .task-actions .btn, .command-form-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; }
-    .lead-tools input, .lead-tools select, .task-form input, .command-form input:not([type="checkbox"]), .command-form select { min-height: 44px; }
+    .lead-tools input, .lead-tools select, .task-form input, .command-form input:not([type="checkbox"]), .command-form select, .call-dimensions select, .call-dimensions input { min-height: 44px; }
     details.detail-section > summary, details.command-disclosure > summary { min-height: 44px; }
   }
   @media (max-width: 560px) {
@@ -122,7 +127,8 @@
     .analytics-grid { grid-template-columns: minmax(0, 1fr); }
     .analytics-card-wide { grid-column: auto; }
     .analytics-days { grid-auto-columns: minmax(138px, 82vw); }
-    .lead-tools { grid-template-columns: 1fr; }
+    .lead-tools, .call-dimensions { grid-template-columns: 1fr; }
+    .call-dimensions .full-width { grid-column: auto; }
     .lead-head { display: none; }
     .lead-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; min-height: 0; padding: 10px 11px; }
     .lead-company { grid-column: 1; grid-row: 1; font-size: 14px; }
@@ -154,15 +160,24 @@
     <button class="metric-card" type="button" data-metric="touchedToday" data-metric-targets="touched_today">
       <span class="metric-label">Trabalhados hoje</span><strong class="metric-value" data-metric-value="touchedToday">—</strong><span class="metric-note">Atividade registada</span>
     </button>
-    <div class="metric-card" data-metric="callsDue">
-      <span class="metric-label">Para ligar</span><strong class="metric-value" data-metric-value="callsDue">—</strong><span class="metric-note">Atrasadas + hoje</span>
-    </div>
+    <button class="metric-card" type="button" data-metric="callsDue" data-metric-targets="calls_actionable,calls_overdue,calls_today">
+      <span class="metric-label">Chamadas hoje</span><strong class="metric-value" data-metric-value="callsDue">—</strong><span class="metric-note">Acionáveis sem duplicar</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="phoneNew" data-metric-targets="phone_new">
+      <span class="metric-label">Nova prospeção</span><strong class="metric-value" data-metric-value="phoneNew">—</strong><span class="metric-note">Sem atendida certificada</span>
+    </button>
+    <button class="metric-card" type="button" data-metric="phoneUnknown" data-metric-targets="phone_unknown">
+      <span class="metric-label">Histórico incerto</span><strong class="metric-value" data-metric-value="phoneUnknown">—</strong><span class="metric-note">Não entra na meta</span>
+    </button>
     <div class="metric-card" data-metric="emailsDue">
       <span class="metric-label">Emails a acompanhar</span><strong class="metric-value" data-metric-value="emailsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
     <div class="metric-card" data-metric="proposalFollowupsDue">
       <span class="metric-label">Propostas a acompanhar</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
+  </section>
+  <section class="call-metrics-panel" data-call-metrics aria-label="Métricas canónicas de chamadas">
+    <p class="analytics-caption">Métricas de chamadas indisponíveis até o backend canónico estar ativo; unknown nunca é mostrado como zero.</p>
   </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
     {% for value, label in pipeline_queues %}
@@ -230,12 +245,41 @@
             <label><input type="radio" name="outcome_code" value="connected" required><span>✓ Atendeu</span></label>
             <label><input type="radio" name="outcome_code" value="no_answer" required><span>↗ Não atendeu</span></label>
           </fieldset>
+          <div class="call-dimensions" aria-label="Dimensões telefónicas verificadas">
+            <label>Hora real da chamada<input type="datetime-local" name="occurred_at" required></label>
+            <label>Atendimento<select name="answer_kind" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="human_counterparty">Humano / contraparte</option>
+              <option value="no_answer">Não atendeu</option>
+              <option value="ivr">IVR / central automática</option>
+              <option value="voicemail">Caixa de mensagens</option>
+              <option value="wrong_number">Número errado</option>
+            </select></label>
+            <label>Conversa útil<select name="useful" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="yes">Sim</option>
+              <option value="no">Não</option>
+            </select></label>
+            <label>Falaste com decisor?<select name="decision_maker" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="yes">Sim</option>
+              <option value="no">Não</option>
+            </select></label>
+            <label>Papel do interlocutor<select name="interlocutor_role" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="reception">Receção</option>
+              <option value="decision_maker">Decisor</option>
+              <option value="other">Outro</option>
+            </select></label>
+            <label class="full-width">Razão para repetir no mesmo dia <span>opcional</span><input name="repeat_reason" maxlength="500" placeholder="Só quando há retorno pedido ou exceção legítima"></label>
+          </div>
           <label class="call-note-label" for="call-note">Nota da conversa <span>opcional</span></label>
           <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
           {% if can_write_tasks %}
           <div class="callback-box">
             <label class="callback-toggle"><input type="checkbox" name="callback_enabled"><span>Voltar a ligar</span><span class="callback-hint">Marcar callback</span></label>
             <div class="callback-fields hidden" data-callback-fields>
+              <label><span><input type="checkbox" name="callback_agreed"> Callback combinado com o cliente</span></label>
               <label>Quando<input type="datetime-local" name="callback_due_at"></label>
               <label>Motivo <span>opcional</span><input name="callback_title" maxlength="512" placeholder="Retomar a conversa"></label>
             </div>

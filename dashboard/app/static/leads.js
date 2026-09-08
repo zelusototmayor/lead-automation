@@ -12,6 +12,7 @@
     postLead,
     refreshSummary = async () => {},
     refreshQueue = async () => {},
+    refreshCallMetrics = async () => {},
     onLoad = () => {},
     onReadFailure = () => {},
     nextPageRow = async () => null,
@@ -66,6 +67,7 @@
       await Promise.all([
         refreshSummary().catch((error) => onReadFailure("summary", error)),
         refreshQueue().catch((error) => onReadFailure("queue", error)),
+        refreshCallMetrics().catch((error) => onReadFailure("call-metrics", error)),
       ]);
       if (
         saveSequence !== loadSequence
@@ -338,6 +340,8 @@
     call: "Chamada", email: "Email", follow_up: "Acompanhamento", proposal_followup: "Acompanhar proposta",
     open: "Por fazer", completed: "Concluída", cancelled: "Cancelada", connected: "Atendeu", no_answer: "Não atendeu",
     voicemail: "Caixa de mensagens", wrong_number: "Número errado", not_interested: "Sem interesse", outbound: "Enviado", inbound: "Recebido",
+    phone_new: "Nova prospeção certificada", phone_unknown: "Histórico telefónico desconhecido", calls_actionable: "Chamadas acionáveis",
+    human_counterparty: "Humano / contraparte", ivr: "IVR", reception: "Receção", decision_maker: "Decisor", other: "Outro", unknown: "Desconhecido",
   });
   const PRIORITY_LABELS = Object.freeze({ high: "Alta", medium: "Média", low: "Baixa" });
   const stageLabel = (value) => STAGE_LABELS[value] || String(value || "Sem estado").replaceAll("_", " ");
@@ -349,16 +353,170 @@
       ? "Sem data"
       : date.toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
   };
+  const formatDateInTimezone = (date, timeZone = "Europe/Lisbon") => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date instanceof Date ? date : new Date(date));
+    const value = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+  };
+  const toAbsoluteISOString = (value, message) => {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) throw new Error(message);
+    return date.toISOString();
+  };
+  const triState = (value) => {
+    if (value === true || value === "yes" || value === "true") return true;
+    if (value === false || value === "no" || value === "false") return false;
+    return null;
+  };
+  const callIntent = (purpose, dueIso, evidenceRefs = [], gateReason = null) => ({
+    schema_version: 1,
+    purpose,
+    agreed_with_client: purpose === "agreed_callback",
+    calendar_policy: "none",
+    obligation_key: `${purpose === "agreed_callback" ? "agreed-callback" : "internal-preparation"}:${dueIso}`,
+    evidence_refs: Array.isArray(evidenceRefs) ? evidenceRefs : [],
+    gate_reason: gateReason || null,
+  });
+  const buildCallDetails = (values) => {
+    const allowedAnswerKinds = ["unknown", "human_counterparty", "no_answer", "ivr", "voicemail", "wrong_number"];
+    const outcomeDefaults = { no_answer: "no_answer", voicemail: "voicemail", wrong_number: "wrong_number" };
+    const answerKind = values.answer_kind || outcomeDefaults[values.outcome_code] || "unknown";
+    if (!allowedAnswerKinds.includes(answerKind)) throw new Error("Escolhe o tipo de atendimento.");
+    const contradictory = {
+      no_answer: ["human_counterparty", "ivr", "voicemail", "wrong_number"],
+      voicemail: ["human_counterparty", "no_answer", "ivr", "wrong_number"],
+      wrong_number: ["human_counterparty", "no_answer", "ivr", "voicemail"],
+    };
+    if ((contradictory[values.outcome_code] || []).includes(answerKind)) {
+      throw new Error("O resultado da chamada contradiz o tipo de atendimento escolhido.");
+    }
+    const useful = triState(values.useful);
+    const decisionMaker = triState(values.decision_maker);
+    const role = values.interlocutor_role || "unknown";
+    if (!["unknown", "reception", "decision_maker", "other"].includes(role)) throw new Error("Escolhe o papel do interlocutor.");
+    if (useful === true && answerKind !== "human_counterparty") throw new Error("Conversa útil requer atendimento humano.");
+    if (decisionMaker === true && answerKind !== "human_counterparty") throw new Error("Decisor requer atendimento humano.");
+    if (decisionMaker === true && role === "reception") throw new Error("A receção não pode ser marcada como decisor.");
+    if (decisionMaker === true && role !== "decision_maker") throw new Error("Decisor requer papel de decisor.");
+    const repeatReason = String(values.repeat_reason || "").trim();
+    return {
+      schema_version: 1,
+      attempted: true,
+      answer_kind: answerKind,
+      useful,
+      decision_maker: decisionMaker,
+      interlocutor_role: role,
+      repeat_reason: repeatReason || null,
+    };
+  };
+  const buildNextActionPayload = (values) => {
+    const dueIso = toAbsoluteISOString(values.due_at, "Escolhe a data e hora da próxima ação.");
+    const payload = {
+      task_type: values.task_type,
+      title: String(values.title || "").trim(),
+      due_at: dueIso,
+    };
+    if (payload.task_type === "call") payload.call_intent = callIntent("internal_preparation", dueIso);
+    return payload;
+  };
+  const metricNumber = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
+  const displayMetric = (value) => (metricNumber(value) === null ? "—" : String(value));
+  const normaliseCallMetrics = (metrics, fallbackDate) => {
+    const counts = metrics?.counts || {};
+    const coverage = metrics?.coverage || {};
+    return {
+      schema_version: 1,
+      date: metrics?.date || fallbackDate,
+      timezone: metrics?.timezone || "Europe/Lisbon",
+      generated_at: metrics?.generated_at || null,
+      source_status: ["available", "partial", "unavailable"].includes(metrics?.source_status) ? metrics.source_status : "partial",
+      counts: Object.fromEntries(["attempts", "answered", "first_answered_certified", "answered_novelty_unknown", "useful", "decision_maker", "followups_due", "followups_executed", "followups_pending"].map((key) => [key, metricNumber(counts[key])])),
+      target_first_answered: metricNumber(metrics?.target_first_answered),
+      deficit: metricNumber(metrics?.deficit),
+      coverage: Object.fromEntries(["answer_unknown", "useful_unknown", "decision_maker_unknown", "history_unknown_leads"].map((key) => [key, metricNumber(coverage[key])])),
+      blockers: Array.isArray(metrics?.blockers) ? metrics.blockers.map((item) => String(item)) : [],
+    };
+  };
+  const renderCallMetrics = ({ document: documentObject, root, metrics }) => {
+    root.replaceChildren();
+    const data = normaliseCallMetrics(metrics, metrics?.date || formatDateInTimezone(new Date()));
+    const wrapper = analyticsElement(documentObject, "section", `call-metrics call-metrics-${data.source_status}`);
+    const heading = analyticsElement(documentObject, "div", "analytics-heading");
+    heading.append(
+      analyticsElement(documentObject, "strong", "", `Meta chamadas ${data.date}`),
+      analyticsElement(documentObject, "span", "analytics-caption", `Fonte ${data.source_status}`),
+    );
+    wrapper.appendChild(heading);
+    const cards = analyticsElement(documentObject, "div", "analytics-breakdown");
+    [
+      ["Tentativas", data.counts.attempts],
+      ["Atendidas", data.counts.answered],
+      ["1ª atendidas", data.counts.first_answered_certified],
+      ["Úteis", data.counts.useful],
+      ["Decisores", data.counts.decision_maker],
+      ["Défice", data.deficit],
+    ].forEach(([label, value]) => {
+      const chip = analyticsElement(documentObject, "span", "analytics-chip");
+      chip.append(
+        analyticsElement(documentObject, "span", "analytics-chip-label", label),
+        analyticsElement(documentObject, "strong", "", displayMetric(value)),
+      );
+      cards.appendChild(chip);
+    });
+    wrapper.appendChild(cards);
+    const coverage = analyticsElement(documentObject, "p", "analytics-caption", `Unknowns: atendimento ${displayMetric(data.coverage.answer_unknown)}, útil ${displayMetric(data.coverage.useful_unknown)}, decisor ${displayMetric(data.coverage.decision_maker_unknown)}, histórico ${displayMetric(data.coverage.history_unknown_leads)}`);
+    wrapper.appendChild(coverage);
+    if (data.blockers.length) wrapper.appendChild(analyticsElement(documentObject, "p", "analytics-warning", data.blockers.join(" · ")));
+    root.appendChild(wrapper);
+  };
+  const createCallMetricsBehavior = ({
+    requestJson,
+    renderMetrics,
+    onFailure = () => {},
+    now = () => new Date(),
+    timeZone = "Europe/Lisbon",
+  }) => ({
+    load: async () => {
+      const date = formatDateInTimezone(now(), timeZone);
+      try {
+        renderMetrics(normaliseCallMetrics(await requestJson(`/api/v1/pipeline/call-metrics?date=${date}`), date));
+        return true;
+      } catch (error) {
+        if (error?.status === 404 || error?.status === 503) {
+          renderMetrics(normaliseCallMetrics({
+            date,
+            timezone: timeZone,
+            source_status: "unavailable",
+            counts: {},
+            coverage: {},
+            blockers: ["Métricas de chamadas indisponíveis durante rollout."],
+          }, date));
+          return false;
+        }
+        onFailure("Não foi possível sincronizar as métricas de chamadas.");
+        return false;
+      }
+    },
+  });
   const queueMetricValues = (summary) => {
     const queues = summary?.queues || {};
     const count = (name) => Math.max(0, Number(queues[name]) || 0);
-    return {
+    const values = {
       all: count("all"),
       touchedToday: count("touched_today"),
-      callsDue: count("calls_overdue") + count("calls_today"),
+      callsDue: queues.calls_actionable === undefined ? count("calls_overdue") + count("calls_today") : count("calls_actionable"),
       emailsDue: count("emails_overdue") + count("emails_today"),
       proposalFollowupsDue: count("proposal_followups_overdue") + count("proposal_followups_today"),
     };
+    if (queues.phone_new !== undefined) values.phoneNew = count("phone_new");
+    if (queues.phone_unknown !== undefined) values.phoneUnknown = count("phone_unknown");
+    if (queues.calls_actionable !== undefined) values.callsActionable = count("calls_actionable");
+    return values;
   };
   const leadRowKey = (lead) => (
     lead?.task?.id ? `${lead.lead_id}:${lead.task.id}` : String(lead?.lead_id || "")
@@ -382,6 +540,14 @@
     title: queueItem?.task?.title || "Sem próxima ação",
     due: queueItem?.task?.due_at ? formatDateTime(queueItem.task.due_at) : "—",
   });
+  const callDetailsSummary = (details = null) => {
+    if (!details || typeof details !== "object") return "Atendimento desconhecido · útil desconhecido · decisor desconhecido";
+    const answered = details.answer_kind === "human_counterparty" ? "atendida humana" : details.answer_kind ? stageLabel(details.answer_kind) : "atendimento desconhecido";
+    const useful = details.useful === true ? "útil sim" : details.useful === false ? "útil não" : "útil desconhecido";
+    const decisionMaker = details.decision_maker === true ? "decisor sim" : details.decision_maker === false ? "decisor não" : "decisor desconhecido";
+    const role = `papel ${stageLabel(details.interlocutor_role || "unknown")}`;
+    return [answered, useful, decisionMaker, role, details.repeat_reason ? `repetição: ${details.repeat_reason}` : null].filter(Boolean).join(" · ");
+  };
 
   const createCallDraftStore = (storage, now = () => Date.now()) => {
     const prefix = "zelus.crm.call-draft.v1:";
@@ -411,11 +577,23 @@
   const buildCallPayload = (values, selectedTask = null) => {
     const outcomes = ["connected", "no_answer", "voicemail", "wrong_number", "not_interested", "follow_up"];
     if (!outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
-    const payload = { outcome_code: values.outcome_code, summary: String(values.summary || "").trim() || null };
+    const payload = {
+      outcome_code: values.outcome_code,
+      summary: String(values.summary || "").trim() || null,
+    };
+    if (values.occurred_at) payload.occurred_at = toAbsoluteISOString(values.occurred_at, "Confirma a data e hora real da chamada.");
+    if (values.answer_kind || values.useful || values.decision_maker || values.interlocutor_role || values.repeat_reason) {
+      payload.call_details = buildCallDetails(values);
+    }
     if (values.callback_enabled) {
-      const due = new Date(values.callback_due_at || "");
-      if (Number.isNaN(due.getTime())) throw new Error("Escolhe a data e hora para voltar a ligar.");
-      payload.next_action = { task_type: "call", title: String(values.callback_title || "").trim() || "Retomar a conversa", due_at: due.toISOString() };
+      const dueIso = toAbsoluteISOString(values.callback_due_at, "Escolhe a data e hora para voltar a ligar.");
+      if ((Object.hasOwn(values, "callback_agreed") || values.answer_kind || values.occurred_at) && !values.callback_agreed) throw new Error("Só marca callback quando tiver sido combinado com o cliente.");
+      payload.next_action = {
+        task_type: "call",
+        title: String(values.callback_title || "").trim() || "Retomar a conversa",
+        due_at: dueIso,
+      };
+      if (values.callback_agreed) payload.next_action.call_intent = callIntent("agreed_callback", dueIso);
     }
     if (selectedTask?.queue?.startsWith("calls_") && selectedTask.task?.type === "call") {
       payload.completed_task = { id: selectedTask.task.id, expected_version: selectedTask.task.version };
@@ -451,6 +629,11 @@
       createCallDraftStore,
       createCallCommandBehavior,
       buildCallPayload,
+      buildCallDetails,
+      buildNextActionPayload,
+      createCallMetricsBehavior,
+      renderCallMetrics,
+      formatDateInTimezone,
       createLatestQueueLoader,
       createLeadQueueBehavior,
       createLeadAnalyticsBehavior,
@@ -517,10 +700,21 @@
     const callDrafts = createCallDraftStore(draftStorage);
     const callForm = root.querySelector("[data-call-log-form]");
     let savingCall = false;
+    const localDateTimeValue = (date = new Date()) => {
+      const offsetMs = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+    };
     const readCallForm = () => callForm ? {
       outcome_code: callForm.elements.outcome_code.value,
       summary: callForm.elements.summary.value,
+      occurred_at: callForm.elements.occurred_at?.value || "",
+      answer_kind: callForm.elements.answer_kind?.value || "unknown",
+      useful: callForm.elements.useful?.value || "unknown",
+      decision_maker: callForm.elements.decision_maker?.value || "unknown",
+      interlocutor_role: callForm.elements.interlocutor_role?.value || "unknown",
+      repeat_reason: callForm.elements.repeat_reason?.value || "",
       callback_enabled: !!callForm.elements.callback_enabled?.checked,
+      callback_agreed: !!callForm.elements.callback_agreed?.checked,
       callback_due_at: callForm.elements.callback_due_at?.value || "",
       callback_title: callForm.elements.callback_title?.value || "",
     } : null;
@@ -533,7 +727,7 @@
     const persistCallDraft = () => {
       if (!selectedLeadId || !currentLead || !callForm) return;
       const values = readCallForm();
-      if (!values.outcome_code && !values.summary && !values.callback_enabled && !values.callback_due_at && !values.callback_title) {
+      if (!values.outcome_code && !values.summary && !values.callback_enabled && !values.callback_due_at && !values.callback_title && !values.repeat_reason) {
         if (callDrafts.read(selectedLeadId)?.pending) callDrafts.write(selectedLeadId, values);
         else callDrafts.remove(selectedLeadId);
         root.querySelector("[data-call-draft-status]").textContent = "";
@@ -546,11 +740,23 @@
       if (!callForm) return;
       callForm.reset();
       const draft = callDrafts.read(leadId);
+      if (callForm.elements.occurred_at) callForm.elements.occurred_at.value = localDateTimeValue();
+      if (callForm.elements.answer_kind) callForm.elements.answer_kind.value = "unknown";
+      if (callForm.elements.useful) callForm.elements.useful.value = "unknown";
+      if (callForm.elements.decision_maker) callForm.elements.decision_maker.value = "unknown";
+      if (callForm.elements.interlocutor_role) callForm.elements.interlocutor_role.value = "unknown";
       if (draft) {
         callForm.elements.outcome_code.value = draft.outcome_code || "";
         callForm.elements.summary.value = draft.summary || "";
+        if (callForm.elements.occurred_at) callForm.elements.occurred_at.value = draft.occurred_at || callForm.elements.occurred_at.value;
+        if (callForm.elements.answer_kind) callForm.elements.answer_kind.value = draft.answer_kind || "unknown";
+        if (callForm.elements.useful) callForm.elements.useful.value = draft.useful || "unknown";
+        if (callForm.elements.decision_maker) callForm.elements.decision_maker.value = draft.decision_maker || "unknown";
+        if (callForm.elements.interlocutor_role) callForm.elements.interlocutor_role.value = draft.interlocutor_role || "unknown";
+        if (callForm.elements.repeat_reason) callForm.elements.repeat_reason.value = draft.repeat_reason || "";
         if (callForm.elements.callback_enabled) {
           callForm.elements.callback_enabled.checked = !!draft.callback_enabled;
+          if (callForm.elements.callback_agreed) callForm.elements.callback_agreed.checked = !!draft.callback_agreed;
           callForm.elements.callback_due_at.value = draft.callback_due_at || "";
           callForm.elements.callback_title.value = draft.callback_title || "";
         }
@@ -866,20 +1072,15 @@
       nextActionForm?.addEventListener("submit", async (event) => {
         event.preventDefault();
         const data = new FormData(nextActionForm);
-        const dueAt = new Date(String(data.get("due_at") || ""));
-        if (Number.isNaN(dueAt.getTime())) {
-          window.notify("Data inválida.", "err");
-          return;
-        }
         try {
-          await queueBehavior.save("schedule-next-action", {
+          await queueBehavior.save("schedule-next-action", buildNextActionPayload({
             task_type: data.get("task_type"),
             title: String(data.get("title") || "").trim(),
-            due_at: dueAt.toISOString(),
-          }, false);
+            due_at: String(data.get("due_at") || ""),
+          }), false);
           nextActionForm.reset();
-        } catch (_error) {
-          window.notify("Não foi possível marcar a próxima ação.", "err");
+        } catch (error) {
+          window.notify(error.message || "Não foi possível marcar a próxima ação.", "err");
         }
       });
     };
@@ -911,7 +1112,7 @@
         const item = document.createElement("div");
         item.className = "task-item";
         appendText(item, "task-title", task.title);
-        appendText(item, "", `${stageLabel(task.type)} · ${formatDateTime(task.due_at)} · ${stageLabel(task.status)}`);
+        appendText(item, "", [stageLabel(task.type), formatDateTime(task.due_at), stageLabel(task.status), task.call_intent?.purpose === "agreed_callback" ? "callback combinado" : task.call_intent?.purpose === "internal_preparation" ? "preparação interna" : null].filter(Boolean).join(" · "));
         if (canWriteTasks && task.status === "open") {
           const actions = root.querySelector("[data-task-actions-template]").content.cloneNode(true);
           actions.querySelector("[data-task-complete]").addEventListener("click", () => taskCommand(task, "complete"));
@@ -937,7 +1138,7 @@
         appendText(
           item,
           "",
-          [activity.actor_type === "migration" ? "Nota importada · data original desconhecida" : formatDateTime(activity.occurred_at), activity.outcome_code ? stageLabel(activity.outcome_code) : null, activity.direction ? stageLabel(activity.direction) : null]
+          [activity.actor_type === "migration" ? "Nota importada · data original desconhecida" : formatDateTime(activity.occurred_at), activity.outcome_code ? stageLabel(activity.outcome_code) : null, activity.direction ? stageLabel(activity.direction) : null, activity.call_details ? callDetailsSummary(activity.call_details) : activity.outcome_code ? callDetailsSummary(null) : null]
             .filter(Boolean)
             .join(" · "),
         );
@@ -1037,6 +1238,7 @@
       postLead: postLeadCommand,
       refreshSummary: loadSummary,
       refreshQueue: loadQueue,
+      refreshCallMetrics: () => callMetricsBehavior.load(),
       nextPageRow: async () => {
         if (!await queueLoader.next()) return null;
         const row = list.querySelector(".lead-row[data-lead-id]");
@@ -1048,6 +1250,12 @@
       ),
     });
     const loadLead = queueBehavior.loadLead;
+    const callMetricsContent = root.querySelector("[data-call-metrics]");
+    const callMetricsBehavior = createCallMetricsBehavior({
+      requestJson: fetchJson,
+      renderMetrics: (metrics) => renderCallMetrics({ document, root: callMetricsContent, metrics }),
+      onFailure: (message) => window.notify(message, "err"),
+    });
     const analyticsContent = root.querySelector("[data-analytics-content]");
     const analyticsWarning = root.querySelector("[data-analytics-warning]");
     const analyticsBehavior = createLeadAnalyticsBehavior({
@@ -1184,9 +1392,11 @@
     }
 
     analyticsBehavior.load();
+    callMetricsBehavior.load();
     const initialParams = new URLSearchParams(window.location.search);
     const knownQueues = [...root.querySelectorAll("[data-pipeline-queue]")].map(button => button.dataset.pipelineQueue);
-    const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : (initialParams.has("search") || initialParams.has("lead") ? "all" : "calls_overdue");
+    const defaultCallQueue = knownQueues.includes("calls_actionable") ? "calls_actionable" : "calls_overdue";
+    const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : (initialParams.has("search") || initialParams.has("lead") ? "all" : defaultCallQueue);
     const initialStage = [...stageFilter.options].some(option => option.value === initialParams.get("stage")) ? initialParams.get("stage") : "";
     const initialPriority = ["low","medium","high"].includes(initialParams.get("priority")) ? initialParams.get("priority") : "";
     const initialOffset = Math.max(0, Math.min(1000000, parseInt(initialParams.get("offset"), 10) || 0));
