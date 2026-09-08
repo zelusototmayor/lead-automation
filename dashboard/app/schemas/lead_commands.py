@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
-from src.crm.domain.call_contract import CallDetails
+from src.crm.domain.call_contract import CallDetails, PhoneHistory, CallIntent
 
 
 class LeadOperationBase(BaseModel):
@@ -12,6 +12,18 @@ class LeadOperationBase(BaseModel):
 
     command_id: UUID
     expected_version: StrictInt = Field(ge=1)
+
+
+class PrepareCallDayBody(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    command_id: UUID
+    work_date: date
+    expected_version: StrictInt = Field(ge=0)
+    capacity_minutes: StrictInt = Field(ge=0, le=480)
+
+
+class RecordPhoneHistoryCommandBody(LeadOperationBase):
+    phone_history: PhoneHistory
 
 
 class EditLeadCommandBody(LeadOperationBase):
@@ -26,6 +38,7 @@ class EditLeadCommandBody(LeadOperationBase):
 
 class CallNextAction(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    call_intent: CallIntent | None = None
     task_type: StrictStr = Field(pattern="^call$")
     title: StrictStr = Field(min_length=1, max_length=512)
     due_at: AwareDatetime
@@ -63,6 +76,7 @@ class AddNoteCommandBody(LeadOperationBase):
 
 
 class ScheduleNextActionCommandBody(LeadOperationBase):
+    call_intent: CallIntent | None = None
     task_type: StrictStr = Field(pattern="^(call|email|follow_up)$")
     title: StrictStr = Field(min_length=1, max_length=512)
     due_at: AwareDatetime
@@ -80,3 +94,4 @@ class LeadOperationResult(BaseModel):
     occurred_at: datetime | None = None
     activity_id: UUID | None = None
     call_details: dict | None = None
+    phone_history: dict | None = None

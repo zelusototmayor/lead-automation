@@ -14,11 +14,13 @@ from dashboard.app.db import create_database_engine, create_session_factory
 from dashboard.app.feature_flags import require_postgres_command_writer
 from dashboard.app.schemas.lead_commands import (
     AddNoteCommandBody,
+    PrepareCallDayBody,
     EditLeadCommandBody,
     LeadOperationResult,
     LogCallCommandBody,
     LogEmailCommandBody,
     ScheduleNextActionCommandBody,
+    RecordPhoneHistoryCommandBody,
 )
 from dashboard.app.security import (
     CRMPrincipal,
@@ -29,6 +31,7 @@ from dashboard.app.security import (
     require_note_write_command_access,
 )
 from src.crm.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.crm.services.phone_proof_service import PhoneEvidenceError
 from src.crm.services.command_service import (
     CommandAuthorizationError,
     CommandConflictError,
@@ -41,6 +44,7 @@ from src.crm.services.lead_operation_service import (
     LogCallCommand,
     LogEmailCommand,
     ScheduleNextActionCommand,
+    RecordPhoneHistoryCommand,
 )
 
 router = APIRouter()
@@ -96,6 +100,19 @@ def get_next_action_context(
     return _context(principal)
 
 
+@router.post('/api/v1/commands/pipeline/prepare-call-day')
+def prepare_day(
+    body: PrepareCallDayBody,
+    context: Annotated[LeadOperationContext, Depends(get_next_action_context)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    from src.crm.services.call_day import prepare_call_day
+    _command_id(idempotency_key, body.command_id)
+    principal = _principal(context.principal)
+    with context.session_factory() as session, session.begin():
+        return prepare_call_day(session, principal, body)
+
+
 def _command_id(idempotency_key: str | None, body_command_id: UUID) -> UUID:
     if idempotency_key is None:
         raise HTTPException(status_code=422, detail="Invalid command")
@@ -129,7 +146,38 @@ def _result(result) -> LeadOperationResult:
         occurred_at=result.occurred_at,
         activity_id=result.activity_id,
         call_details=result.call_details,
+        phone_history=result.phone_history,
     )
+
+
+@router.post(
+    "/api/v1/commands/leads/{lead_id}/record-phone-history",
+    response_model=LeadOperationResult, response_model_exclude_none=True,
+)
+def record_phone_history(
+    lead_id: UUID,
+    body: RecordPhoneHistoryCommandBody,
+    context: Annotated[LeadOperationContext, Depends(get_call_log_context)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> LeadOperationResult:
+    _command_id(idempotency_key, body.command_id)
+    try:
+        with SqlAlchemyUnitOfWork(context.session_factory) as uow:
+            result = LeadOperationService(uow).record_phone_history(
+                _principal(context.principal), RecordPhoneHistoryCommand(
+                    command_id=body.command_id, workspace_id=context.principal.workspace_id,
+                    lead_id=lead_id, expected_version=body.expected_version,
+                    phone_history=body.phone_history.model_dump(mode="json")))
+            uow.commit()
+    except CommandAuthorizationError:
+        raise HTTPException(status_code=403, detail="Forbidden") from None
+    except (CommandConflictError, IntegrityError):
+        raise HTTPException(status_code=409, detail="Command conflict") from None
+    except PhoneEvidenceError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.code) from None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="phone_evidence_invalid") from None
+    return _result(result)
 
 
 @router.post(
@@ -194,7 +242,7 @@ def log_call(
                     lead_id=lead_id,
                     expected_version=body.expected_version,
                     outcome_code=body.outcome_code,
-                    call_details=body.call_details.model_dump(mode="json") if body.call_details else None,
+                    call_details=body.call_details.model_dump(mode="json", exclude_unset=True) if body.call_details else None,
                     summary=body.summary,
                     occurred_at=body.occurred_at,
                     completed_task=body.completed_task.model_dump()
@@ -303,6 +351,7 @@ def schedule_next_action(
                     task_type=body.task_type,
                     title=body.title,
                     due_at=body.due_at,
+                    call_intent=body.call_intent.model_dump(mode="json") if body.call_intent else None,
                 ),
             )
             uow.commit()

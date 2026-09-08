@@ -20,6 +20,9 @@ PipelineQueue = Literal[
     "proposal_followups_today",
     "touched_today",
     "untouched",
+    "phone_new",
+    "phone_unknown",
+    "calls_actionable",
     "all",
 ]
 PipelinePriority = Literal["low", "medium", "high"]

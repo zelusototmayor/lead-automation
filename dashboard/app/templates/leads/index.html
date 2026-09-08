@@ -167,7 +167,7 @@
       <span class="metric-label">Nova prospeção</span><strong class="metric-value" data-metric-value="phoneNew">—</strong><span class="metric-note">Sem atendida certificada</span>
     </button>
     <button class="metric-card" type="button" data-metric="phoneUnknown" data-metric-targets="phone_unknown">
-      <span class="metric-label">Histórico incerto</span><strong class="metric-value" data-metric-value="phoneUnknown">—</strong><span class="metric-note">Não entra na meta</span>
+      <span class="metric-label">Histórico incerto</span><strong class="metric-value" data-metric-value="phoneUnknown">—</strong><span class="metric-note">Confirmar ao registar</span>
     </button>
     <div class="metric-card" data-metric="emailsDue">
       <span class="metric-label">Emails a acompanhar</span><strong class="metric-value" data-metric-value="emailsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
@@ -176,6 +176,12 @@
       <span class="metric-label">Propostas a acompanhar</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
   </section>
+  <details class="call-metrics-panel" data-call-day>
+    <summary><strong>Plano de chamadas de hoje</strong> · <span data-call-day-status>A carregar…</span></summary>
+    <p class="subtle">Callbacks primeiro; depois prospeção prioritária. Preparação interna, não marcações com clientes. Confirma o contexto atual ao abrir cada contacto.</p>
+    <button class="btn" type="button" data-prepare-call-day>Preparar hoje · 120 min</button>
+    <ol data-call-day-items style="padding-left:22px;max-height:280px;overflow:auto"></ol>
+  </details>
   <section class="call-metrics-panel" data-call-metrics aria-label="Métricas canónicas de chamadas">
     <p class="analytics-caption">Métricas de chamadas indisponíveis até o backend canónico estar ativo; unknown nunca é mostrado como zero.</p>
   </section>
@@ -255,7 +261,8 @@
               <option value="voicemail">Caixa de mensagens</option>
               <option value="wrong_number">Número errado</option>
             </select></label>
-            <label>Conversa útil<select name="useful" required>
+            <label>Primeira conversa com esta empresa?<select name="first_conversation"><option value="unknown">Não sei</option><option value="yes">Sim, confirmo</option><option value="no">Não, já falámos</option></select></label>
+              <label>Conversa útil<select name="useful" required>
               <option value="unknown">Desconhecido</option>
               <option value="yes">Sim</option>
               <option value="no">Não</option>
@@ -397,4 +404,4 @@
   </template>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="/static/leads.js?v=20260905"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/leads.js?v=20260908-cadence1"></script><script defer src="/static/call-day.js?v=20260908-cadence1"></script>{% endblock %}

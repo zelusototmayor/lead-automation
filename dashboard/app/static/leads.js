@@ -412,6 +412,7 @@
       decision_maker: decisionMaker,
       interlocutor_role: role,
       repeat_reason: repeatReason || null,
+      ...(Object.hasOwn(values, "first_conversation") ? { first_conversation: triState(values.first_conversation) } : {}),
     };
   };
   const buildNextActionPayload = (values) => {
@@ -435,9 +436,10 @@
       timezone: metrics?.timezone || "Europe/Lisbon",
       generated_at: metrics?.generated_at || null,
       source_status: ["available", "partial", "unavailable"].includes(metrics?.source_status) ? metrics.source_status : "partial",
-      counts: Object.fromEntries(["attempts", "answered", "first_answered_certified", "answered_novelty_unknown", "useful", "decision_maker", "followups_due", "followups_executed", "followups_pending"].map((key) => [key, metricNumber(counts[key])])),
+      counts: Object.fromEntries(["attempts", "answered", "first_answered_confirmed", "first_answered_recorded", "first_answered_certified", "answered_novelty_unknown", "useful", "decision_maker", "followups_due", "followups_executed", "followups_pending"].map((key) => [key, metricNumber(counts[key])])),
       target_first_answered: metricNumber(metrics?.target_first_answered),
       deficit: metricNumber(metrics?.deficit),
+      confirmed_deficit: metricNumber(metrics?.confirmed_deficit),
       coverage: Object.fromEntries(["answer_unknown", "useful_unknown", "decision_maker_unknown", "history_unknown_leads"].map((key) => [key, metricNumber(coverage[key])])),
       blockers: Array.isArray(metrics?.blockers) ? metrics.blockers.map((item) => String(item)) : [],
     };
@@ -456,10 +458,10 @@
     [
       ["Tentativas", data.counts.attempts],
       ["Atendidas", data.counts.answered],
-      ["1ª atendidas", data.counts.first_answered_certified],
+      ["1ª confirmadas", data.counts.first_answered_confirmed],
       ["Úteis", data.counts.useful],
       ["Decisores", data.counts.decision_maker],
-      ["Défice", data.deficit],
+      ["Faltam para 10", data.confirmed_deficit],
     ].forEach(([label, value]) => {
       const chip = analyticsElement(documentObject, "span", "analytics-chip");
       chip.append(
@@ -709,6 +711,7 @@
       summary: callForm.elements.summary.value,
       occurred_at: callForm.elements.occurred_at?.value || "",
       answer_kind: callForm.elements.answer_kind?.value || "unknown",
+      first_conversation: callForm.elements.first_conversation?.value || "unknown",
       useful: callForm.elements.useful?.value || "unknown",
       decision_maker: callForm.elements.decision_maker?.value || "unknown",
       interlocutor_role: callForm.elements.interlocutor_role?.value || "unknown",

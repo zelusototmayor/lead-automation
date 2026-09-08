@@ -734,6 +734,11 @@ class Contact(Base):
 class Lead(Base):
     __tablename__ = "leads"
     __table_args__ = (
+        CheckConstraint(
+            "phone_history IS NULL OR (jsonb_typeof(phone_history) = 'object' AND "
+            "phone_history ? 'schema_version' AND phone_history->'schema_version' = '1'::jsonb)",
+            name="ck_leads_phone_history_v1",
+        ),
         CheckConstraint(_in_check("stage", LEAD_STAGES), name="ck_leads_stage"),
         CheckConstraint(
             "account_id IS NOT NULL OR stage NOT IN "
@@ -825,6 +830,7 @@ class Lead(Base):
     account_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     source_stage_raw: Mapped[str | None] = mapped_column(String(255))
+    phone_history: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     stage: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'new'")
     )
@@ -1280,6 +1286,17 @@ class Meeting(Base):
     )
 
 
+class CallDayPlan(Base):
+    __tablename__ = "call_day_plans"
+    workspace_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    work_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    command_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    actor_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
@@ -1382,6 +1399,7 @@ class Task(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completion_activity_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     source_rule: Mapped[str | None] = mapped_column(String(128))
+    call_intent: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

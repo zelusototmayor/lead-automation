@@ -9,7 +9,8 @@ import json
 from uuid import UUID, uuid5
 
 from src.crm.ingestion.outbox import enqueue_outbox_event
-from src.crm.domain.call_contract import CallDetails
+from src.crm.domain.call_contract import CallDetails, PhoneHistory, CallIntent
+from src.crm.services.phone_proof_service import validate_phone_history
 from src.crm.persistence.models import Activity, AuditEvent, Task
 from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work
 from src.crm.services.account_service import normalize_company_name, normalize_email
@@ -19,6 +20,15 @@ from src.crm.services.command_service import (
     HumanCommandPrincipal,
     _assert_replay_actor,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RecordPhoneHistoryCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    phone_history: dict
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +88,7 @@ class ScheduleNextActionCommand:
     task_type: str
     title: str
     due_at: datetime
+    call_intent: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +102,7 @@ class LeadOperationResult:
     callback_sync_status: str | None = None
     activity_id: UUID | None = None
     call_details: dict | None = None
+    phone_history: dict | None = None
 
 
 def _conflict() -> CommandConflictError:
@@ -131,6 +143,27 @@ class LeadOperationService:
 
     def __init__(self, uow):
         self.uow = uow
+
+    def record_phone_history(self, principal, command: RecordPhoneHistoryCommand):
+        self._authorize(principal, command, "crm:call:log")
+        history = PhoneHistory.model_validate(command.phone_history)
+        value = history.model_dump(mode="json")
+        semantic_hash = _semantic_hash("record-phone-history", command, {"phone_history": value})
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(command.workspace_id, command.lead_id, for_update=True)
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict()
+        validate_phone_history(self.uow.session, command.workspace_id, command.lead_id, history)
+        previous = lead.phone_history
+        lead.phone_history = value
+        lead.updated_at = _now()
+        self.uow.session.flush()
+        self._record(principal, command, semantic_hash, event_type="lead.phone_history_recorded",
+                     version=lead.version, activity_title="Phone history review recorded",
+                     payload={"phone_history": value, "previous_phone_history": previous})
+        return LeadOperationResult(command.command_id, lead.id, lead.version, False, phone_history=value)
 
     def edit(
         self, principal: HumanCommandPrincipal, command: EditLeadCommand
@@ -285,7 +318,7 @@ class LeadOperationService:
             try:
                 validated_details = CallDetails.model_validate(command.call_details)
                 validated_details.validate_outcome(command.outcome_code)
-                call_details = validated_details.model_dump(mode="json")
+                call_details = validated_details.model_dump(mode="json", exclude_unset=True)
             except ValueError:
                 raise _conflict() from None
         completed = command.completed_task
@@ -301,11 +334,12 @@ class LeadOperationService:
                 raise _conflict()
         callback = command.next_action
         callback_due = None
+        callback_intent = None
         if callback is not None:
             self._authorize(principal, command, "crm:task:write")
             if (
                 type(callback) is not dict
-                or set(callback) != {"task_type", "title", "due_at"}
+                or set(callback) not in ({"task_type", "title", "due_at"}, {"task_type", "title", "due_at", "call_intent"})
                 or callback.get("task_type") != "call"
             ):
                 raise _conflict()
@@ -318,6 +352,11 @@ class LeadOperationService:
             ):
                 raise _conflict()
             callback_due = callback_due.astimezone(UTC)
+            if callback.get("call_intent") is not None:
+                try:
+                    callback_intent = CallIntent.model_validate(callback["call_intent"]).model_dump(mode="json")
+                except ValueError:
+                    raise _conflict() from None
         occurred_at = command.occurred_at or datetime.now(UTC)
         if (
             type(occurred_at) is not datetime
@@ -353,6 +392,7 @@ class LeadOperationService:
                             "task_type": "call",
                             "title": callback["title"],
                             "due_at": callback_due.isoformat(),
+                            **({"call_intent": callback_intent} if callback_intent else {}),
                         }
                     }
                     if callback
@@ -408,6 +448,7 @@ class LeadOperationService:
                 owner_user_id=principal.actor_id,
                 status="open",
                 source_rule="human_call_callback",
+                call_intent=callback_intent,
             )
             self.uow.tasks.add(task)
             self.uow.session.flush()
@@ -433,7 +474,7 @@ class LeadOperationService:
                 "outcome_code": command.outcome_code,
                 "activity_id": str(uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")),
                 "call_details": call_details,
-                **({"callback_sync_status": "pending"} if task_id else {}),
+                **({"callback_sync_status": "not_required" if callback_intent else "pending"} if task_id else {}),
             },
         )
         enqueue_work(
@@ -455,7 +496,7 @@ class LeadOperationService:
             False,
             task_id=task_id,
             occurred_at=occurred_at,
-            callback_sync_status="pending" if task_id else None,
+            callback_sync_status=("not_required" if callback_intent else "pending") if task_id else None,
             activity_id=uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged"),
             call_details=call_details,
         )
@@ -605,6 +646,14 @@ class LeadOperationService:
         ):
             raise _conflict() from None
         title = _bounded_text(command.title, maximum=512)
+        intent = None
+        if command.call_intent is not None:
+            try:
+                intent = CallIntent.model_validate(command.call_intent).model_dump(mode="json")
+            except ValueError:
+                raise _conflict() from None
+            if command.task_type != "call":
+                raise _conflict()
         due_at = command.due_at.astimezone(UTC)
         semantic_hash = _semantic_hash(
             "schedule-next-action",
@@ -613,6 +662,7 @@ class LeadOperationService:
                 "due_at": due_at.isoformat(),
                 "task_type": command.task_type,
                 "title": title,
+                **({"call_intent": intent} if intent else {}),
             },
         )
         replay = self._claim_or_replay(principal, command, semantic_hash)
@@ -641,6 +691,7 @@ class LeadOperationService:
                 owner_user_id=principal.actor_id,
                 status="open",
                 source_rule="manual_next_action",
+                call_intent=intent,
             )
         )
         lead.updated_at = datetime.now(UTC)
@@ -657,7 +708,7 @@ class LeadOperationService:
                 "due_at": due_at.isoformat(),
                 "task_type": command.task_type,
                 **(
-                    {"callback_sync_status": "pending"}
+                    {"callback_sync_status": "not_required" if intent else "pending", "call_intent": intent}
                     if command.task_type == "call"
                     else {}
                 ),
@@ -672,7 +723,7 @@ class LeadOperationService:
             lead.version,
             False,
             task_id=task_id,
-            callback_sync_status="pending" if command.task_type == "call" else None,
+            callback_sync_status=("not_required" if intent else "pending") if command.task_type == "call" else None,
         )
 
     def _authorize(self, principal, command, permission: str) -> None:
@@ -720,6 +771,7 @@ class LeadOperationService:
             replay.payload.get("callback_sync_status"),
             UUID(replay.payload["activity_id"]) if replay.payload.get("activity_id") else None,
             replay.payload.get("call_details"),
+            replay.payload.get("phone_history"),
         )
 
     def _record(

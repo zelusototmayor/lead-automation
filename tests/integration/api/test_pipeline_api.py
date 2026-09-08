@@ -241,6 +241,9 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "touched_today": 1,
         "untouched": 1,
         "all": 3,
+        "phone_new": 0,
+        "phone_unknown": 2,
+        "calls_actionable": 1,
     }
     assert summary.json()["queue_units"] == {
         "calls_overdue": "task",
@@ -254,6 +257,9 @@ def test_pipeline_summary_and_daily_queues_are_workspace_scoped(pipeline_api):
         "touched_today": "lead",
         "untouched": "lead",
         "all": "lead",
+        "phone_new": "lead",
+        "phone_unknown": "lead",
+        "calls_actionable": "task",
     }
     assert calls_today.status_code == emails_overdue.status_code == 200
     assert calls_today.json()["total"] == emails_overdue.json()["total"] == 1

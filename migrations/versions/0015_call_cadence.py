@@ -13,6 +13,8 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("leads", sa.Column("phone_history", postgresql.JSONB(none_as_null=True), nullable=True))
+    op.create_check_constraint("ck_leads_phone_history_v1", "leads", "phone_history IS NULL OR (jsonb_typeof(phone_history) = 'object' AND phone_history ? 'schema_version' AND phone_history->'schema_version' = '1'::jsonb)")
     op.add_column("activities", sa.Column("call_details", postgresql.JSONB(none_as_null=True), nullable=True))
     op.create_check_constraint("ck_activities_call_details_v1", "activities", "call_details IS NULL OR (jsonb_typeof(call_details) = 'object' AND call_details ? 'schema_version' AND call_details->'schema_version' = '1'::jsonb)")
 
@@ -21,5 +23,7 @@ def downgrade():
     # Evidence-destructive rollback is only allowed on a guarded disposable DB.
     from tests.migration._postgres import require_disposable_postgres
     require_disposable_postgres()
+    op.drop_constraint("ck_leads_phone_history_v1", "leads", type_="check")
+    op.drop_column("leads", "phone_history")
     op.drop_constraint("ck_activities_call_details_v1", "activities", type_="check")
     op.drop_column("activities", "call_details")

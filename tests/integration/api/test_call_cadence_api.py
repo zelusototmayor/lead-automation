@@ -11,6 +11,28 @@ from src.crm.persistence.models import Activity, AuditEvent, OutboxEvent, Lead
 from tests.integration.api.test_lead_operations_api import lead_operations_api, _headers
 
 
+def test_unknown_phone_history_is_versioned_audited_and_replayed(lead_operations_api):
+    client, engine, workspace_id, lead_id, _ = lead_operations_api
+    command = uuid4()
+    history = {"schema_version": 1, "state": "unknown", "coverage_start_at": None,
+               "covered_through_at": None, "evidence_refs": [], "reason": "Prior sources not established"}
+    payload = {"command_id": str(command), "expected_version": 1, "phone_history": history}
+    url = f"/api/v1/commands/leads/{lead_id}/record-phone-history"
+    response = client.post(url, json=payload, headers=_headers(command))
+    assert response.status_code == 200, response.text
+    assert response.json()["phone_history"] == history
+    assert client.post(url, json=payload, headers=_headers(command)).json() == response.json() | {"replayed": True}
+    with Session(engine) as session:
+        lead = session.get(Lead, lead_id)
+        assert lead.phone_history == history
+        assert lead.version == 2
+        event = session.scalars(select(OutboxEvent).where(OutboxEvent.workspace_id == workspace_id, OutboxEvent.command_id == command)).one()
+        audit = session.scalars(select(AuditEvent).where(AuditEvent.workspace_id == workspace_id, AuditEvent.command_id == command)).one()
+        assert event.payload["phone_history"] == audit.details["phone_history"] == history
+        assert audit.details["previous_phone_history"] is None
+        assert not session.scalars(select(Activity).where(Activity.workspace_id == workspace_id, Activity.activity_type == "call")).all()
+
+
 def details(**changes):
     return {
         "schema_version": 1, "attempted": True,

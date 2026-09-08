@@ -79,6 +79,9 @@ def enqueue_work(
 def enqueue_callback(session, task):
     if task.task_type != "call":
         return None
+    # Structured v1 tasks are internal CRM obligations, never Calendar events.
+    if task.call_intent is not None:
+        return None
     session.flush()
     return enqueue_work(
         session,

@@ -61,6 +61,9 @@ _QUEUES: tuple[PipelineQueue, ...] = (
     "proposal_followups_today",
     "touched_today",
     "untouched",
+    "phone_new",
+    "phone_unknown",
+    "calls_actionable",
     "all",
 )
 _TASK_QUEUES = frozenset(
@@ -147,7 +150,9 @@ def _task_filter(queue: PipelineQueue, start: datetime, end: datetime):
             Task.proposal_id.is_not(None),
             Task.task_type.in_(("follow_up", "proposal_followup")),
         )
-    if queue.endswith("_overdue"):
+    if queue == "calls_actionable":
+        due_filter = Task.due_at <= end
+    elif queue.endswith("_overdue"):
         due_filter = Task.due_at < start
     elif queue.endswith("_future"):
         due_filter = Task.due_at > end
@@ -261,6 +266,18 @@ def _pipeline_statement(
         )
     if queue == "touched_today":
         statement = statement.where(_activity_exists(workspace_id, start, end))
+    elif queue in {"phone_new", "phone_unknown"}:
+        has_answer = exists(select(Activity.id).where(
+            Activity.workspace_id == workspace_id, Activity.activity_type == "call",
+            or_(Activity.lead_id == Lead.id, and_(Lead.account_id.is_not(None), Activity.account_id == Lead.account_id)),
+            Activity.call_details["answer_kind"].astext == "human_counterparty",
+            operational_activity_filter()))
+        history = func.coalesce(Lead.phone_history["state"].astext, "unknown")
+        phone = func.coalesce(Contact.phone, Lead.contact_phone, "")
+        valid_phone = and_(phone.op("~")(r"^\+?[0-9 ()-]{8,24}$"),
+                          func.length(func.regexp_replace(phone, "[^0-9]", "", "g")).between(8,15))
+        statement = statement.where(~has_answer, valid_phone,
+            history == "complete_no_prior_answer" if queue == "phone_new" else history == "unknown")
     elif queue == "untouched":
         statement = statement.where(
             Lead.stage == "new",
@@ -321,6 +338,33 @@ def _to_item(row) -> PipelineItem:
         lead_version=row.lead_version,
         task=task,
     )
+
+
+@router.get('/api/v1/pipeline/call-day')
+def pipeline_call_day(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    work_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    from src.crm.persistence.models import CallDayPlan
+    _, zone = _workspace_timezone(context)
+    day = work_date or _utc_now().astimezone(zone).date()
+    plan = context.session.get(CallDayPlan, (context.principal.workspace_id, day))
+    if plan is None:
+        return dict(schema_version=1, date=day.isoformat(), work_date=day.isoformat(),
+            version=0, source_status='not_prepared', items=[], total=0,
+            blockers=['Preparação diária ainda não executada.'])
+    return plan.payload
+
+
+@router.get("/api/v1/pipeline/call-metrics")
+def pipeline_call_metrics(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    work_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    from src.crm.services.call_metrics import call_metrics
+    timezone_name, timezone = _workspace_timezone(context)
+    return call_metrics(context.session, context.principal.workspace_id,
+                        work_date or _utc_now().astimezone(timezone).date(), timezone_name)
 
 
 @router.get("/api/v1/pipeline/summary", response_model=PipelineSummary)
