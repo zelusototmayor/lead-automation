@@ -37,6 +37,7 @@ from dashboard.app.schemas.pipeline import (
 )
 from src.crm.activity_provenance import operational_activity_filter
 from src.crm.domain.enums import CRMStage
+from src.crm.domain.untouched_order import untouched_source_rank
 from src.crm.persistence.models import (
     Account,
     Activity,
@@ -714,6 +715,10 @@ def pipeline_items(
         )
     rows = statement.subquery()
     total = int(context.session.scalar(select(func.count()).select_from(rows)) or 0)
+    # Source ranking changes only Sem contacto, after eligibility/filtering and
+    # before LIMIT/OFFSET. Other queues and fallback recency retain their order.
+    if queue == "untouched":
+        statement = statement.order_by(untouched_source_rank(Lead.id))
     page_rows = context.session.execute(
         statement.order_by(
             Task.due_at.asc().nulls_last()
