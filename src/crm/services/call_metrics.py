@@ -18,13 +18,26 @@ REVIEWED_LEGACY_ANSWERS = {
 }
 
 
+# Contact-bearing PT Logistics date headers plus older import aliases. Keep
+# Sheets/Calendar adapters out of this read-only service's runtime dependencies;
+# test_legacy_contact_dates derives its matrix from the adapter's canonical schema
+# to detect drift. Due/next-action/dashboard-touch dates are not contact evidence.
+LEGACY_CONTACT_DATE_FIELDS = (
+    'Initial Email Sent', 'Outreach FU1 Sent', 'Outreach FU2 Sent',
+    'Outreach FU3 Sent', 'Outreach Reactivation Sent',
+    'Proposal Sent', 'Proposal FU1 Sent', 'Proposal FU2 Sent',
+    'Proposal FU3 Sent', 'Proposal Reactivation Sent',
+    'FU1 Sent', 'FU2 Sent', 'FU3 Sent', 'Reactivation Sent', 'Meeting Date',
+    'Proposal Email Sent', 'Last Contact',
+)
+
+
 def legacy_contact_state(raw, occurred_at, zone):
     """Dated legacy evidence only; today's/current stage never rewrites history."""
     if not isinstance(raw, dict):
         return 'uncertain'
     uncertain = False
-    for key in ('Initial Email Sent','Outreach FU1 Sent','Outreach FU2 Sent',
-                'Proposal Sent','Proposal Email Sent','Last Contact'):
+    for key in LEGACY_CONTACT_DATE_FIELDS:
         value = raw.get(key)
         if value is None or value == '':
             continue
