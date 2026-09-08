@@ -61,6 +61,7 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
     counts = dict(attempts=0, answered=0, useful=0, decision_maker=0,
                   first_answered_recorded=0, first_answered_confirmed=0, first_answered=None, repeats=0)
     coverage = dict(answer_unknown=0, useful_unknown=0, decision_maker_unknown=0, legacy_history_unknown=0)
+    invalid_details = 0
     seen = set()
     contact_counts = dict(first_contact=0, follow_up=0, unknown=0, new_companies=0)
     first_contact_at = {}
@@ -88,6 +89,11 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
 
         try:
             facts = CallDetails.model_validate(activity.call_details)
+            # Retained/imported rows may predate writer validation. Conflicting
+            # structured evidence stays unknown, never repaired by fallback.
+            facts.validate_outcome(activity.outcome_code)
+            if activity.outcome_code == 'connected' and facts.answer_kind not in {'unknown', 'human_counterparty'}:
+                raise ValueError('Connected conflicts with explicit non-human evidence')
         except (ValueError, TypeError):
             facts = None
         # Legacy outcomes certify attendance only, never usefulness or novelty.
@@ -108,6 +114,7 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
         identity = lead.account_id or lead.id
         if today:
             counts['attempts'] += 1
+            invalid_details += activity.call_details is not None and facts is None
             legacy_states = {legacy_contact_state(raw, activity.occurred_at, zone)
                              for raw in legacy_by_identity.get(identity, [])}
             contact_kind = 'follow_up' if prior_contact or 'prior' in legacy_states else facts.contact_kind if facts else 'unknown'
@@ -138,6 +145,8 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
                 counts['repeats'] += 1
         seen.add(identity)
     blockers = ['Primeiras atendidas = primeiro registo no CRM; histórico anterior não certificado.']
+    if invalid_details:
+        blockers.append(f'{invalid_details} registo(s) com dimensões inválidas ou em conflito; atendimento desconhecido até revisão.')
     contact_counts['new_companies'] = len(new_companies)
     blockers.append('Primeiro contacto exige confirmação de ausência de contacto anterior em qualquer canal; histórico incompleto permanece desconhecido. Empresas novas não são oportunidades qualificadas.')
     return {'schema_version':1, 'date':day.isoformat(), 'timezone':timezone_name,

@@ -782,6 +782,8 @@
         callForm.elements.summary.value = draft.summary || "";
         if (callForm.elements.occurred_at) callForm.elements.occurred_at.value = draft.occurred_at || callForm.elements.occurred_at.value;
         if (callForm.elements.answer_kind) callForm.elements.answer_kind.value = draft.answer_kind || "unknown";
+        if (callForm.elements.contact_kind) callForm.elements.contact_kind.value = draft.contact_kind || "unknown";
+        if (callForm.elements.first_conversation) callForm.elements.first_conversation.value = draft.first_conversation || "unknown";
         if (callForm.elements.useful) callForm.elements.useful.value = draft.useful || "unknown";
         if (callForm.elements.decision_maker) callForm.elements.decision_maker.value = draft.decision_maker || "unknown";
         if (callForm.elements.interlocutor_role) callForm.elements.interlocutor_role.value = draft.interlocutor_role || "unknown";
