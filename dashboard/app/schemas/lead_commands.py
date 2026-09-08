@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+from src.crm.domain.call_contract import CallDetails
 
 
 class LeadOperationBase(BaseModel):
@@ -37,11 +38,18 @@ class CompletedCallTask(BaseModel):
 
 
 class LogCallCommandBody(LeadOperationBase):
+    call_details: CallDetails | None = None
     completed_task: CompletedCallTask | None = None
     next_action: CallNextAction | None = None
     outcome_code: StrictStr = Field(min_length=1, max_length=64)
     summary: StrictStr | None = Field(default=None, min_length=1, max_length=2000)
     occurred_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def valid_call_outcome(self):
+        if self.call_details is not None:
+            self.call_details.validate_outcome(self.outcome_code)
+        return self
 
 
 class LogEmailCommandBody(LeadOperationBase):
@@ -70,3 +78,5 @@ class LeadOperationResult(BaseModel):
     task_id: UUID | None = None
     callback_sync_status: str | None = None
     occurred_at: datetime | None = None
+    activity_id: UUID | None = None
+    call_details: dict | None = None

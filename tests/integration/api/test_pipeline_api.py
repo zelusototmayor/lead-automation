@@ -440,6 +440,8 @@ def test_lead_detail_timeline_and_tasks_preserve_operational_context(pipeline_ap
         "direction": "outbound",
         "actor_type": None,
         "occurred_at": "2026-07-20T09:00:00Z",
+        "call_details": None,
+        "answered": None,
     }
     assert tasks.json()["total"] == 6
     assert {item["type"] for item in tasks.json()["items"]} == {"call", "email"}

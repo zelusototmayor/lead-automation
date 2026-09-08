@@ -861,6 +861,11 @@ class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
         CheckConstraint(
+            "call_details IS NULL OR (jsonb_typeof(call_details) = 'object' AND "
+            "call_details ? 'schema_version' AND call_details->'schema_version' = '1'::jsonb)",
+            name="ck_activities_call_details_v1",
+        ),
+        CheckConstraint(
             _in_check("activity_type", ACTIVITY_TYPES),
             name="ck_activities_activity_type",
         ),
@@ -1009,6 +1014,7 @@ class Activity(Base):
     semantic_fingerprint: Mapped[str | None] = mapped_column(String(64))
     direction: Mapped[str | None] = mapped_column(String(32))
     outcome_code: Mapped[str | None] = mapped_column(String(32))
+    call_details: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     from_stage: Mapped[str | None] = mapped_column(String(32))
     to_stage: Mapped[str | None] = mapped_column(String(32))
     source_system: Mapped[str | None] = mapped_column(String(32))

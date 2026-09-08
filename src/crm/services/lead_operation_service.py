@@ -9,6 +9,7 @@ import json
 from uuid import UUID, uuid5
 
 from src.crm.ingestion.outbox import enqueue_outbox_event
+from src.crm.domain.call_contract import CallDetails
 from src.crm.persistence.models import Activity, AuditEvent, Task
 from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work
 from src.crm.services.account_service import normalize_company_name, normalize_email
@@ -45,6 +46,7 @@ class LogCallCommand:
     occurred_at: datetime | None = None
     next_action: dict | None = None
     completed_task: dict | None = None
+    call_details: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +89,8 @@ class LeadOperationResult:
     task_id: UUID | None = None
     occurred_at: datetime | None = None
     callback_sync_status: str | None = None
+    activity_id: UUID | None = None
+    call_details: dict | None = None
 
 
 def _conflict() -> CommandConflictError:
@@ -276,6 +280,14 @@ class LeadOperationService:
             )
         ):
             raise _conflict() from None
+        call_details = None
+        if command.call_details is not None:
+            try:
+                validated_details = CallDetails.model_validate(command.call_details)
+                validated_details.validate_outcome(command.outcome_code)
+                call_details = validated_details.model_dump(mode="json")
+            except ValueError:
+                raise _conflict() from None
         completed = command.completed_task
         if completed is not None:
             self._authorize(principal, command, "crm:task:write")
@@ -324,6 +336,7 @@ class LeadOperationService:
                 else None,
                 "outcome_code": command.outcome_code,
                 "summary": command.summary,
+                **({"call_details": call_details} if call_details is not None else {}),
                 **(
                     {
                         "completed_task": {
@@ -414,9 +427,12 @@ class LeadOperationService:
             direction="outbound",
             outcome_code=command.outcome_code,
             summary=command.summary,
+            call_details=call_details,
             payload={
                 "occurred_at": occurred_at.isoformat(),
                 "outcome_code": command.outcome_code,
+                "activity_id": str(uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")),
+                "call_details": call_details,
                 **({"callback_sync_status": "pending"} if task_id else {}),
             },
         )
@@ -440,6 +456,8 @@ class LeadOperationService:
             task_id=task_id,
             occurred_at=occurred_at,
             callback_sync_status="pending" if task_id else None,
+            activity_id=uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged"),
+            call_details=call_details,
         )
 
     def log_email(
@@ -700,6 +718,8 @@ class LeadOperationService:
             if replay.payload.get("occurred_at")
             else None,
             replay.payload.get("callback_sync_status"),
+            UUID(replay.payload["activity_id"]) if replay.payload.get("activity_id") else None,
+            replay.payload.get("call_details"),
         )
 
     def _record(
@@ -718,6 +738,7 @@ class LeadOperationService:
         outcome_code: str | None = None,
         summary: str | None = None,
         task_id: UUID | None = None,
+        call_details: dict | None = None,
     ) -> None:
         effective_at = occurred_at or datetime.now(UTC)
         self.uow.activities.add(
@@ -736,6 +757,7 @@ class LeadOperationService:
                 summary=summary,
                 direction=direction,
                 outcome_code=outcome_code,
+                call_details=call_details,
                 semantic_fingerprint=semantic_hash,
                 source_system="manual",
                 actor_type="human",

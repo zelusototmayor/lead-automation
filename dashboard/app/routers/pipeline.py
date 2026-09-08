@@ -773,6 +773,7 @@ def lead_timeline(
             Activity.direction,
             Activity.actor_type,
             Activity.occurred_at,
+            Activity.call_details,
         )
         .where(*filters)
         .order_by(Activity.occurred_at.desc(), Activity.id.desc())
@@ -790,6 +791,14 @@ def lead_timeline(
                 direction=row.direction,
                 actor_type=row.actor_type,
                 occurred_at=row.occurred_at,
+                call_details=row.call_details,
+                answered={
+                    "human_counterparty": True,
+                    "no_answer": False,
+                    "ivr": False,
+                    "voicemail": False,
+                    "wrong_number": False,
+                }.get((row.call_details or {}).get("answer_kind")),
             )
             for row in rows
         ),

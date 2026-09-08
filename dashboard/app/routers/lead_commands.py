@@ -127,6 +127,8 @@ def _result(result) -> LeadOperationResult:
         task_id=result.task_id,
         callback_sync_status=result.callback_sync_status,
         occurred_at=result.occurred_at,
+        activity_id=result.activity_id,
+        call_details=result.call_details,
     )
 
 
@@ -192,6 +194,7 @@ def log_call(
                     lead_id=lead_id,
                     expected_version=body.expected_version,
                     outcome_code=body.outcome_code,
+                    call_details=body.call_details.model_dump(mode="json") if body.call_details else None,
                     summary=body.summary,
                     occurred_at=body.occurred_at,
                     completed_task=body.completed_task.model_dump()

@@ -172,6 +172,8 @@ class TimelineItem(BaseModel):
     direction: str | None
     actor_type: str | None = None
     occurred_at: datetime
+    call_details: dict | None = None
+    answered: bool | None = None
 
 
 class TimelinePage(BaseModel):
