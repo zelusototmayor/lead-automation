@@ -7,10 +7,11 @@ import re
 import os
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
+from uuid import UUID
 
 from sqlalchemy import select
 from src.crm.callback_calendar import CallbackCalendar
-from src.crm.persistence.models import Task, Lead, SourceIdentity
+from src.crm.persistence.models import Task, Lead, SourceIdentity, Activity, AuditEvent
 from src.crm.services.agent_work_service import locked_work, validate_lease, finish_work
 
 
@@ -21,7 +22,8 @@ class CalendarProjectionError(RuntimeError):
 class CanonicalCallbackCalendar(CallbackCalendar):
     """A provider retry uses the same event ID, even after an uncertain POST."""
 
-    def sync_task(self, task, *, legacy_event_id="", legacy_proof=None):
+    def sync_task(self, task, *, legacy_event_id="", legacy_proof=None,
+                  company_name="", call_notes="", content_only=False):
         if not self.configured():
             raise CalendarProjectionError("Calendar integration is not configured")
         canonical_id = "crm" + task.id.hex
@@ -46,6 +48,16 @@ class CanonicalCallbackCalendar(CallbackCalendar):
             else:
                 self._assert_owner(existing.json(), owner)
         exists = existing.status_code not in {404, 410}
+        before = existing.json() if exists else {}
+        if content_only:
+            private = (before.get("extendedProperties") or {}).get("private") or {}
+            if (not exists or task.status != "open" or legacy_event_id
+                    or event_id != canonical_id or before.get("id") != canonical_id
+                    or private.get("pt_logistics_callback") != "1"):
+                raise CalendarProjectionError("Content repair requires an existing marked canonical callback")
+            self._assert_owner(before, owner)
+        if exists and before.get("attendees") and task.status == "open":
+            raise CalendarProjectionError("Callback notes cannot be published to attendees")
         already_cancelled = exists and existing.json().get("status") == "cancelled"
         if task.status != "open":
             if exists and not already_cancelled:
@@ -72,13 +84,17 @@ class CanonicalCallbackCalendar(CallbackCalendar):
             )
         zone = ZoneInfo(self.timezone)
         start = task.due_at.astimezone(zone)
+        company_name = (company_name or "").strip()
+        if not company_name:
+            raise CalendarProjectionError("Callback company is unavailable")
+        description = (call_notes or "").strip()
+        if not description and legacy_event_id and exists:
+            previous = existing.json().get("description", "")
+            if not previous.startswith("Callback registado no CRM. Task "):
+                description = previous
         payload = {
-            "summary": existing.json().get("summary", task.title)
-            if legacy_event_id and exists
-            else task.title,
-            "description": existing.json().get("description", "")
-            if legacy_event_id and exists
-            else "Callback registado no CRM. " + f"Task {task.id}",
+            "summary": company_name,
+            "description": description or "Sem notas de chamada registadas no CRM.",
             "start": {"dateTime": start.isoformat(), "timeZone": self.timezone},
             "end": {
                 "dateTime": (
@@ -89,29 +105,46 @@ class CanonicalCallbackCalendar(CallbackCalendar):
             "extendedProperties": {"private": owner | {"pt_logistics_callback": "1"}},
         }
         if exists:
-            response = self._request("PATCH", path, json=payload, timeout=20)
+            if content_only:
+                payload = {key: payload[key] for key in ("summary", "description")}
+            if all(before.get(key) == value for key, value in payload.items()):
+                response = existing
+            else:
+                response = self._request(
+                    "PATCH", path, json=payload, params={"sendUpdates": "none"},
+                    headers={"If-Match": before["etag"]} if before.get("etag") else {},
+                    timeout=20,
+                )
         else:
             response = self._request(
-                "POST", collection, json=payload | {"id": event_id}, timeout=20
+                "POST", collection, json=payload | {"id": event_id}, params={"sendUpdates": "none"}, timeout=20
             )
             if response.status_code == 409:
                 conflict = self._request("GET", path, timeout=20)
                 conflict.raise_for_status()
                 self._assert_owner(conflict.json(), owner)
-                response = self._request("PATCH", path, json=payload, timeout=20)
+                response = self._request("PATCH", path, json=payload, params={"sendUpdates": "none"}, timeout=20)
         response.raise_for_status()
         readback = self._request("GET", path, timeout=20)
         readback.raise_for_status()
         observed = readback.json()
         self._assert_owner(observed, owner)
+        if content_only:
+            preserved = ("id", "iCalUID", "start", "end", "attendees", "organizer",
+                         "creator", "status", "recurrence", "recurringEventId",
+                         "originalStartTime", "location", "reminders", "conferenceData",
+                         "extendedProperties")
+            if any(observed.get(key) != before.get(key) for key in preserved):
+                raise CalendarProjectionError("Calendar content repair changed protected fields")
         from datetime import datetime
 
         observed_start = datetime.fromisoformat(
             observed.get("start", {}).get("dateTime", "").replace("Z", "+00:00")
         )
         if (
-            observed_start != task.due_at
+            (not content_only and observed_start != task.due_at)
             or observed.get("summary") != payload["summary"]
+            or observed.get("description") != payload["description"]
         ):
             raise CalendarProjectionError("Calendar callback verification failed")
         return {
@@ -199,6 +232,46 @@ def legacy_proof_from_source(source, lead):
     return None
 
 
+def callback_content(session, task):
+    """Company from the current lead; notes from the call which created the task.
+
+    Never substitute a task title for missing notes, or use later/unrelated calls.
+    Legacy descriptions remain intact when no canonical call is linked.
+    """
+    lead = session.scalar(select(Lead).where(
+        Lead.workspace_id == task.workspace_id, Lead.id == task.lead_id
+    ))
+    company = (lead.company_name or "").strip() if lead else ""
+    if not company:
+        raise CalendarProjectionError("Callback company is unavailable")
+    activity = None
+    if task.source_rule == "human_call_callback":
+        audit = session.scalar(select(AuditEvent).where(
+            AuditEvent.workspace_id == task.workspace_id,
+            AuditEvent.entity_id == task.lead_id,
+            AuditEvent.action == "lead.call_logged",
+            AuditEvent.details["task_id"].astext == str(task.id),
+        ))
+        activity_id = (audit.details or {}).get("activity_id") if audit else None
+        if activity_id:
+            activity = session.scalar(select(Activity).where(
+                Activity.workspace_id == task.workspace_id,
+                Activity.lead_id == task.lead_id,
+                Activity.id == UUID(activity_id),
+                Activity.activity_type == "call",
+            ))
+    elif task.source_rule == "manual_next_action":
+        activity = session.scalar(select(Activity).where(
+            Activity.workspace_id == task.workspace_id,
+            Activity.lead_id == task.lead_id,
+            Activity.activity_type == "call",
+            Activity.occurred_at <= task.created_at,
+            Activity.created_at <= task.created_at,
+        ).order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(1))
+    return {"company_name": company,
+            "call_notes": (activity.summary or "").strip() if activity else ""}
+
+
 def calendar_from_environment():
     return CanonicalCallbackCalendar(
         credentials_file=os.environ.get("GOOGLE_CALENDAR_CREDENTIALS_FILE")
@@ -247,8 +320,11 @@ def execute_callback(session, workspace_id, work_id, lease_token, *, calendar=No
                     (source.metadata_json or {}).get("calendar_event_id") or ""
                 )
                 legacy_proof = legacy_proof_from_source(source, lead)
+    content = callback_content(session, task) if task.status == "open" else {}
     evidence = (calendar or calendar_from_environment()).sync_task(
-        task, legacy_event_id=legacy_event_id, legacy_proof=legacy_proof
+        task, legacy_event_id=legacy_event_id, legacy_proof=legacy_proof,
+        company_name=content.get("company_name", ""),
+        call_notes=content.get("call_notes", ""),
     )
     return finish_work(
         session,
