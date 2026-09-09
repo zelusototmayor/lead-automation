@@ -89,5 +89,7 @@ def test_real_form_restores_dimensions_and_canonically_saves(lead_operations_api
         assert metrics['counts']['useful'] == metrics['counts']['decision_maker'] == 0
         assert metrics['contact_counts']['first_contact'] == int(mode == 'explicit')
         assert metrics['deficit'] is None
-        playwright.expect(page.locator('[data-call-metrics]')).to_contain_text('Por apurar')
+        playwright.expect(page.locator('[data-call-metrics]')).to_have_count(0)
+        page.locator('[data-open-analysis]').click()
+        playwright.expect(page.locator('[data-analysis-total="call_initial"]')).to_have_text('1' if mode == 'explicit' else '—')
         browser.close()

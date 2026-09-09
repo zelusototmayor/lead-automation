@@ -357,6 +357,18 @@ def pipeline_call_day(
     return plan.payload
 
 
+@router.get("/api/v1/pipeline/activity-analysis")
+def pipeline_activity_analysis(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    days: Annotated[int, Query(ge=7, le=90)] = 30,
+):
+    from src.crm.services.activity_analysis import activity_analysis
+    if days not in (7, 30, 90):
+        raise HTTPException(status_code=422, detail="Use 7, 30 or 90 days")
+    return activity_analysis(context.session, context.principal.workspace_id,
+                             _utc_now().astimezone(ZoneInfo('Europe/Lisbon')).date(), days)
+
+
 @router.get("/api/v1/pipeline/call-metrics")
 def pipeline_call_metrics(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],

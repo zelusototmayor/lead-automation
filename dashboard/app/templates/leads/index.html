@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Hoje & chamadas · Comercial{% endblock %}
-{% block stylesheets %}<link rel="stylesheet" href="/static/calls.css?v=20260905">{% endblock %}
+{% block stylesheets %}<link rel="stylesheet" href="/static/calls.css?v=20260909-analysis1"><link rel="stylesheet" href="/static/activity-analysis.css?v=20260909-analysis1">{% endblock %}
 {% block extra_styles %}
   .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1fr) 386px; gap: 10px; align-items: start; }
   .pipeline-layout > *, .leads-list, .lead-row > * { min-width: 0; }
@@ -176,17 +176,8 @@
       <span class="metric-label">Propostas a acompanhar</span><strong class="metric-value" data-metric-value="proposalFollowupsDue">—</strong><span class="metric-note">Atrasados + hoje</span>
     </div>
   </section>
-  <details class="call-metrics-panel" data-call-day>
-    <summary><strong>Plano de chamadas de hoje</strong> · <span data-call-day-status>A carregar…</span></summary>
-    <p class="subtle">Callbacks primeiro; depois prospeção prioritária. Preparação interna, não marcações com clientes. Confirma o contexto atual ao abrir cada contacto.</p>
-    <button class="btn" type="button" data-prepare-call-day>Preparar hoje · 120 min</button>
-    <ol data-call-day-items style="padding-left:22px;max-height:280px;overflow:auto"></ol>
-  </details>
-  <div class="analytics-actions"><label>Dia das chamadas <input type="date" data-call-metrics-date></label><button type="button" data-call-metrics-refresh>Atualizar chamadas</button></div>
-  <section class="call-metrics-panel" data-call-metrics aria-label="Métricas canónicas de chamadas">
-    <p class="analytics-caption">Métricas de chamadas indisponíveis até o backend canónico estar ativo; unknown nunca é mostrado como zero.</p>
-  </section>
   <nav class="queue-bar" data-pipeline-summary aria-label="Filas de trabalho">
+    <button class="queue-btn" type="button" data-pipeline-queue="plan">Plano de hoje</button>
     {% for value, label in pipeline_queues %}
       <button class="queue-btn" type="button" data-pipeline-queue="{{ value }}" aria-pressed="{{ 'true' if value == 'calls_overdue' else 'false' }}">{{ 'Trabalhados hoje' if value == 'touched_today' else label }}<span class="queue-count" data-queue-count="{{ value }}">—</span></button>
     {% endfor %}
@@ -199,6 +190,11 @@
   </div>
   <div class="pipeline-layout">
     <div class="queue-pane">
+      <div class="plan-toolbar" data-call-day>
+        <div><strong data-list-title>Plano de hoje</strong><p class="subtle" data-call-day-status>A carregar…</p></div>
+        <button class="btn" type="button" data-prepare-call-day hidden>Preparar · 120 min</button>
+        <button class="btn" type="button" data-refresh-call-day>Atualizar</button>
+      </div>
       <div class="state" data-state="loading">A carregar fila…</div>
       <div class="state hidden" data-state="empty">Não existem leads nesta fila.</div>
       <div class="state hidden" data-state="error">Não foi possível carregar a fila.</div>
@@ -371,18 +367,17 @@
       </div>
     </aside>
   </div>
-  <details class="analytics-panel" data-pipeline-analytics><summary>Ver evolução comercial <span class="subtle">Últimos 30 dias</span></summary>
-  <div class="analytics-expanded">
-    <div class="analytics-panel-header">
-      <h2 id="analytics-title">Indicadores operacionais</h2>
-      <span class="analytics-caption">Janela móvel de 30 dias</span>
+  <section class="activity-analysis" data-activity-analysis hidden aria-labelledby="activity-title">
+    <div class="analysis-heading"><div><h2 id="activity-title">Análise de atividade</h2><p class="subtle">Atividade comercial registada · Europe/Lisbon</p></div>
+      <label>Período <select data-analysis-period><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option></select></label>
+      <button class="btn" type="button" data-close-analysis>← Chamadas</button>
     </div>
-    <p class="analytics-warning hidden" data-analytics-warning role="status"></p>
-    <div data-analytics-content>
-      <p class="analytics-caption" data-analytics-loading>A sincronizar indicadores…</p>
-      <p class="analytics-unavailable">Tempo em fase indisponível — a aguardar cobertura estruturada.</p>
-    </div>
-  </div></details>
+    <p class="subtle" data-analysis-range role="status"></p>
+    <div class="activity-totals" data-analysis-totals></div>
+    <div class="activity-chart" data-analysis-chart></div>
+    <p class="subtle" data-analysis-source></p>
+    <details class="analysis-coverage"><summary>Fonte e cobertura</summary><p data-analysis-coverage></p><p class="subtle">API para agentes: /api/v1/pipeline/activity-analysis?days=30</p></details>
+  </section>
   {% if writable and can_create_lead|default(false) %}
   <dialog class="contact-dialog" data-new-contact-dialog aria-labelledby="new-contact-title">
     <form data-new-contact-form>
@@ -409,4 +404,4 @@
   </template>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="/static/leads.js?v=20260908-metrics2"></script><script defer src="/static/call-day.js?v=20260908-cadence1"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/leads.js?v=20260909-analysis1"></script><script defer src="/static/call-day.js?v=20260909-analysis1"></script><script defer src="/static/activity-analysis.js?v=20260909-analysis1"></script>{% endblock %}

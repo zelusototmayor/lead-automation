@@ -131,7 +131,14 @@
 
       let page;
       try {
-        page = await requestJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
+        if (requestState.queue === 'plan') {
+          const plan = await requestJson('/api/v1/pipeline/call-day');
+          if (!Array.isArray(plan.items) || plan.items.length !== plan.total) throw new Error('Plano inválido');
+          page = {items: plan.items.slice(requestState.offset, requestState.offset + limit),
+                  total: plan.total, offset: requestState.offset, limit, plan};
+        } else {
+          page = await requestJson(`/api/v1/pipeline/items?${searchParams.toString()}`);
+        }
       } catch (error) {
         if (sequence !== requestSequence) return false;
         onFailure(error, requestState);
@@ -604,6 +611,21 @@
     };
   };
 
+  // A persisted plan keeps its order, but its task snapshot is not command authority.
+  const reconcilePlanCallTask = async (requestJson, leadId, queue, row) => {
+    if (queue !== "plan") return { queue, task: row?.task };
+    if (row?.lead_id !== leadId || row?.cohort !== "calls_actionable" || row?.task?.type !== "call" || !row.task.id) return null;
+    let offset = 0;
+    while (true) {
+      const page = await requestJson(`/api/v1/leads/${leadId}/tasks?limit=50&offset=${offset}`);
+      const task = page.items.find(item => item.id === row.task.id);
+      if (task) return task.type === "call" && task.status === "open"
+        ? { queue: row.cohort, task } : null;
+      offset += page.items.length;
+      if (!page.items.length || offset >= page.total) return null;
+    }
+  };
+
   const buildCallPayload = (values, selectedTask = null) => {
     const outcomes = ["connected", "no_answer", "voicemail", "wrong_number", "not_interested", "follow_up"];
     if (!outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
@@ -658,6 +680,7 @@
     module.exports = {
       createCallDraftStore,
       createCallCommandBehavior,
+      reconcilePlanCallTask,
       buildCallPayload,
       buildCallDetails,
       buildNextActionPayload,
@@ -909,12 +932,20 @@
       },
       onPage: (page, state) => {
         queueItems = Array.isArray(page.items) ? page.items : [];
+        root.querySelector('[data-list-title]').textContent = state.queue === 'plan' ? 'Plano de hoje' : 'Fila selecionada';
+        root.querySelector('[data-call-day-status]').hidden = state.queue !== 'plan';
+        root.querySelector('[data-prepare-call-day]').hidden = state.queue !== 'plan' || !!page.plan?.version || !canWriteTasks;
+        if (page.plan) root.dispatchEvent(new CustomEvent('call-plan-loaded', {detail: page.plan}));
         root.querySelector("[data-lead-total]").textContent = String(state.total);
         applyFilters();
         renderPagination(state);
       },
     });
     const loadQueue = (changes = {}) => queueLoader.load(changes);
+    root.addEventListener('call-plan-refresh', () => {
+      markViewIntent();
+      loadQueue({queue: 'plan', search: '', stage: '', priority: '', offset: 0}).catch(() => show(root, 'error'));
+    });
 
     const taskCommand = async (task, action) => {
       if (!canWriteTasks || !csrfToken || task.status !== "open") return;
@@ -1048,8 +1079,11 @@
       callForm?.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (savingCall || !currentLead || currentLead.suppressed) return;
-        let payload;
-        try { payload = buildCallPayload(readCallForm(), { queue: activeQueue, task: queueItems.find(item => leadRowKey(item) === selectedRowKey)?.task }); }
+        const values = readCallForm();
+        const lead = currentLead, leadId = selectedLeadId, rowKey = selectedRowKey;
+        const intent = viewIntentGeneration;
+        const queue = activeQueue, row = queueItems.find(item => leadRowKey(item) === rowKey);
+        try { buildCallPayload(values); }
         catch (error) { window.notify(error.message, "err"); return; }
         persistCallDraft();
         savingCall = true;
@@ -1058,6 +1092,10 @@
         button.disabled = true;
         saveState.textContent = "A guardar chamada…";
         try {
+          const selectedTask = await reconcilePlanCallTask(fetchJson, leadId, queue, row);
+          // Navigation during the task read must never attach this call to another row.
+          if (currentLead !== lead || selectedRowKey !== rowKey || viewIntentGeneration !== intent) return;
+          const payload = buildCallPayload(values, selectedTask);
           await queueBehavior.save("log-call", payload, true);
           if (!currentLead) {
             root.classList.remove("contact-open");
@@ -1272,7 +1310,7 @@
       postLead: postLeadCommand,
       refreshSummary: loadSummary,
       refreshQueue: loadQueue,
-      refreshCallMetrics: () => callMetricsBehavior.load(),
+      refreshCallMetrics: async () => {},
       nextPageRow: async () => {
         if (!await queueLoader.next()) return null;
         const row = list.querySelector(".lead-row[data-lead-id]");
@@ -1350,11 +1388,12 @@
       markViewIntent();
       window.clearTimeout(searchTimer);
       const value = search.value.trim().slice(0, 200);
-      searchTimer = window.setTimeout(() => loadQueue({ search: value, offset: 0 }).catch(() => show(root, "error")), 250);
+      searchTimer = window.setTimeout(() => loadQueue({ queue: activeQueue === 'plan' ? 'all' : activeQueue, search: value, offset: 0 }).catch(() => show(root, "error")), 250);
     });
     stageFilter.addEventListener("change", () => {
       markViewIntent();
       loadQueue({
+        queue: activeQueue === 'plan' ? 'all' : activeQueue,
         stage: stageFilter.value,
         offset: 0,
       }).catch(() => show(root, "error"));
@@ -1362,6 +1401,7 @@
     priorityFilter.addEventListener("change", () => {
       markViewIntent();
       loadQueue({
+        queue: activeQueue === 'plan' ? 'all' : activeQueue,
         priority: priorityFilter.value,
         offset: 0,
       }).catch(() => show(root, "error"));
@@ -1384,7 +1424,7 @@
       if (first) loadLead(first.dataset.leadId, first.dataset.rowKey).catch(() => window.notify("Não foi possível abrir o contacto.", "err"));
       else window.notify("Não há contactos nesta fila.");
     }));
-    root.querySelector("[data-exit-focus]").addEventListener("click", () => { root.classList.remove("contact-open"); document.body.classList.remove("call-focus"); });
+    root.querySelector("[data-exit-focus]").addEventListener("click", () => { root.classList.remove("contact-open", "plan-mode"); document.body.classList.remove("call-focus"); });
     root.querySelector("[data-back-to-queue]").addEventListener("click", () => {
       persistCallDraft(); root.classList.remove("contact-open");
             document.body.classList.remove("call-focus"); setContactLocation(null);
@@ -1431,12 +1471,11 @@
       });
     }
 
-    analyticsBehavior.load();
-    callMetricsBehavior.load();
     const initialParams = new URLSearchParams(window.location.search);
     const knownQueues = [...root.querySelectorAll("[data-pipeline-queue]")].map(button => button.dataset.pipelineQueue);
-    const defaultCallQueue = knownQueues.includes("calls_actionable") ? "calls_actionable" : "calls_overdue";
+    const defaultCallQueue = 'plan';
     const initialQueue = knownQueues.includes(initialParams.get("queue")) ? initialParams.get("queue") : (initialParams.has("search") || initialParams.has("lead") ? "all" : defaultCallQueue);
+    root.classList.toggle('plan-mode', initialQueue === 'plan');
     const initialStage = [...stageFilter.options].some(option => option.value === initialParams.get("stage")) ? initialParams.get("stage") : "";
     const initialPriority = ["low","medium","high"].includes(initialParams.get("priority")) ? initialParams.get("priority") : "";
     const initialOffset = Math.max(0, Math.min(1000000, parseInt(initialParams.get("offset"), 10) || 0));
