@@ -47,11 +47,13 @@ def activity_analysis(session, workspace_id, day, days=30):
             if message_key in seen_messages:
                 continue
             seen_messages.add(message_key)
-        else:
-            message_key = None
         prior = identity in first_contact and first_contact[identity] < event.occurred_at
-        first_contact.setdefault(identity, event.occurred_at)
         bucket = event.occurred_at.astimezone(zone).date().isoformat()
+        contact_event = event.activity_type in ('call', 'email_received', 'meeting', 'proposal') or (
+            event.activity_type == 'email_sent' and event.direction == 'outbound'
+        )
+        if contact_event:
+            first_contact.setdefault(identity, event.occurred_at)
         if bucket not in counts['call_initial'] or event.activity_type not in ('call', 'email_sent'):
             continue
         states = {legacy_contact_state(raw, event.occurred_at, zone) for raw in legacy.get(identity, [])}
@@ -67,10 +69,10 @@ def activity_analysis(session, workspace_id, day, days=30):
                     kind = 'unknown'
             except (ValueError, TypeError):
                 pass
-        if channel == 'email' and (not message_key or event.direction != 'outbound'):
-            coverage['email_without_message_identity'] += 1
-            unknown_days['email'].add(bucket)
+        if channel == 'email' and event.direction != 'outbound':
             continue
+        if channel == 'email' and kind == 'unknown' and 'uncertain' not in states:
+            kind = 'first_contact'
         if kind == 'unknown':
             coverage[channel + '_unknown'] += 1
             unknown_days[channel].add(bucket)
@@ -80,13 +82,12 @@ def activity_analysis(session, workspace_id, day, days=30):
         'schema_version': 1, 'timezone': zone.key, 'days': days,
         'start_date': dates[0], 'end_date': dates[-1],
         'source_status': 'partial',
-        'series': {key: {'label': label, 'total': sum(counts[key].values()) or None,
+        'series': {key: {'label': label, 'total': sum(counts[key].values()),
                          'points': [{'date': d, 'value': counts[key][d] if counts[key][d] else
-                                     (None if key == 'email_initial' or d in unknown_days[key.split('_')[0]]
-                                      or not sum(counts[key].values()) else 0)} for d in dates]}
+                                     (None if d in unknown_days[key.split('_')[0]] else 0)} for d in dates]}
                    for key, label in SERIES.items()},
         'coverage': coverage,
-        'notes': ['Registos CRM; cobertura histórica parcial.',
-                  'Emails iniciais: a fonte não certifica ausência de contacto anterior.'],
+        'notes': ['Registos CRM de emails assinalados como enviados; cobertura histórica parcial.',
+                  'Emails sem tipo explícito são classificados pelo histórico comercial registado.'],
         'generated_at': datetime.now(UTC).isoformat(),
     }

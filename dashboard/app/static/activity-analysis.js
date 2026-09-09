@@ -45,7 +45,8 @@
         const series = data.series[key];
         const card = node('article', undefined, 'activity-total'); card.style.setProperty('--series-color', colors[index]);
         const value = node('strong', series.total === null ? '—' : series.total); value.dataset.analysisTotal = key;
-        card.append(node('h3',series.label),value,node('p',series.total === null ? 'Sem dados classificáveis' : 'Registos confirmados · parcial'));
+        const emailSeries = key.startsWith('email_');
+        card.append(node('h3',series.label),value,node('p',series.total === null ? 'Sem dados classificáveis' : (emailSeries ? 'Emails assinalados como enviados · parcial' : 'Registos classificados · parcial')));
         totals.append(card);
         const label = node('span', series.label); label.style.setProperty('--series-color',colors[index]); legend.append(label);
         let segment = [];
@@ -69,9 +70,9 @@
         svg.append(svgNode('text',{x:width/2,y:120,'text-anchor':'middle',fill:'#637168','font-size':12},'Sem registos classificáveis no período'));
       }
       chart.append(svg,legend);
-      panel.querySelector('[data-analysis-source]').textContent = 'Fonte: CRM · cobertura parcial. — = sem classificação; lacunas não significam zero atividade.';
+      panel.querySelector('[data-analysis-source]').textContent = 'Fonte: CRM · emails assinalados como enviados por José/agente; cobertura histórica parcial. Lacunas não significam zero atividade.';
       const c = data.coverage;
-      panel.querySelector('[data-analysis-coverage]').textContent = `${data.notes.join(' ')} ${c.email_unknown} emails e ${c.call_unknown} chamadas com tipo desconhecido; ${c.email_without_message_identity} registos de email sem identidade de mensagem utilizável. Excluídos dos totais classificados.`;
+      panel.querySelector('[data-analysis-coverage]').textContent = `${data.notes.join(' ')} ${c.email_unknown} emails e ${c.call_unknown} chamadas com tipo desconhecido; quando existe vínculo Gmail, mensagens repetidas são deduplicadas. Excluídos dos totais classificados.`;
     };
     let sequence = 0;
     const load = async () => {

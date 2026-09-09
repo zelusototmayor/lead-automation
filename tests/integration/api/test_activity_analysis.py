@@ -20,9 +20,10 @@ def test_empty_analysis_is_four_partial_series_not_fabricated_history(lead_opera
     assert set(data['series']) == {'email_initial', 'email_follow_up', 'call_initial', 'call_follow_up'}
     assert data['source_status'] == 'partial'
     for series in data['series'].values():
-        assert series['total'] is None
+        assert series['total'] == 0
         assert len(series['points']) == 30
         assert series['points'][-1]['date'] == '2026-09-09'
+        assert {point['value'] for point in series['points']} == {0}
     assert client.get('/api/v1/pipeline/activity-analysis?days=8').status_code == 422
 
 
@@ -43,23 +44,47 @@ def test_calls_classify_attempts_before_event_and_bucket_lisbon(lead_operations_
     assert data['coverage']['call_unknown'] == 0
 
 
-def test_emails_dedup_receipts_and_never_call_first_observed_initial(lead_operations_api):
+def test_email_sends_marked_in_crm_count_without_gmail_identity_and_dedup_gmail(lead_operations_api):
     client, engine, workspace, lead_id, _ = lead_operations_api
     with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
         source = SourceIdentity(workspace_id=workspace, source_system='gmail',
             source_scope='fixture-mailbox', entity_kind='message', external_id='fixture-sent')
         session.add(source)
         session.flush()
-        for hour, identity in [(8, None), (9, source.id), (9, source.id)]:
+        for hour, identity, actor in [(8, None, 'human'), (9, None, 'agent'), (10, source.id, None), (10, source.id, None)]:
             session.add(Activity(workspace_id=workspace, lead_id=lead_id, account_id=session.get(Lead, lead_id).account_id,
                 activity_type='email_sent', title='Fixture', direction='outbound',
+                actor_type=actor,
                 source_system='gmail' if identity else None, source_identity_id=identity,
                 occurred_at=datetime(2026, 9, 9, hour, tzinfo=UTC)))
+        session.add(Activity(workspace_id=workspace, lead_id=lead_id, account_id=lead.account_id,
+            activity_type='email_received', title='Inbound fixture', direction='inbound',
+            occurred_at=datetime(2026, 9, 9, 11, tzinfo=UTC)))
     with patch('dashboard.app.routers.pipeline._utc_now', return_value=datetime(2026, 9, 9, 12, tzinfo=UTC)):
         data = client.get('/api/v1/pipeline/activity-analysis').json()
+    assert data['series']['email_initial']['total'] == 1
+    assert data['series']['email_follow_up']['total'] == 2
+    assert data['coverage']['email_without_message_identity'] == 0
+    assert data['coverage']['email_unknown'] == 0
+
+
+def test_legacy_prior_contact_makes_manual_email_a_follow_up_not_initial(lead_operations_api):
+    client, engine, workspace, lead_id, _ = lead_operations_api
+    with Session(engine) as session, session.begin():
+        lead = session.get(Lead, lead_id)
+        source = SourceIdentity(workspace_id=workspace, source_system='google_sheets',
+            source_scope='fixture-sheet', entity_kind='lead', external_id='fixture-row',
+            metadata_json={'legacy_row': {'Initial Email Sent': '2026-09-08'}})
+        session.add(source); session.flush(); lead.source_identity_id = source.id
+        session.add(Activity(workspace_id=workspace, lead_id=lead_id, account_id=lead.account_id,
+            activity_type='email_sent', title='Manual send', direction='outbound', actor_type='human',
+            occurred_at=datetime(2026, 9, 9, 10, tzinfo=UTC)))
+    with patch('dashboard.app.routers.pipeline._utc_now', return_value=datetime(2026, 9, 9, 12, tzinfo=UTC)):
+        data = client.get('/api/v1/pipeline/activity-analysis').json()
+    assert data['series']['email_initial']['total'] == 0
     assert data['series']['email_follow_up']['total'] == 1
-    assert data['series']['email_initial']['total'] is None
-    assert data['coverage']['email_without_message_identity'] == 1
+    assert data['coverage']['email_unknown'] == 0
 
 
 @pytest.mark.parametrize('legacy,kind,expected', [
@@ -68,7 +93,7 @@ def test_emails_dedup_receipts_and_never_call_first_observed_initial(lead_operat
     ('invalid', 'first_contact', None),
     ('', 'unknown', None),
 ])
-def test_legacy_uncertainty_and_unknown_are_not_zero(lead_operations_api, legacy, kind, expected):
+def test_legacy_uncertainty_marks_unknown_days_null_without_nulling_totals(lead_operations_api, legacy, kind, expected):
     client, engine, workspace, lead_id, _ = lead_operations_api
     with Session(engine) as session, session.begin():
         lead = session.get(Lead, lead_id)
@@ -83,9 +108,13 @@ def test_legacy_uncertainty_and_unknown_are_not_zero(lead_operations_api, legacy
     with patch('dashboard.app.routers.pipeline._utc_now', return_value=datetime(2026, 9, 9, 12, tzinfo=UTC)):
         response = client.get('/api/v1/pipeline/activity-analysis?days=90')
     data = response.json()
-    assert data['series']['call_initial']['total'] is None
-    assert data['series']['call_follow_up']['total'] == (1 if expected else None)
+    assert data['series']['call_initial']['total'] == 0
+    assert data['series']['call_follow_up']['total'] == (1 if expected else 0)
     assert data['coverage']['call_unknown'] == (0 if expected else 1)
+    if expected:
+        assert data['series']['call_initial']['points'][-1]['value'] == 0
+    else:
+        assert data['series']['call_initial']['points'][-1]['value'] is None
     assert 'fixture' not in response.text.lower()
     assert str(lead_id) not in response.text
 
@@ -107,6 +136,6 @@ def test_initial_email_unknown_and_import_inbound_excluded(lead_operations_api):
                 occurred_at=datetime(2026, 9, 9, 11 if activity_type == 'email_received' else 8 + index, tzinfo=UTC)))
     with patch('dashboard.app.routers.pipeline._utc_now', return_value=datetime(2026, 9, 9, 12, tzinfo=UTC)):
         data = client.get('/api/v1/pipeline/activity-analysis').json()
-    assert data['series']['email_initial']['total'] is None
-    assert data['series']['email_follow_up']['total'] is None
-    assert data['coverage']['email_unknown'] == 1
+    assert data['series']['email_initial']['total'] == 1
+    assert data['series']['email_follow_up']['total'] == 0
+    assert data['coverage']['email_unknown'] == 0
