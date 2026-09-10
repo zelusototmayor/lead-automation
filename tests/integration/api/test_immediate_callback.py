@@ -139,6 +139,30 @@ def test_recover_existing_callback_without_relogging_or_changing_task(lead_opera
     conflict = client.post(path, json=body | {"expected_version": 99}, headers=_headers(command))
     assert conflict.status_code == 409
     assert client.post(path, json=body).status_code in (401, 403, 422)
+    # Human reschedule after route entry must not project a newer task while
+    # claiming the caller's stale version was synchronized.
+    from src.crm.services import immediate_callback
+    original_sync = immediate_callback.sync_callback_now
+    before_calls = list(calendar.calls)
+    def race(factory, workspace_id, tid, **kwargs):
+        with Session(engine) as session, session.begin():
+            session.get(Task, tid).due_at += timedelta(hours=2)
+        return original_sync(factory, workspace_id, tid, **kwargs)
+    monkeypatch.setattr(immediate_callback, "sync_callback_now", race)
+    raced = client.post(path, json=body, headers=_headers(command))
+    assert raced.status_code == 409, raced.text
+    assert calendar.calls == before_calls
+    monkeypatch.setattr(immediate_callback, "sync_callback_now", original_sync)
+    real_claim = immediate_callback.claim_work
+    def race_after_claim(*args, **kwargs):
+        claimed = real_claim(*args, **kwargs)
+        with Session(engine) as session, session.begin():
+            session.get(Task, task_id).due_at += timedelta(hours=1)
+        return claimed
+    monkeypatch.setattr(immediate_callback, "claim_work", race_after_claim)
+    raced = client.post(path, json=body | {"expected_version": 2}, headers=_headers(command))
+    assert raced.status_code == 409, raced.text
+    assert calendar.calls == before_calls
 
 
 def test_provider_failure_keeps_save_and_pending_work(lead_operations_api, monkeypatch):

@@ -3,13 +3,13 @@ import logging
 from uuid import UUID
 from sqlalchemy import select
 from src.crm.persistence.models import Task, AgentWork
-from src.crm.services.agent_work_service import enqueue_callback, claim_work, fail_work
+from src.crm.services.agent_work_service import enqueue_callback, claim_work, fail_work, locked_work, finish_work
 from src.crm.services.callback_execution import execute_callback
 
 logger = logging.getLogger(__name__)
 
 
-def sync_callback_now(session_factory, workspace_id, task_id):
+def sync_callback_now(session_factory, workspace_id, task_id, *, expected_version=None):
     if task_id is None:
         return "not_required"
     claimed = None
@@ -18,7 +18,9 @@ def sync_callback_now(session_factory, workspace_id, task_id):
         # No provider write before the original command and durable work commit.
         with session_factory() as session, session.begin():
             task = session.scalar(select(Task).where(Task.workspace_id == workspace_id,
-                                                     Task.id == task_id))
+                                                     Task.id == task_id).with_for_update())
+            if expected_version is not None and (task is None or task.version != expected_version):
+                return "superseded"
             if task is None:
                 return "not_required"
             work_id = enqueue_callback(session, task)
@@ -32,6 +34,16 @@ def sync_callback_now(session_factory, workspace_id, task_id):
                 return "synced" if row.status == "completed" else "pending"
             claimed = items[0]
         with session_factory() as session, session.begin():
+            # Match executor lock order; a concurrent human edit wins over this
+            # version-bound recovery request, with no stale provider mutation.
+            if expected_version is not None:
+                locked_work(session, workspace_id, work_id)
+                task = session.scalar(select(Task).where(Task.workspace_id == workspace_id,
+                    Task.id == task_id).with_for_update())
+                if task is None or task.version != expected_version:
+                    finish_work(session, workspace_id, work_id, UUID(claimed["lease_token"]),
+                                result={"summary": "Callback substituído por alteração mais recente", "evidence": []})
+                    return "superseded"
             execute_callback(session, workspace_id, work_id, UUID(claimed["lease_token"]))
         return "synced"
     except Exception:
