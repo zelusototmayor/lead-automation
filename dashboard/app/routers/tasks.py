@@ -73,6 +73,28 @@ def _command_id(idempotency_key: str | None, body_command_id: UUID) -> UUID:
     return header_command_id
 
 
+@router.post("/api/v1/commands/tasks/{task_id}/sync-calendar")
+def sync_task_calendar(
+    task_id: UUID,
+    body: CompleteTaskCommandBody,
+    context: Annotated[TaskCommandContext, Depends(get_task_command_context)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Recover a committed projection, without logging another call or editing dates."""
+    from sqlalchemy import select
+    from src.crm.persistence.models import Task
+    from src.crm.services.immediate_callback import sync_callback_now
+    _command_id(idempotency_key, body.command_id)
+    with context.session_factory() as session:
+        task = session.scalar(select(Task).where(
+            Task.workspace_id == context.principal.workspace_id, Task.id == task_id))
+        if task is None or task.version != body.expected_version:
+            raise HTTPException(status_code=409, detail="Command conflict")
+    sync_status = sync_callback_now(context.session_factory, context.principal.workspace_id, task_id)
+    return {"command_id": body.command_id, "task_id": task_id,
+            "version": body.expected_version, "callback_sync_status": sync_status}
+
+
 @router.post(
     "/api/v1/commands/tasks/{task_id}/complete",
     response_model=TaskCommandResult,
@@ -106,7 +128,10 @@ def complete_task(
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except CommandConflictError:
         raise HTTPException(status_code=409, detail="Command conflict") from None
+    from src.crm.services.immediate_callback import sync_callback_now
+    sync_status = sync_callback_now(context.session_factory, principal.workspace_id, result.aggregate_id)
     return TaskCommandResult(
+        callback_sync_status=sync_status,
         command_id=result.command_id,
         task_id=result.aggregate_id,
         version=result.version,
@@ -148,7 +173,10 @@ def reschedule_task(
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except CommandConflictError:
         raise HTTPException(status_code=409, detail="Command conflict") from None
+    from src.crm.services.immediate_callback import sync_callback_now
+    sync_status = sync_callback_now(context.session_factory, principal.workspace_id, result.aggregate_id)
     return TaskCommandResult(
+        callback_sync_status=sync_status,
         command_id=result.command_id,
         task_id=result.aggregate_id,
         version=result.version,
@@ -189,7 +217,10 @@ def cancel_task(
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except CommandConflictError:
         raise HTTPException(status_code=409, detail="Command conflict") from None
+    from src.crm.services.immediate_callback import sync_callback_now
+    sync_status = sync_callback_now(context.session_factory, principal.workspace_id, result.aggregate_id)
     return TaskCommandResult(
+        callback_sync_status=sync_status,
         command_id=result.command_id,
         task_id=result.aggregate_id,
         version=result.version,

@@ -76,11 +76,23 @@ def enqueue_work(
     return work_id
 
 
-def enqueue_callback(session, task):
+def callback_calendar_required(task):
     if task.task_type != "call":
-        return None
-    # Structured v1 tasks are internal CRM obligations, never Calendar events.
-    if task.call_intent is not None:
+        return False
+    return callback_intent_requires_calendar(task.call_intent)
+
+
+def callback_intent_requires_calendar(intent):
+    # v1 UI wrote calendar_policy=none even for explicit human callbacks.
+    # Preserve that historical metadata; agreement determines internal projection.
+    return intent is None or (
+        intent.get("purpose") == "agreed_callback"
+        and intent.get("agreed_with_client") is True
+    )
+
+
+def enqueue_callback(session, task):
+    if not callback_calendar_required(task):
         return None
     session.flush()
     return enqueue_work(
@@ -143,6 +155,7 @@ def claim_work(
     lease_seconds=300,
     now=None,
     kinds=None,
+    work_ids=None,
 ):
     now = now or datetime.now(UTC)
     if not (
@@ -156,6 +169,7 @@ def claim_work(
                 AgentWork.workspace_id == workspace_id,
                 AgentWork.status == "running",
                 AgentWork.lease_until <= now,
+                AgentWork.id.in_(work_ids) if work_ids is not None else true(),
             )
             .with_for_update(skip_locked=True)
         )
@@ -175,6 +189,7 @@ def claim_work(
                 AgentWork.attempts < 3,
                 AgentWork.available_at <= now,
                 AgentWork.kind.in_(kinds) if kinds else true(),
+                AgentWork.id.in_(work_ids) if work_ids is not None else true(),
             )
             .order_by(AgentWork.available_at, AgentWork.created_at)
             .limit(limit)

@@ -12,7 +12,7 @@ from src.crm.ingestion.outbox import enqueue_outbox_event
 from src.crm.domain.call_contract import CallDetails, PhoneHistory, CallIntent
 from src.crm.services.phone_proof_service import validate_phone_history
 from src.crm.persistence.models import Activity, AuditEvent, Task
-from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work
+from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work, callback_intent_requires_calendar
 from src.crm.services.account_service import normalize_company_name, normalize_email
 from src.crm.services.command_service import (
     CommandAuthorizationError,
@@ -474,7 +474,7 @@ class LeadOperationService:
                 "outcome_code": command.outcome_code,
                 "activity_id": str(uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")),
                 "call_details": call_details,
-                **({"callback_sync_status": "not_required" if callback_intent else "pending"} if task_id else {}),
+                **({"callback_sync_status": "pending" if callback_intent_requires_calendar(callback_intent) else "not_required"} if task_id else {}),
             },
         )
         enqueue_work(
@@ -496,7 +496,7 @@ class LeadOperationService:
             False,
             task_id=task_id,
             occurred_at=occurred_at,
-            callback_sync_status=("not_required" if callback_intent else "pending") if task_id else None,
+            callback_sync_status=("pending" if callback_intent_requires_calendar(callback_intent) else "not_required") if task_id else None,
             activity_id=uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged"),
             call_details=call_details,
         )
@@ -708,7 +708,7 @@ class LeadOperationService:
                 "due_at": due_at.isoformat(),
                 "task_type": command.task_type,
                 **(
-                    {"callback_sync_status": "not_required" if intent else "pending", "call_intent": intent}
+                    {"callback_sync_status": "pending" if callback_intent_requires_calendar(intent) else "not_required", "call_intent": intent}
                     if command.task_type == "call"
                     else {}
                 ),
@@ -723,7 +723,7 @@ class LeadOperationService:
             lead.version,
             False,
             task_id=task_id,
-            callback_sync_status=("not_required" if intent else "pending") if command.task_type == "call" else None,
+            callback_sync_status=("pending" if callback_intent_requires_calendar(intent) else "not_required") if command.task_type == "call" else None,
         )
 
     def _authorize(self, principal, command, permission: str) -> None:

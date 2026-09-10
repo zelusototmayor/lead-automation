@@ -27,3 +27,4 @@ class TaskCommandResult(BaseModel):
     task_id: UUID
     version: int = Field(ge=1)
     replayed: bool
+    callback_sync_status: str | None = None

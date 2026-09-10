@@ -135,6 +135,15 @@ def _principal(principal: CRMPrincipal) -> HumanCommandPrincipal:
     )
 
 
+def _callback_result(result, context):
+    from src.crm.services.immediate_callback import sync_callback_now
+    response = _result(result)
+    if result.task_id:
+        response = response.model_copy(update={"callback_sync_status": sync_callback_now(
+            context.session_factory, context.principal.workspace_id, result.task_id)})
+    return response
+
+
 def _result(result) -> LeadOperationResult:
     return LeadOperationResult(
         command_id=result.command_id,
@@ -258,7 +267,10 @@ def log_call(
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except (CommandConflictError, IntegrityError):
         raise HTTPException(status_code=409, detail="Command conflict") from None
-    return _result(result)
+    if body.completed_task:
+        from src.crm.services.immediate_callback import sync_callback_now
+        sync_callback_now(context.session_factory, context.principal.workspace_id, body.completed_task.id)
+    return _callback_result(result, context)
 
 
 @router.post(
@@ -359,4 +371,4 @@ def schedule_next_action(
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except (CommandConflictError, IntegrityError):
         raise HTTPException(status_code=409, detail="Command conflict") from None
-    return _result(result)
+    return _callback_result(result, context)
