@@ -9,6 +9,7 @@ import json
 from uuid import UUID, uuid5
 
 from src.crm.domain.stage_policy import (
+    TERMINAL_STAGE_RANKS,
     highest_stage_rank,
     requires_account,
     resolve_stage,
@@ -242,10 +243,17 @@ class HumanCommandService:
             raise _conflict() from None
         try:
             validate_transition(lead.stage, target, command.reviewed_correction)
+            # Before terminal rank, history determines whether an account is
+            # required; an optional early account is not a persisted decision.
+            # Keep the existing linkage fallback once terminal rank masks it.
             account_required = requires_account(
                 target,
                 lead.highest_stage_rank,
-                lead.account_id is not None,
+                persisted_terminal_requires_account=(
+                    lead.account_id is not None
+                    if lead.highest_stage_rank in TERMINAL_STAGE_RANKS
+                    else None
+                ),
             )
             if account_required or lead.account_id is not None:
                 _ensure_account_for_transition(self.uow, lead, target)
