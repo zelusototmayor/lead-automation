@@ -4,7 +4,8 @@ from zoneinfo import ZoneInfo
 from hashlib import sha256
 from sqlalchemy import select
 from src.crm.domain.call_contract import CallDetails
-from src.crm.persistence.models import Activity, Lead, SourceIdentity
+from src.crm.persistence.models import Activity, Lead, SourceIdentity, AuditEvent
+from src.crm.services.note_source_service import source_digest
 from src.crm.activity_provenance import operational_activity_filter
 
 
@@ -96,12 +97,41 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
             .where(Lead.workspace_id == workspace_id)):
         legacy_by_identity.setdefault(source_lead.account_id or source_lead.id, []).append(
             (metadata or {}).get('legacy_row', {}))
+    # Interpretations are separate immutable audit records, not edits to the
+    # call. Apply only exact-digest, non-superseded projections; human fields win.
+    projections = {}
+    source_ids = [activity.id for activity, _ in rows]
+    superseded_ids = set(session.scalars(select(Activity.supersedes_activity_id).where(
+        Activity.workspace_id == workspace_id, Activity.supersedes_activity_id.in_(source_ids)))) if source_ids else set()
+    if source_ids:
+        for audit in session.scalars(select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace_id, AuditEvent.entity_type == 'activity',
+                AuditEvent.entity_id.in_(source_ids), AuditEvent.action == 'agent.note_interpreted')):
+            data = audit.details or {}
+            key=(audit.entity_id, data.get('source_digest'))
+            candidate=data.get('facts', {})
+            if key not in projections:
+                projections[key]=candidate
+            elif projections[key]!=candidate:
+                # Contradictory interpretations have no deterministic winner.
+                # Invalidate the projection, never depend on database row order.
+                projections[key]=None
     for activity, lead in rows:
         identity = lead.account_id or lead.id
         prior_contact = identity in first_contact_at and first_contact_at[identity] < activity.occurred_at
+        raw_details = activity.call_details
+        projection = projections.get((activity.id, source_digest(activity))) if activity.id not in superseded_ids else None
+        if projection and (raw_details is None or isinstance(raw_details, dict)):
+            enriched = dict(schema_version=1, attempted=True, answer_kind='unknown',
+                useful=None, decision_maker=None, interlocutor_role='unknown', repeat_reason=None)
+            enriched.update(raw_details or {})
+            for field, value in projection.items():
+                if field in {'answer_kind','useful','decision_maker','interlocutor_role','repeat_reason'} and enriched.get(field) in (None, 'unknown'):
+                    enriched[field] = value
+            raw_details = enriched
 
         try:
-            facts = CallDetails.model_validate(activity.call_details)
+            facts = CallDetails.model_validate(raw_details)
             # Retained/imported rows may predate writer validation. Conflicting
             # structured evidence stays unknown, never repaired by fallback.
             facts.validate_outcome(activity.outcome_code)
@@ -117,7 +147,7 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
                        'voicemail': 'voicemail', 'wrong_number': 'wrong_number'}.get(activity.outcome_code)
         if legacy_kind is None and reviewed_answer:
             legacy_kind = 'human_counterparty'
-        if activity.call_details is None and legacy_kind is not None:
+        if raw_details is None and legacy_kind is not None:
             facts = CallDetails(schema_version=1, attempted=True,
                 answer_kind=legacy_kind,
                 useful=None, decision_maker=None, interlocutor_role='unknown', repeat_reason=None)

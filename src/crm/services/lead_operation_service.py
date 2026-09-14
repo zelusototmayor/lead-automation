@@ -51,7 +51,7 @@ class LogCallCommand:
     workspace_id: UUID
     lead_id: UUID
     expected_version: int
-    outcome_code: str
+    outcome_code: str | None
     summary: str | None
     occurred_at: datetime | None = None
     next_action: dict | None = None
@@ -293,8 +293,10 @@ class LeadOperationService:
             or type(command.lead_id) is not UUID
             or type(command.expected_version) is not int
             or command.expected_version < 1
+            or (command.outcome_code is None and not command.summary)
             or command.outcome_code
             not in {
+                None,
                 "connected",
                 "no_answer",
                 "voicemail",
@@ -477,17 +479,15 @@ class LeadOperationService:
                 **({"callback_sync_status": "pending" if callback_intent_requires_calendar(callback_intent) else "not_required"} if task_id else {}),
             },
         )
-        enqueue_work(
-            self.uow.session,
-            workspace_id=command.workspace_id,
-            source_key=f"call:{command.command_id}",
-            kind="call_followup",
-            lead_id=lead.id,
-            payload={
-                "outcome_code": command.outcome_code,
-                "summary": command.summary,
-                "callback_task_id": str(task_id) if task_id else None,
-            },
+        from src.crm.services.note_source_service import enqueue_note_source
+
+        self.uow.session.flush()
+        activity = self.uow.session.get(
+            Activity, uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")
+        )
+        enqueue_note_source(
+            self.uow.session, activity,
+            source_key=f"call:{command.command_id}", callback_task_id=task_id,
         )
         return LeadOperationResult(
             command.command_id,
@@ -618,6 +618,13 @@ class LeadOperationService:
             summary=summary,
             payload={"occurred_at": occurred_at.isoformat()},
         )
+        from src.crm.services.note_source_service import enqueue_note_source
+
+        self.uow.session.flush()
+        activity = self.uow.session.get(
+            Activity, uuid5(command.workspace_id, f"{command.command_id}:activity:lead.note_added")
+        )
+        enqueue_note_source(self.uow.session, activity)
         return LeadOperationResult(
             command.command_id,
             lead.id,

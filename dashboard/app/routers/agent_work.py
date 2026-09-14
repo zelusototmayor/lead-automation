@@ -41,6 +41,7 @@ from src.crm.services.agent_work_service import (
     WorkConflict,
 )
 from src.crm.services.callback_execution import execute_callback
+from src.crm.services.note_status_service import with_note_processing
 
 router = APIRouter()
 
@@ -179,7 +180,7 @@ def _list(session, workspace, status, limit):
     if status:
         query = query.where(AgentWork.status == status)
     return [
-        serialize_work(item)
+        with_note_processing(session, workspace, serialize_work(item))
         for item in session.scalars(
             query.order_by(
                 case(
@@ -224,7 +225,7 @@ def read_work(work_id: UUID, principal: Principal, session: Database):
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Work not found")
-    return serialize_work(row)
+    return _context(session, principal.workspace_id, serialize_work(row))
 
 
 @router.get("/api/v1/agent-work")
@@ -264,6 +265,8 @@ def _context(session, workspace_id, item):
                         "title": t.title,
                         "due_at": t.due_at.isoformat(),
                         "source_rule": t.source_rule,
+                        "version": t.version,
+                        "status": t.status,
                     }
                     for t in session.scalars(
                         select(Task)
@@ -276,7 +279,12 @@ def _context(session, workspace_id, item):
                     )
                 ],
             }
-    return item
+            if item["kind"] == "call_followup":
+                from src.crm.services.note_source_service import note_context
+                item["context"]["note_source"] = note_context(
+                    session, workspace_id, lead.id, item["payload"]
+                )
+    return with_note_processing(session, workspace_id, item)
 
 
 @router.post("/api/v1/agent/work/claim")
@@ -294,6 +302,9 @@ def finish(work_id: UUID, body: FinishBody, principal: Principal, session: Datab
     require_scope(principal, "work:write")
     try:
         with session.begin():
+            row = locked_work(session, principal.workspace_id, work_id)
+            if row.kind == 'call_followup' and (row.payload or {}).get('activity_id') and body.status == 'completed':
+                raise WorkConflict('Source-bound note completion requires canonical note-plan')
             return finish_work(
                 session,
                 principal.workspace_id,
@@ -364,6 +375,8 @@ def next_action(
     try:
         with session.begin():
             row = locked_work(session, principal.workspace_id, work_id)
+            if row.kind == 'call_followup' and (row.payload or {}).get('activity_id'):
+                raise WorkConflict('Source-bound notes require canonical note-plan')
             task_id = uuid5(work_id, "next-action")
             result = {
                 "summary": body.title,
@@ -466,6 +479,76 @@ def next_action(
             )
     except (WorkConflict, ValueError):
         raise HTTPException(status_code=409, detail="Work conflict") from None
+
+
+class NoteFact(StrictBody):
+    field: Literal['answer_kind','useful','decision_maker','interlocutor_role','repeat_reason']
+    value: Any
+    quote: str = Field(min_length=1, max_length=2000)
+
+
+class DraftContent(StrictBody):
+    recipient: str = Field(min_length=3, max_length=254)
+    subject: str = Field(min_length=1, max_length=240)
+    body_html: str = Field(min_length=1, max_length=20000)
+
+
+class NoteAction(StrictBody):
+    key: str = Field(pattern='^[a-z0-9_-]{1,64}$')
+    task_type: Literal['call','email','follow_up']
+    title: str = Field(min_length=1, max_length=512)
+    due_at: AwareDatetime
+    quote: str = Field(min_length=1, max_length=2000)
+    existing_task_id: UUID | None = None
+    draft: DraftContent | None = None
+    expected_task_version: int | None = Field(default=None, ge=1)
+
+
+class NotePlanBody(LeaseBody):
+    expected_lead_version: int = Field(ge=1)
+    source_digest: str = Field(pattern='^[0-9a-f]{64}$')
+    facts: list[NoteFact] = Field(default_factory=list, max_length=5)
+    actions: list[NoteAction] = Field(default_factory=list, max_length=5)
+    summary: str = Field(min_length=1, max_length=2000)
+
+
+@router.post('/api/v1/agent/work/{work_id}/note-plan')
+def note_plan(work_id: UUID, body: NotePlanBody, principal: Principal, session: Database):
+    require_scope(principal, 'work:write')
+    from src.crm.services.note_plan_service import apply_note_plan
+    try:
+        with session.begin():
+            return apply_note_plan(session, principal, work_id, body)
+    except (WorkConflict, ValueError, TypeError):
+        raise HTTPException(status_code=409, detail='Work conflict') from None
+
+
+@router.get('/api/v1/agent/notes/audit')
+def audit_notes(principal: Principal, session: Database, cursor: UUID | None = None,
+                cutoff: AwareDatetime | None = None, limit: int = 20):
+    require_scope(principal, 'work:read')
+    cutoff=cutoff or datetime.now(UTC)
+    limit=max(1,min(limit,50))
+    query=select(AgentWork).where(AgentWork.workspace_id==principal.workspace_id,
+        AgentWork.kind=='call_followup',AgentWork.created_at<=cutoff)
+    if cursor:query=query.where(AgentWork.id>cursor)
+    rows=list(session.scalars(query.order_by(AgentWork.id).limit(limit+1)))
+    return {'items':[with_note_processing(session,principal.workspace_id,serialize_work(row),verify_drafts=True) for row in rows[:limit]],
+        'next_cursor':str(rows[limit-1].id) if len(rows)>limit else None,
+        'cutoff':cutoff.astimezone(UTC).isoformat(),
+        'scope':'CRM obligations, recorded Calendar receipts, fresh read-only draft MIME; never proof of sending'}
+
+
+class ReconcileNotesBody(StrictBody):
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+@router.post('/api/v1/agent/notes/reconcile')
+def reconcile_notes(body: ReconcileNotesBody, principal: Principal, session: Database):
+    require_scope(principal, 'work:write')
+    from src.crm.services.note_source_service import reconcile_note_sources
+    with session.begin():
+        return reconcile_note_sources(session, principal.workspace_id, body.limit)
 
 
 class ObservationsBody(StrictBody):

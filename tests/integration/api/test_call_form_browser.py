@@ -14,7 +14,7 @@ from tests.integration.api.test_lead_operations_api import lead_operations_api
 
 
 @pytest.mark.parametrize('width', [1440, 390])
-@pytest.mark.parametrize('mode', ['explicit', 'connected', 'no_answer'])
+@pytest.mark.parametrize('mode', ['explicit', 'connected', 'no_answer', 'note_only'])
 def test_real_form_restores_dimensions_and_canonically_saves(lead_operations_api, width, mode):
     playwright = pytest.importorskip('playwright.sync_api')
     client, engine, workspace_id, lead_id, _ = lead_operations_api
@@ -48,9 +48,10 @@ def test_real_form_restores_dimensions_and_canonically_saves(lead_operations_api
         advanced = form.locator('[data-call-advanced]')
         playwright.expect(advanced).not_to_have_attribute('open')
         outcome = 'no_answer' if mode == 'no_answer' else 'connected'
-        form.locator(f'[name=outcome_code][value={outcome}]').check()
         form.locator('[name=summary]').fill('Browser fixture: conversei com a receção.')
-        advanced.locator('summary').click()
+        if mode != 'note_only':
+            advanced.locator('summary').click()
+            form.locator(f'[name=outcome_code][value={outcome}]').check()
         values = {'answer_kind': 'human_counterparty',
                             'contact_kind': 'first_contact',
                             'first_conversation': 'yes',
@@ -59,10 +60,12 @@ def test_real_form_restores_dimensions_and_canonically_saves(lead_operations_api
             form.locator(f'[name={name}]').select_option(value)
         page.reload()
         playwright.expect(form).to_be_visible()
-        advanced.locator('summary').click()
-        playwright.expect(form.locator('[name=contact_kind]')).to_have_value(values.get('contact_kind', 'unknown'))
-        playwright.expect(form.locator('[name=first_conversation]')).to_have_value(values.get('first_conversation', 'unknown'))
-        advanced.locator('summary').click()
+        if mode != 'note_only':
+            advanced.locator('summary').click()
+            playwright.expect(form.locator('[name=contact_kind]')).to_have_value(values.get('contact_kind', 'unknown'))
+            playwright.expect(form.locator('[name=first_conversation]')).to_have_value(values.get('first_conversation', 'unknown'))
+            advanced.locator('summary').click()
+        playwright.expect(advanced).not_to_have_attribute('open')
         with page.expect_response(lambda r: r.request.method == 'POST') as saved:
             form.locator('[data-call-save]').click()
         assert saved.value.status == 200
@@ -85,7 +88,10 @@ def test_real_form_restores_dimensions_and_canonically_saves(lead_operations_api
             assert calls[0].summary == payload['summary']
         metrics = client.get('/api/v1/pipeline/call-metrics').json()
         assert metrics['counts']['attempts'] == 1
-        assert metrics['counts']['answered'] == int(outcome == 'connected')
+        assert metrics['counts']['answered'] == int(outcome == 'connected' and mode != 'note_only')
+        if mode == 'note_only':
+            assert payload['outcome_code'] is None
+            assert metrics['coverage']['answer_unknown'] == 1
         assert metrics['counts']['useful'] == metrics['counts']['decision_maker'] == 0
         assert metrics['contact_counts']['first_contact'] == int(mode == 'explicit')
         assert metrics['deficit'] is None

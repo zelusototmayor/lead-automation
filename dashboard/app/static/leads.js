@@ -628,11 +628,12 @@
 
   const buildCallPayload = (values, selectedTask = null) => {
     const outcomes = ["connected", "no_answer", "voicemail", "wrong_number", "not_interested", "follow_up"];
-    if (!outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
+    if (values.outcome_code && !outcomes.includes(values.outcome_code)) throw new Error("Escolhe o resultado da chamada.");
     const payload = {
-      outcome_code: values.outcome_code,
+      outcome_code: values.outcome_code || null,
       summary: String(values.summary || "").trim() || null,
     };
+    if (!payload.outcome_code && !payload.summary) throw new Error("Escreve uma nota ou escolhe o resultado da chamada.");
     if (values.occurred_at) payload.occurred_at = toAbsoluteISOString(values.occurred_at, "Confirma a data e hora real da chamada.");
     if (values.answer_kind || values.useful || values.decision_maker || values.interlocutor_role || values.repeat_reason) {
       payload.call_details = buildCallDetails(values);

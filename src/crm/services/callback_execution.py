@@ -260,6 +260,15 @@ def callback_content(session, task):
                 Activity.id == UUID(activity_id),
                 Activity.activity_type == "call",
             ))
+    elif task.source_rule == "head_of_sales_note":
+        audit = session.scalar(select(AuditEvent).where(
+            AuditEvent.workspace_id == task.workspace_id,
+            AuditEvent.action == 'agent.note_interpreted',
+            AuditEvent.details['task_ids'].contains([str(task.id)])))
+        if audit:
+            activity = session.scalar(select(Activity).where(
+                Activity.workspace_id == task.workspace_id,
+                Activity.lead_id == task.lead_id, Activity.id == audit.entity_id))
     elif task.source_rule == "manual_next_action":
         activity = session.scalar(select(Activity).where(
             Activity.workspace_id == task.workspace_id,

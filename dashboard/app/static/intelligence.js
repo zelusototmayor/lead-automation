@@ -8,13 +8,16 @@
   };
   const STATUS_LABELS = { queued:"Em fila", running:"Em curso", waiting:"A aguardar", completed:"Concluído", failed:"Precisa de atenção" };
   const KIND_LABELS = { calendar_callback:"Callback na agenda", call_followup:"Seguimento da chamada", calendar_review:"Rever reunião", proposal_review:"Rever proposta", proposal_sent:"Proposta enviada", email_followup:"Seguimento de email", inbound_reply:"Resposta recebida", email_review:"Rever email", email_observation:"Atualizar oportunidade", proposal_discovery:"Associar proposta" };
+  const NOTE_LABELS = {pending:"Pendente",processing:"Em curso",partial:"Parcial",blocked:"Bloqueado",failed:"Precisa de atenção",processed:"Processado"};
+  const effectiveStatus = item => ({pending:"queued",processing:"running",partial:"waiting",blocked:"waiting",failed:"failed",processed:"completed"})[item.processing?.state] || item.status;
   const workView = item => ({
     title: KIND_LABELS[item.kind] || "Acompanhamento comercial",
-    status: STATUS_LABELS[item.status] || "Estado por confirmar",
+    status: NOTE_LABELS[item.processing?.state] || STATUS_LABELS[item.status] || "Estado por confirmar",
+    obligations: (item.processing?.obligations || []).map(ref => ref.task_status && ref.task_status !== "open" ? "Obrigação encerrada no CRM; não é prova de envio." : ref.task_type === "email" ? "Draft preparado para revisão; não enviado." : ref.task_type === "call" ? `Callback na agenda: ${ref.calendar_status === "verified" ? "confirmado" : "pendente"}.` : "Próxima ação interna registada."),
     summary: item.result?.summary || item.payload?.summary || item.payload?.subject || (item.status === "queued" ? "Aguarda execução pelo agente." : "Abre o contacto para consultar o contexto."),
     href: item.lead_id ? `/leads?lead=${encodeURIComponent(item.lead_id)}` : null,
   });
-  const matchesFilter = (item, filter) => filter === "all" || (filter === "active" && ["queued","running"].includes(item.status)) || (filter === "attention" && ["waiting","failed"].includes(item.status)) || item.status === filter;
+  const matchesFilter = (item, filter) => filter === "all" || (filter === "active" && ["queued","running"].includes(effectiveStatus(item))) || (filter === "attention" && ["waiting","failed"].includes(effectiveStatus(item))) || effectiveStatus(item) === filter;
   if (typeof module !== "undefined" && module.exports) module.exports = { workView, matchesFilter };
   const append = (parent, tag, className, value) => { const el=document.createElement(tag); el.className=className; el.textContent=String(value ?? ""); parent.appendChild(el); return el; };
   const date = value => { const d=new Date(value); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"}); };
@@ -30,6 +33,7 @@
         const view=workView(item); const card=append(list,"article","agent-work-card","");
         const meta=append(card,"div","agent-card-meta",""); const status=append(meta,"span","work-status",view.status); status.dataset.status=item.status;
         append(meta,"time","subtle",date(item.updated_at)); append(card,"h3","",view.title); append(card,"p","section-note",view.summary);
+        view.obligations.forEach(text=>append(card,"p","agent-next",text));
         if (item.result?.next_action) {
           const next=item.result.next_action; const title=typeof next === "string" ? next : next.title || next.summary || (next.due_at ? `Próximo passo: ${date(next.due_at)}` : "Próximo passo registado");
           append(card,"p","agent-next",title);

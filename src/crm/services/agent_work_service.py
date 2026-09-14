@@ -133,15 +133,15 @@ def serialize_work(row, *, include_lease=False):
         "lead_id": str(row.lead_id) if row.lead_id else None,
         "payload": row.payload,
         "attempt": row.attempts,
-        "available_at": row.available_at.isoformat(),
+        "available_at": row.available_at.astimezone(UTC).isoformat(),
         "result": row.result,
         "result_hash": row.result_hash,
         "error": row.error,
-        "updated_at": row.updated_at.isoformat(),
+        "updated_at": row.updated_at.astimezone(UTC).isoformat(),
     }
     if include_lease:
         value.update(
-            lease_token=str(row.lease_token), lease_until=row.lease_until.isoformat()
+            lease_token=str(row.lease_token), lease_until=row.lease_until.astimezone(UTC).isoformat()
         )
     return value
 

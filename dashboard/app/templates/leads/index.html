@@ -244,12 +244,14 @@
         {% if writable and can_log_call %}
         <form class="call-workspace" data-call-log-form>
           <div class="call-section-heading"><h3>Como correu?</h3><span class="draft-status" data-call-draft-status aria-live="polite"></span></div>
-          <fieldset class="call-outcomes"><legend class="sr-only">Resultado da chamada</legend>
-            <label><input type="radio" name="outcome_code" value="connected" required><span>✓ Atendeu</span></label>
-            <label><input type="radio" name="outcome_code" value="no_answer" required><span>↗ Não atendeu</span></label>
-          </fieldset>
+          <label class="call-note-label" for="call-note">Nota da conversa</label>
+          <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
           <details class="call-other" data-call-advanced>
           <summary>Detalhes avançados · opcional</summary>
+          <fieldset class="call-outcomes"><legend class="sr-only">Resultado da chamada</legend>
+            <label><input type="radio" name="outcome_code" value="connected"><span>✓ Atendeu</span></label>
+            <label><input type="radio" name="outcome_code" value="no_answer"><span>↗ Não atendeu</span></label>
+          </fieldset>
           <div class="call-dimensions" aria-label="Dimensões telefónicas verificadas">
             <label>Hora real da chamada<input type="datetime-local" name="occurred_at" required></label>
             <label>Atendimento<select name="answer_kind" required>
@@ -281,8 +283,6 @@
             <label class="full-width">Razão para repetir no mesmo dia <span>opcional</span><input name="repeat_reason" maxlength="500" placeholder="Só quando há retorno pedido ou exceção legítima"></label>
           </div>
           </details>
-          <label class="call-note-label" for="call-note">Nota da conversa <span>opcional</span></label>
-          <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
           {% if can_write_tasks %}
           <div class="callback-box">
             <label class="callback-toggle"><input type="checkbox" name="callback_enabled"><span>Voltar a ligar</span><span class="callback-hint">Marcar callback</span></label>

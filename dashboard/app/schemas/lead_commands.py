@@ -54,7 +54,7 @@ class LogCallCommandBody(LeadOperationBase):
     call_details: CallDetails | None = None
     completed_task: CompletedCallTask | None = None
     next_action: CallNextAction | None = None
-    outcome_code: StrictStr = Field(min_length=1, max_length=64)
+    outcome_code: StrictStr | None = Field(default=None, min_length=1, max_length=64)
     summary: StrictStr | None = Field(default=None, min_length=1, max_length=2000)
     occurred_at: AwareDatetime | None = None
 

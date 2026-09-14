@@ -34,8 +34,9 @@ test("stale or unavailable browser storage does not stop calls", () => {
   assert.equal(blocked.read("A"), null); blocked.remove("A");
 });
 
-test("a call requires an explicit outcome and callback requires a real date", () => {
-  assert.throws(() => buildCallPayload({ summary: "hello" }), /resultado/);
+test("note-only preserves unknown outcome and callback requires a real date", () => {
+  assert.deepEqual(buildCallPayload({ summary: "hello" }), {outcome_code: null, summary: "hello"});
+  assert.throws(() => buildCallPayload({ summary: " " }), /nota|resultado/);
   assert.throws(() => buildCallPayload({ outcome_code: "connected", callback_enabled: true }), /data e hora/);
   assert.deepEqual(buildCallPayload({ outcome_code: "no_answer", summary: " " }), { outcome_code: "no_answer", summary: null });
 });
