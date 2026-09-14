@@ -504,7 +504,13 @@ class NoteAction(StrictBody):
     expected_task_version: int | None = Field(default=None, ge=1)
 
 
+class NoteDisposition(StrictBody):
+    target_stage: Literal['contacted', 'lost', 'not_a_fit']
+    quote: str = Field(min_length=1, max_length=500)
+
+
 class NotePlanBody(LeaseBody):
+    disposition: NoteDisposition | None = None
     expected_lead_version: int = Field(ge=1)
     source_digest: str = Field(pattern='^[0-9a-f]{64}$')
     facts: list[NoteFact] = Field(default_factory=list, max_length=5)

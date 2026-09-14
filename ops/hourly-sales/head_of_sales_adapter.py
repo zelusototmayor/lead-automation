@@ -173,6 +173,9 @@ def collect(client,store,config):
     daily=min(100,max(1,int(config.get('max_reasoning_tasks_per_day',24))))
     hourly=config.get('hourly_drain') is True
     remaining=budget if hourly else max(0,daily-store.count('reasoning_claims'))
+    now=dt.datetime.now(LISBON)
+    reasoning_allowed=(config.get('reasoning_business_hours', True) is False or (now.weekday()<5 and 10<=now.hour<=19))
+    if not reasoning_allowed:remaining=0
     result={'wakeAgent':False,'items':[],'automatic_completed':0,'automatic_failures':0,'waiting':0,'coverage':{'status':'not_scanned_this_run'},'budget':{'max_work_per_run':budget,'max_deterministic_work_per_run':deterministic,'reasoning_remaining_today':None if hourly else remaining},'policy_path':str(HERMES/'ops/operating-policy.json'),'prompt_path':str(HERMES/'prompts/head-of-sales.md')}
     if hourly:
         result['note_coverage']=client.call('POST','/api/v1/agent/notes/reconcile',{'limit':50})
@@ -334,7 +337,7 @@ def note_plan(client,store,key,value,config):
     """Forward intent only; canonical server owns provider effects and fences."""
     key=safe_id(key);claim=store.get(key)
     if not claim:raise AdapterError('No owned CRM claim')
-    if not isinstance(value,dict) or set(value)-{'expected_lead_version','source_digest','facts','actions','summary'}:
+    if not isinstance(value,dict) or set(value)-{'expected_lead_version','source_digest','facts','actions','summary','disposition'}:
         raise AdapterError('Invalid note plan')
     if any(not isinstance(x,dict) or 'draft_receipt' in x for x in value.get('actions',[])):
         raise AdapterError('Provider receipt cannot be supplied by model')

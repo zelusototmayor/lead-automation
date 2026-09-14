@@ -11,6 +11,15 @@ worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
 
 
+def test_cli_does_not_skip_deterministic_callbacks_outside_window(tmp_path,monkeypatch):
+    config=tmp_path/'config.json';config.write_text(json.dumps({'enabled':True,'hourly_drain':True}))
+    monkeypatch.setattr(sys,'argv',['worker','--config',str(config)])
+    monkeypatch.setattr(worker,'inside_business_window',lambda now:False)
+    calls=[];monkeypatch.setattr(worker,'execute',lambda path:calls.append(path) or [])
+    assert worker.main()==0
+    assert calls==[config]
+
+
 def test_hourly_drains_more_than_two_and_preserves_receipts(tmp_path, monkeypatch):
     config = tmp_path / 'config.json'
     config.write_text(json.dumps({'enabled': True, 'hourly_drain': True, 'max_drain_seconds': 900}))

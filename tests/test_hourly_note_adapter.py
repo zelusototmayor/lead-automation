@@ -9,6 +9,24 @@ spec=importlib.util.spec_from_file_location('hourly_adapter_test',ROOT/'head_of_
 a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
 
 
+def test_business_window_limits_model_not_calendar(tmp_path,monkeypatch):
+    real=a.dt.datetime
+    class Night(real):
+        @classmethod
+        def now(cls,tz=None):return real(2026,9,14,2,tzinfo=a.dt.timezone.utc).astimezone(tz)
+    monkeypatch.setattr(a.dt,'datetime',Night)
+    store=a.Store(tmp_path/'state')
+    class Client:
+        requests=0
+        def __init__(self):self.calls=[]
+        def call(self,method,path,payload=None):
+            self.calls.append((path,payload));self.requests+=1
+            return {'items':[], 'next_cursor':None,'cutoff':'2026-09-14T02:00:00+00:00'}
+    c=Client();a.collect(c,store,{'hourly_drain':True,'sync_mode':'disabled'})
+    kinds=[body['kinds'] for path,body in c.calls if body and 'kinds' in body]
+    assert kinds==[['calendar_callback']]
+
+
 def test_note_plan_cli_is_exposed():
     import subprocess
     result=subprocess.run([sys.executable,str(ROOT/'head_of_sales_adapter.py'),'note-plan','--help'],capture_output=True,text=True)

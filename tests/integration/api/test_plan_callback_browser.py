@@ -66,6 +66,7 @@ def test_plan_callback_completes_exact_current_obligation(lead_operations_api, c
             page.locator('[data-leads-list] .lead-open-button').click()
             form = page.locator('[data-call-log-form]')
             expect(form).to_be_visible()
+            form.locator('[data-call-advanced] > summary').click()
             form.locator('[name=outcome_code][value=connected]').check()
             form.locator('[name=summary]').fill('Plan callback fixture')
             form.locator('[name=callback_enabled]').check()

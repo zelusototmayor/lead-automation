@@ -455,6 +455,24 @@ class LeadOperationService:
             self.uow.tasks.add(task)
             self.uow.session.flush()
             enqueue_task_work(self.uow.session, task)
+        # A confirmed conversation leaves New immediately; unanswered attempts,
+        # advanced stages and intentionally closed leads retain their semantics.
+        if command.outcome_code == 'connected' and lead.stage == 'new':
+            from sqlalchemy import select
+            from src.crm.domain.stage_policy import highest_stage_rank
+            newer = self.uow.session.scalar(select(Activity.id).where(
+                Activity.workspace_id == command.workspace_id,
+                Activity.lead_id == lead.id, Activity.occurred_at > occurred_at,
+                Activity.activity_type.in_(('call', 'stage_change'))).limit(1))
+            if newer is None:
+                lead.stage = 'contacted'
+                lead.highest_stage_rank = highest_stage_rank(lead.highest_stage_rank, 'contacted')
+                self.uow.session.add(AuditEvent(
+                    id=uuid5(command.command_id, 'contact-stage-audit'),
+                    workspace_id=command.workspace_id, command_id=uuid5(command.command_id, 'contact-stage'),
+                    actor_id=principal.actor_id, action='lead.contact_stage_projected',
+                    entity_type='lead', entity_id=lead.id,
+                    details={'from_stage':'new','to_stage':'contacted','basis':'human_connected_outcome'}))
         lead.updated_at = datetime.now(UTC)
         self.uow.session.flush()
         self._record(

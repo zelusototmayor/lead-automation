@@ -235,9 +235,7 @@ def inside_business_window(now):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--config',type=Path,default=CONFIG);args=parser.parse_args()
-    config=load_json(args.config)
-    if config.get('hourly_drain') is True and not inside_business_window(dt.datetime.now(dt.timezone.utc)):
-        return 0
+    # Deterministic Calendar execution must never be gated by model hours.
     notices=execute(args.config)
     if notices:print('\n\n'.join(dict.fromkeys(notices)))
     return 0

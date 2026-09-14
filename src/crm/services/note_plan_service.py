@@ -97,6 +97,28 @@ def apply_note_plan(session, principal, work_id, body):
     if source.get('status') != 'current' or source.get('source_digest') != body.source_digest:
         raise WorkConflict('Source changed')
     text = source.get('summary') or ''
+    disposition = body.disposition
+    stage_change = None
+    if disposition:
+        from src.crm.domain.stage_policy import is_terminal_stage, highest_stage_rank, requires_account
+        if (not disposition.quote.strip() or disposition.quote not in text
+                or source.get('newer_context', {}).get('items')
+                or is_terminal_stage(lead.stage)):
+            raise WorkConflict('Disposition conflicts with current human context')
+        target = disposition.target_stage
+        # Text citations do not prove a call outcome. Only the immutable
+        # human-selected result may authorize a stage projection.
+        confirmed = {'connected': 'contacted', 'not_interested': 'lost'}
+        if source.get('activity_type') != 'call' or confirmed.get(source.get('outcome_code')) != target:
+            raise WorkConflict('Explicit matching human call outcome required')
+        if target == 'contacted' and (lead.stage != 'new' or source.get('outcome_code') in ('no_answer','voicemail','wrong_number')
+                or (source.get('call_details') or {}).get('answer_kind') in ('no_answer','voicemail','automated_system')):
+            raise WorkConflict('Cannot regress stage or contradict human call outcome')
+        if target in ('lost', 'not_a_fit') and body.actions:
+            raise WorkConflict('Closed leads cannot create followups')
+        if requires_account(target, lead.highest_stage_rank) and not lead.account_id:
+            raise WorkConflict('Missing account evidence')
+        stage_change = {'from_stage': lead.stage, 'to_stage': target, 'quote': disposition.quote}
     if body.actions and source.get('newer_context',{}).get('items'):
         raise WorkConflict('Newer contact context requires reconciliation; no action from old note')
     existing = source.get('call_details') or {}
@@ -176,6 +198,17 @@ def apply_note_plan(session, principal, work_id, body):
         'action_keys':[x.key for x in body.actions],
         'task_ids':[str(t.id) for _,t in prepared],
         'schedule_basis':'internal_preparation_not_customer_agreement'}
+    if stage_change:
+        lead.stage = stage_change['to_stage']
+        lead.highest_stage_rank = highest_stage_rank(lead.highest_stage_rank, lead.stage)
+        lead.updated_at = datetime.now(UTC)
+        audit_details['stage_change'] = stage_change
+        session.add(Activity(id=uuid5(work_id, 'note-stage-change'),
+            workspace_id=principal.workspace_id, account_id=lead.account_id, lead_id=lead.id,
+            activity_type='stage_change', occurred_at=datetime.now(UTC), title='Stage from call note',
+            from_stage=stage_change['from_stage'], to_stage=lead.stage,
+            source_system='agent', actor_type='agent', actor_id=principal.actor_id,
+            semantic_fingerprint=plan_hash))
     if len(json.dumps(audit_details,ensure_ascii=False).encode())>3800:
         raise WorkConflict('Citation evidence exceeds audit budget')
     session.flush()

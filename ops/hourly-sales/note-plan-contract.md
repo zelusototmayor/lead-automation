@@ -1,11 +1,13 @@
 # Source-bound note extension — existing Sales authority still applies
 
-For call_followup with context.note_source.status=current, use canonical note-plan, NOT next-action or generic completed finish. The latter cannot certify provider effects. Other work kinds keep the existing runtime guide. No sends, no guests, no stage/contact edits, no new prices or commitments.
+For call_followup with context.note_source.status=current, use canonical note-plan, NOT next-action or generic completed finish. The latter cannot certify provider effects. Other work kinds keep the existing runtime guide. No sends, no guests, no contact edits, no new prices or commitments. The source-bound disposition below is the only permitted automatic stage update.
 
 Write a private JSON intent file, then invoke the existing configured adapter runtime with:
 head_of_sales_adapter.py note-plan --id <owned-work-id> --plan-file <absolute-file>
 
 Required fields: expected_lead_version (current context.lead_version), source_digest (exact context.note_source.source_digest), summary, facts (list), actions (list). Never include lease tokens; the adapter supplies them. Never include draft_receipt: only the canonical server can create and verify receipts.
+
+Optional disposition={target_stage,quote} is restricted to an immutable call source with an explicit HUMAN-selected outcome: connected permits contacted only from new; not_interested permits lost with actions=[]. Text citations or model-extracted facts alone never authorize stage changes. Never infer lost/not_a_fit/contacted from free text or an ordinary note. Use the existing manual stage control for not_a_fit or ambiguous closure; keep an exact waiting question when needed. Never reopen a terminal lead or override newer human context. If the stage already matches, omit disposition.
 
 A fact has field, value, and a verbatim quote from the exact source summary. Allowed fields: answer_kind, useful, decision_maker, interlocutor_role, repeat_reason. Existing human values prevail. Unknown is legitimate. Reception/forwarding does not prove a decision-maker conversation. A note describing two attempts remains one recorded event: summarize that distinction, do not create invented events or times. First contact is a separate dimension and all-channel coverage here is explicitly incomplete; do not certify first contact from lack of visible history. Prior dated emails/meetings/calls override a first-call self-description.
 

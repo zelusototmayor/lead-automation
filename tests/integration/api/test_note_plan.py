@@ -7,12 +7,12 @@ from src.crm.persistence.models import Activity, Lead, Task, AgentWork, AuditEve
 from src.crm.services.note_source_service import enqueue_note_source
 
 
-def prepare(work_api, summary='Atendeu a receção. Pediu para ligar amanhã.', call_details=None):
+def prepare(work_api, summary='Atendeu a receção. Pediu para ligar amanhã.', call_details=None, outcome_code=None):
     client,engine,ws,lead_id=work_api
     with Session(engine) as s, s.begin():
         lead=s.get(Lead,lead_id)
         source=Activity(id=uuid4(),workspace_id=ws,account_id=lead.account_id,lead_id=lead_id,
-            activity_type='call',title='Call',summary=summary,call_details=call_details,
+            activity_type='call',title='Call',summary=summary,call_details=call_details,outcome_code=outcome_code,
             occurred_at=datetime.now(UTC),source_system='manual',actor_type='user')
         s.add(source);s.flush()
         work=enqueue_note_source(s,source);source_id=source.id
