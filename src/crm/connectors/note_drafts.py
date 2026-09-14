@@ -126,6 +126,7 @@ def create_verified_draft(*,provider,journal,key,mailbox,recipient,subject,body_
         if matches:raise ValueError('Existing provider marker without local intent; review required')
         message=EmailMessage(policy=email.policy.SMTP)
         message['From']=mailbox;message['To']=recipient;message['Subject']=subject;message['Message-ID']='<'+marker+'>'
+        message['X-CRM-Obligation']=marker
         thread=provider.thread(recipient) if hasattr(provider,'thread') else None
         provider.preflight(recipient,since,thread)
         if thread:
@@ -150,7 +151,7 @@ def create_verified_draft(*,provider,journal,key,mailbox,recipient,subject,body_
     # text/HTML bodies rather than assuming byte-identical transfer encoding.
     def semantic(encoded):
         msg=BytesParser(policy=email.policy.default).parsebytes(base64.urlsafe_b64decode(encoded+'='*(-len(encoded)%4)))
-        return ([str(msg.get(k,'')) for k in ('From','To','Cc','Bcc','Subject','Message-ID','In-Reply-To','References')],
+        return ([str(msg.get(k,'')) for k in ('From','To','Cc','Bcc','Subject','X-CRM-Obligation','In-Reply-To','References')],
                 [(p.get_content_type(),p.get_content().replace('\r\n','\n')) for p in msg.walk() if p.get_content_type() in ('text/plain','text/html')])
     if semantic(message['raw'])!=semantic(raw):raise ValueError('Draft readback content mismatch')
     if old.get('thread_id') and message.get('threadId')!=old['thread_id']:raise ValueError('Draft thread mismatch')
@@ -177,9 +178,21 @@ class GmailDraftProvider:
         return next((x.get('signature') for x in values if x.get('sendAsEmail')==self.mailbox),None)
     def get(self,key):return self.request('GET','/drafts/'+quote(key,safe=''),params={'format':'raw'})
     def lookup(self,marker):
-        page=self.request('GET','/drafts',params={'q':'rfc822msgid:'+marker,'maxResults':10})
-        if page.get('nextPageToken'):raise ValueError('Ambiguous provider marker')
-        return [self.get(x['id']) for x in page.get('drafts',[])]
+        # Gmail rewrites Message-ID on drafts.create. The private MIME header
+        # survives; enumerate direct draft resources, never depend on indexing.
+        matches=[];token=None
+        for _ in range(5):
+            params={'maxResults':100}
+            if token:params['pageToken']=token
+            page=self.request('GET','/drafts',params=params)
+            for ref in page.get('drafts',[]):
+                draft=self.get(ref['id']);raw=draft['message']['raw']
+                msg=BytesParser(policy=email.policy.default).parsebytes(base64.urlsafe_b64decode(raw+'='*(-len(raw)%4)))
+                if str(msg.get('X-CRM-Obligation',''))==marker or str(msg.get('Message-ID',''))=='<'+marker+'>':
+                    matches.append(draft)
+            token=page.get('nextPageToken')
+            if not token:return matches
+        raise ValueError('Incomplete draft inventory; no creation permitted')
     def create(self,raw,thread_id=None):
         message={'raw':raw}
         if thread_id:message['threadId']=thread_id
