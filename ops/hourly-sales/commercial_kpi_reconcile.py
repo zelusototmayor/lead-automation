@@ -52,6 +52,10 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
+class InventoryRestart(RuntimeError):
+    """A sanitized cursor/source conflict; only a bounded full re-read is safe."""
+
+
 def classify(context):
     """A fixed local runtime subprocess; model output cannot choose a command."""
     if platform.system() != "Darwin":
@@ -264,7 +268,18 @@ class KPITransport:
         )
         if not allowed or parsed.scheme or parsed.netloc or parsed.fragment:
             raise ModelUnavailable("Non-KPI capability refused")
-        return self.client.call(method, path, payload)
+        try:
+            return self.client.call(method, path, payload)
+        except Exception as exc:
+            # Existing adapter deliberately exposes only this sanitized status string.
+            # Never retry authentication, transport, validation or provider failures.
+            status = re.fullmatch(r"CRM HTTP (400|409)", str(exc))
+            if status and (
+                status[1] == "409"
+                or (method == "GET" and parsed.path.startswith(root + "/sources"))
+            ):
+                raise InventoryRestart("Inventory changed or cursor expired") from None
+            raise
 
 
 def complete_context(transport, activity_id):
@@ -299,12 +314,10 @@ def complete_context(transport, activity_id):
 def run_reconciliation(
     transport, *, entrypoint, classification_only, anchor_date, classifier=classify
 ):
-    from urllib.parse import urlencode
-    from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+    from uuid import uuid4
 
     if classification_only is not True or entrypoint not in {"sales_13h", "sales_1730"}:
         raise ValueError("Explicit supported classification-only entrypoint required")
-    base = "/api/v1/agent/commercial-kpis"
     run_id = str(uuid4())
     start_body = {
         "run_id": run_id,
@@ -314,6 +327,23 @@ def run_reconciliation(
         "operation": "start",
         "expected_checkpoint": None,
     }
+    for attempt in range(3):
+        try:
+            return _reconciliation_sweep(transport, start_body, classifier)
+        except InventoryRestart:
+            if attempt == 2:
+                raise
+            # Same run, same fixed cutoff, same lease/CAS. Discard only in-memory
+            # cursors, never persisted assessments/acks. Re-read every input and
+            # exact receipt; reuse current prefix without another model invocation.
+
+
+def _reconciliation_sweep(transport, start_body, classifier):
+    from urllib.parse import urlencode
+    from uuid import NAMESPACE_URL, UUID, uuid5
+
+    base = "/api/v1/agent/commercial-kpis"
+    run_id = start_body["run_id"]
     start = transport.call("POST", base + "/reconciliations", start_body)
     cursor, visited, seen_sources = start["next_cursor"], set(), set()
     while True:

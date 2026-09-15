@@ -205,6 +205,14 @@ class SourceIndex:
     def context(self, activity_id):
         row = self.activities[UUID(str(activity_id))]
         company = self.companies[row.id]
+        company_kind, company_id = company.split(":", 1)
+        account = (
+            self.accounts.get(UUID(company_id)) if company_kind == "account" else None
+        )
+        lead = self.leads.get(row.lead_id)
+        company_name = (
+            account.display_name if account else (lead.company_name if lead else None)
+        )
         history = self.phone_history[company]
         uncertain_time = {"import", "migration", "system"}
         previous = [
@@ -261,6 +269,7 @@ class SourceIndex:
         return dict(
             source_snapshot(row),
             canonical_company_id=company,
+            company_display_name=company_name,
             source_digest=digest,
             source_version=digest,
             context_digest=semantic_hash(

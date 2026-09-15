@@ -59,6 +59,15 @@
     let detailSequence = 0, sourceSequence = 0, trigger = null;
     dialog.addEventListener("close", () => { ++detailSequence; content.replaceChildren(); trigger?.focus(); });
     const number = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : "—";
+    const timestamp = (name, value, key, absent = "Não disponível") => {
+      const node = el("p", `${name}: `, "subtle");
+      if (key) node.setAttribute(`data-kpi-${key}`, "");
+      if (value && Number.isFinite(new Date(value).getTime())) {
+        const text = new Intl.DateTimeFormat("pt-PT", {timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"}).format(new Date(value));
+        const time = el("time", `${text} · Lisboa`); time.dateTime = value; node.append(time);
+      } else node.append(el("span", absent));
+      return node;
+    };
     const metric = (name, value, key) => {
       const card = el("div", undefined, "kpi-card"); const count = el("strong", number(value));
       if (key) count.setAttribute(`data-kpi-${key}`, "");
@@ -86,7 +95,10 @@
         const node = el("span", `${text}: `); const count = el("strong", number(data.relevance[key]));
         count.setAttribute(`data-kpi-${key}`, ""); node.append(count); states.append(node);
       });
-      stats.append(grid, goal, progress, states, el("p", `Tipo de tentativa desconhecido: ${number(data.phone_attempts.unknown)} · Excluídas: ${number(data.exclusions.total)} · Falhas de processamento: ${number(data.coverage.processing.failed)}`, "subtle"),
+      stats.append(grid, goal, progress, states,
+        timestamp("Última atualização dos dados", data.generated_at, "updated"),
+        timestamp("Avaliação atual mais antiga", data.assessed_at, "assessed", "Sem avaliação atual"),
+        el("p", `Tipo de tentativa desconhecido: ${number(data.phone_attempts.unknown)} · Excluídas: ${number(data.exclusions.total)} · Falhas de processamento: ${number(data.coverage.processing.failed)}`, "subtle"),
         el("p", `Histórico incompleto: ${number(data.coverage.history.incomplete)} · Ordem ambígua: ${number(data.coverage.history.ambiguous_order)}. ${data.coverage.source.complete ? "Varredura concluída." : "Cobertura de processamento ainda não confirmada."}`, "subtle"));
     };
     const controller = createController({request, render});
@@ -102,10 +114,16 @@
         const value = await request(`${base}/${id}`);
         if (sequence !== detailSequence || !dialog.open) return;
         const source = value.source, assessment = value.assessment;
-        content.replaceChildren(el("h2", "Classificação comercial"), el("p", source.canonical_company_id, "subtle"));
+        const company = el("h3", source.company_display_name || "Empresa não identificada");
+        company.setAttribute("data-kpi-company", "");
+        const reason = el("p", assessment?.reason || "Ainda sem avaliação.");
+        reason.setAttribute("data-kpi-reason", "");
+        content.replaceChildren(el("h2", "Classificação comercial"), company,
+          timestamp("Interação", source.occurred_at, "occurred"));
         const provenance = el("p", assessment ? `${assessment.provenance === "human" ? "Humano" : "Inferido"} · ${assessment.freshness}` : "Pendente");
         provenance.setAttribute("data-kpi-provenance", "");
-        content.append(provenance, el("pre", source.summary || "Sem nota"), el("p", assessment?.reason || "Ainda sem avaliação."),
+        content.append(provenance, timestamp("Última avaliação", assessment?.assessed_at, "assessed", "Sem avaliação"),
+          el("pre", source.summary || "Sem nota"), reason,
           el("p", `Histórico: ${source.history_coverage.state} · Revisão humana: ${value.override_revision}`, "subtle"));
         if (leadRoot.dataset.canAddNote !== "true") return;
         const form = el("form", undefined, "kpi-form");
@@ -113,13 +131,13 @@
         const kind = select([["unknown", "Desconhecida"], ["new", "Nova"], ["follow_up", "Follow-up"]], assessment?.phone_attempt_kind || "unknown");
         const eligibility = select([["eligible", "Elegível"], ["excluded", "Excluída"]], source.eligibility);
         const exclusion = select([["", "Sem exclusão"], ["non_phone", "Não telefónica"], ["test_scaffold", "Teste"], ["voided", "Anulada"], ["cancelled_before_occurrence", "Cancelada antes"], ["duplicate", "Duplicado"], ["superseded", "Substituída"]], source.exclusion_reason || "");
-        const reason = el("textarea"); reason.required = true; reason.maxLength = 240; reason.rows = 3;
-        reason.value = assessment?.reason || "";
+        const reasonInput = el("textarea"); reasonInput.required = true; reasonInput.maxLength = 240; reasonInput.rows = 3;
+        reasonInput.value = assessment?.reason || "";
         const declares = el("input"); declares.type = "checkbox";
         const start = el("input"); start.type = "number"; start.min = "0"; start.value = "0";
         const end = el("input"); end.type = "number"; end.min = "1"; end.value = String(Array.from(source.summary || "").length);
         form.append(label("Relevância", relevant), label("Tipo de tentativa", kind), label("Elegibilidade", eligibility), label("Motivo de exclusão", exclusion),
-          label("Justificação", reason), label("Início da evidência (carateres)", start), label("Fim da evidência (exclusivo)", end),
+          label("Justificação", reasonInput), label("Início da evidência (carateres)", start), label("Fim da evidência (exclusivo)", end),
           label("Declaro explicitamente que não houve tentativa telefónica anterior", declares));
         const message = el("p"); message.setAttribute("role", "status");
         const save = el("button", "Guardar correção", "btn btn-primary"); save.type = "submit";
@@ -138,7 +156,7 @@
             }
             const refs = source.summary ? [{activity_id: id, source_version: source.source_version, field: "summary", start: Number(start.value), end: Number(end.value)}] : [];
             correction = {relevant: relevant.value, phone_attempt_kind: kind.value, eligibility: eligibility.value,
-              exclusion_reason: eligibility.value === "excluded" ? exclusion.value : null, reason: reason.value, evidence_refs: refs, history_coverage: history};
+              exclusion_reason: eligibility.value === "excluded" ? exclusion.value : null, reason: reasonInput.value, evidence_refs: refs, history_coverage: history};
           }
           const values = {expected_source_digest: source.source_digest, expected_context_digest: source.context_digest,
             expected_override_revision: value.override_revision, operation, correction};
@@ -173,7 +191,11 @@
         page.items.forEach(item => {
           const row = el("div", undefined, "kpi-source");
           const open = button("Abrir fonte", () => details(item.source.activity_id, open));
-          row.append(el("span", `${item.assessment?.freshness || "pending"} · ${item.assessment?.relevant || "unknown"} · ${item.source.summary || "Sem nota"}`), open);
+          const summary = el("div");
+          summary.append(el("strong", item.source.company_display_name || "Empresa não identificada"),
+            timestamp("Interação", item.source.occurred_at),
+            el("p", `${item.assessment?.freshness || "pending"} · ${item.assessment?.relevant || "unknown"} · ${item.assessment?.reason || "Ainda sem avaliação."}`));
+          row.append(summary, open);
           sources.append(row);
         });
         if (page.has_more && page.next_cursor) {

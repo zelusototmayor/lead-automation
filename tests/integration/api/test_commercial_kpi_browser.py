@@ -60,26 +60,31 @@ def test_real_leads_correction_readback_and_note_save_invalidates_before_worker(
 ):
     from playwright.sync_api import expect, sync_playwright
 
-    from src.crm.persistence.models import Activity, Lead
+    from src.crm.persistence.models import Account, Activity, Lead
     from src.crm.services.commercial_kpi_service import SourceIndex, assess
     from src.crm.services.note_source_service import source_digest
 
     url, engine, workspace, lead, actor = browser_api
     with Session(engine) as session, session.begin():
         lead_row = session.get(Lead, lead)
+        company_name = "Empresa sintética <script>não executar</script>"
+        session.get(Account, lead_row.account_id).display_name = company_name
+        occurred_at = datetime.now(UTC).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
         call = source(
             session,
             workspace,
             lead,
             account_id=lead_row.account_id,
             contact_id=lead_row.contact_id,
-            occurred_at=datetime.now(UTC),
+            occurred_at=occurred_at,
             summary="Responsável discutiu necessidade e recusou por orçamento.",
         )
         call_id = call.id
         original = source_digest(call)
         context = SourceIndex(session, workspace).context(call_id)
-        assess(
+        receipt = assess(
             session,
             workspace,
             actor,
@@ -90,7 +95,10 @@ def test_real_leads_correction_readback_and_note_save_invalidates_before_worker(
         )
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        page = browser.new_page(viewport={"width": width, "height": height})
+        page = browser.new_page(
+            viewport={"width": width, "height": height},
+            timezone_id="America/Los_Angeles",
+        )
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         # No external integrations, trackers or fonts are needed by this test.
@@ -107,9 +115,48 @@ def test_real_leads_correction_readback_and_note_save_invalidates_before_worker(
             panel = page.locator("[data-commercial-kpis]")
             expect(panel.locator("[data-kpi-confirmed]")).to_have_text("1")
             expect(panel.locator("[data-kpi-goal]")).to_contain_text("1/50")
+            expect(panel.locator("[data-kpi-updated]")).to_contain_text(
+                "Última atualização dos dados:"
+            )
+            assert panel.locator("[data-kpi-updated] time").get_attribute("datetime")
+            expect(panel.locator("[data-kpi-assessed]")).to_contain_text(
+                "Avaliação atual mais antiga:"
+            )
+            assert datetime.fromisoformat(
+                panel.locator("[data-kpi-assessed] time").get_attribute("datetime")
+            ) == datetime.fromisoformat(receipt["assessment"]["assessed_at"])
             panel.get_by_role("button", name="Ver fontes").click()
+            row = panel.locator(".kpi-source").first
+            expect(row).to_contain_text(company_name)
+            from zoneinfo import ZoneInfo
+
+            local_event = occurred_at.astimezone(ZoneInfo("Europe/Lisbon"))
+            expect(row).to_contain_text(local_event.strftime("%d/%m/%Y"))
+            expect(row).to_contain_text(local_event.strftime("%H:%M:%S"))
+            expect(row).to_contain_text(receipt["assessment"]["reason"])
+            expect(row).not_to_contain_text(
+                "recusou por orçamento"
+            )  # note stays progressive
             panel.get_by_role("button", name="Abrir fonte").first.click()
             dialog = page.get_by_role("dialog", name="Classificação comercial")
+            expect(dialog.locator("[data-kpi-company]")).to_have_text(company_name)
+            expect(dialog.locator("[data-kpi-occurred]")).to_contain_text(
+                local_event.strftime("%d/%m/%Y")
+            )
+            expect(dialog.locator("[data-kpi-occurred]")).to_contain_text(
+                local_event.strftime("%H:%M:%S")
+            )
+            expect(dialog.locator("[data-kpi-occurred]")).to_contain_text("Lisboa")
+            expect(dialog.locator("[data-kpi-reason]")).to_have_text(
+                receipt["assessment"]["reason"]
+            )
+            expect(dialog.locator("[data-kpi-assessed]")).to_contain_text(
+                "Última avaliação:"
+            )
+            assert datetime.fromisoformat(
+                dialog.locator("[data-kpi-assessed] time").get_attribute("datetime")
+            ) == datetime.fromisoformat(receipt["assessment"]["assessed_at"])
+            assert dialog.locator("script").count() == 0
             expect(dialog.locator("pre")).to_contain_text("recusou por orçamento")
             assert dialog.get_by_label("Relevância", exact=True).count() == 1, (
                 page.locator("#leads-app").get_attribute("data-can-add-note"),
@@ -162,6 +209,9 @@ def test_real_leads_correction_readback_and_note_save_invalidates_before_worker(
             )
             note.get_by_role("button", name="Adicionar nota", exact=True).click()
             expect(panel.locator("[data-kpi-stale]")).to_have_text("1")
+            expect(panel.locator("[data-kpi-assessed]").first).to_contain_text(
+                "Sem avaliação atual"
+            )
             expect(panel.locator("[data-kpi-unknown]")).to_have_text("1")
             assert panel.evaluate(
                 "el => el.getBoundingClientRect().width <= innerWidth"
