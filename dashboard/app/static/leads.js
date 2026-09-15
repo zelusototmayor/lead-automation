@@ -1311,7 +1311,7 @@
       postLead: postLeadCommand,
       refreshSummary: loadSummary,
       refreshQueue: loadQueue,
-      refreshCallMetrics: async () => {},
+      refreshCallMetrics: () => commercialKpis?.invalidate(),
       nextPageRow: async () => {
         if (!await queueLoader.next()) return null;
         const row = list.querySelector(".lead-row[data-lead-id]");
@@ -1323,6 +1323,7 @@
       ),
     });
     const loadLead = queueBehavior.loadLead;
+    const commercialKpis = window.CommercialKpis?.mount(root.querySelector('[data-commercial-kpis]'), root);
     const callMetricsContent = root.querySelector("[data-call-metrics]");
     const callMetricsBehavior = createCallMetricsBehavior({
       requestJson: fetchJson,

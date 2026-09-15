@@ -1,0 +1,20 @@
+.commercial-kpis { margin: 14px 0; padding: 16px; border: 1px solid var(--line, #ddd); border-radius: 12px; background: var(--panel, white); min-width: 0; }
+.commercial-kpis h2 { margin: 0 0 12px; font-size: 18px; }
+.kpi-controls, .kpi-states { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.kpi-controls label, .kpi-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; min-width: 0; }
+.kpi-controls input, .kpi-controls select, .kpi-form input, .kpi-form select, .kpi-form textarea { font: inherit; padding: 8px; border: 1px solid var(--line, #ccc); border-radius: 6px; min-width: 0; max-width: 100%; color: inherit; background: var(--panel, white); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; }
+.kpi-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; background: var(--bg, #f6f7f7); border-radius: 8px; font-size: 12px; }
+.kpi-card strong { font-size: 24px; }
+.commercial-kpis progress { width: 100%; height: 12px; margin-bottom: 12px; accent-color: var(--accent, #1e7469); }
+.kpi-source { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line, #ddd); }
+.kpi-source span { min-width: 0; overflow-wrap: anywhere; }
+.kpi-source .btn { flex-shrink: 0; }
+.kpi-dialog { margin: auto; width: min(680px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 20px; box-sizing: border-box; border: 1px solid var(--line, #ddd); border-radius: 12px; color: inherit; background: var(--panel, white); overflow-y: auto; }
+.kpi-dialog::backdrop { background: #10202599; }
+.kpi-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 12px; background: var(--bg, #f6f7f7); border-radius: 8px; }
+.kpi-dialog p { overflow-wrap: anywhere; }
+.kpi-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.kpi-form label:has(textarea), .kpi-form label:has(input[type=checkbox]), .kpi-form [role=status] { grid-column: 1 / -1; }
+.kpi-form label:has(input[type=checkbox]) { flex-direction: row-reverse; align-items: center; justify-content: start; }
+@media (max-width: 480px) { .commercial-kpis { padding: 12px; } .kpi-dialog { padding: 14px; } .kpi-form { grid-template-columns: minmax(0, 1fr); } }

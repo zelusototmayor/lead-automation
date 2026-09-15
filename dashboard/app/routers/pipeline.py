@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -49,7 +49,10 @@ from src.crm.persistence.models import (
     Workspace,
 )
 
+from dashboard.app.routers.commercial_kpis import router as commercial_kpis_router
+
 router = APIRouter()
+router.include_router(commercial_kpis_router)
 
 _QUEUES: tuple[PipelineQueue, ...] = (
     "calls_overdue",
@@ -373,11 +376,12 @@ def pipeline_activity_analysis(
 def pipeline_call_metrics(
     context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
     work_date: Annotated[date | None, Query(alias="date")] = None,
+    period: Literal["day", "week", "month"] = "day",
 ):
     from src.crm.services.call_metrics import call_metrics
     timezone_name, timezone = _workspace_timezone(context)
     return call_metrics(context.session, context.principal.workspace_id,
-                        work_date or _utc_now().astimezone(timezone).date(), timezone_name)
+                        work_date or _utc_now().astimezone(timezone).date(), timezone_name, period=period)
 
 
 @router.get("/api/v1/pipeline/summary", response_model=PipelineSummary)

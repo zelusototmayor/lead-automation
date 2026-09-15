@@ -63,7 +63,7 @@ def legacy_contact_state(raw, occurred_at, zone):
     return 'uncertain' if uncertain else 'none'
 
 
-def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
+def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon', *, period='day'):
     zone = ZoneInfo(timezone_name)
     start = datetime.combine(day, time.min, zone).astimezone(UTC)
     end = datetime.combine(day + timedelta(days=1), time.min, zone).astimezone(UTC)
@@ -192,7 +192,10 @@ def call_metrics(session, workspace_id, day, timezone_name='Europe/Lisbon'):
         blockers.append(f'{invalid_details} registo(s) com dimensões inválidas ou em conflito; atendimento desconhecido até revisão.')
     contact_counts['new_companies'] = len(new_companies)
     blockers.append('Primeiro contacto exige confirmação de ausência de contacto anterior em qualquer canal; histórico incompleto permanece desconhecido. Empresas novas não são oportunidades qualificadas.')
-    return {'schema_version':1, 'date':day.isoformat(), 'timezone':timezone_name,
+    from src.crm.services.commercial_kpi_service import aggregate
+    return {'commercial_kpis_v1': aggregate(session, workspace_id, anchor_date=day,
+                period=period, legacy_anchor_day_attempts=counts['attempts']),
+            'schema_version':1, 'date':day.isoformat(), 'timezone':timezone_name,
             'source_status':'partial', 'counts':counts, 'coverage':coverage, 'contact_counts':contact_counts,
             'target_first_answered':10, 'deficit':None,
             'recorded_deficit':max(0,10-counts['first_answered_recorded']),

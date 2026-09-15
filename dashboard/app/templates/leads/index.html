@@ -141,6 +141,7 @@
   }
 {% endblock %}
 {% block content %}
+<link rel="stylesheet" href="/static/commercial-kpis.css?v=1">
 <section id="leads-app" aria-live="polite"
   data-writable="{{ 'true' if writable else 'false' }}"
   data-can-edit-lead="{{ 'true' if can_edit_lead else 'false' }}"
@@ -153,6 +154,7 @@
   <header class="topbar">
     <div><p class="eyebrow" data-today-label>O teu dia comercial</p><h1>Chamadas</h1><p class="subtle">Uma nota curta. Um próximo passo. Segue a conversa.</p></div><div class="header-actions"><button class="btn focus-exit" type="button" data-exit-focus>Ver filas e filtros</button><a class="btn" href="/contas">Ver empresas <span aria-hidden="true">↗</span></a>{% if writable and can_create_lead|default(false) %}<button class="btn btn-primary" type="button" data-new-contact>Novo contacto <span aria-hidden="true">+</span></button>{% endif %}</div>
   </header>
+  <section class="commercial-kpis" data-commercial-kpis data-authenticated="{{ 'false' if subject == 'public-browser' else 'true' }}" aria-label="KPIs comerciais"></section>
   <section class="metric-strip" data-queue-metrics aria-label="Resumo operacional">
     <button class="metric-card" type="button" data-metric="all" data-metric-targets="all">
       <span class="metric-label">Contactos</span><strong class="metric-value" data-metric-value="all">—</strong><span class="metric-note">Na base de contactos</span>
@@ -404,4 +406,4 @@
   </template>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="/static/leads.js?v=20260914-notes1"></script><script defer src="/static/call-day.js?v=20260909-analysis1"></script><script defer src="/static/activity-analysis.js?v=20260909-analysis1"></script>{% endblock %}
+{% block scripts %}<script defer src="/static/commercial-kpis.js?v=1"></script><script defer src="/static/leads.js?v=20260915-kpi1"></script><script defer src="/static/call-day.js?v=20260909-analysis1"></script><script defer src="/static/activity-analysis.js?v=20260909-analysis1"></script>{% endblock %}
