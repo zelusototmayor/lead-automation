@@ -55,6 +55,7 @@
     date.value = new Intl.DateTimeFormat("en-CA", {timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit"}).format(new Date());
     const period = select([["day", "Dia"], ["week", "Semana"], ["month", "Mês"]], "week");
     const stats = el("div"); stats.setAttribute("aria-live", "polite");
+    const support = el("div", undefined, "kpi-info-actions");
     const sources = el("div", undefined, "kpi-sources");
     const dialog = el("dialog", undefined, "kpi-dialog");
     dialog.setAttribute("aria-label", "Classificação comercial");
@@ -85,14 +86,14 @@
       }
       const data = frame.data;
       const grid = el("div", undefined, "kpi-grid");
-      grid.append(metric("Conversas relevantes", data.relevance.confirmed, "confirmed"), metric("Não relevantes", data.relevance.no, "no"),
-        metric("Desconhecidas", data.relevance.unknown, "unknown"), metric("Tentativas registadas", data.phone_attempts.total, "attempts"),
+      grid.append(metric("Conversas relevantes", data.relevance.confirmed, "confirmed"),
+        metric("Tentativas", data.phone_attempts.total, "attempts"),
         metric("Novas", data.phone_attempts.new), metric("Follow-up", data.phone_attempts.follow_up));
       const goal = el("p"); goal.setAttribute("data-kpi-goal", "");
       const displayDate = value => new Intl.DateTimeFormat("pt-PT", {timeZone: "Europe/Lisbon"}).format(new Date(value));
       const newGoal = goalView(data);
       goal.className = "kpi-goal-hero";
-      goal.textContent = `Semana ${displayDate(data.weekly_goal.week_start)}–${displayDate(new Date(data.weekly_goal.week_end_exclusive).getTime() - 1)} · ${number(newGoal.confirmed)}/50 ${newGoal.label}`;
+      goal.textContent = `${number(newGoal.confirmed)}/50 ${newGoal.label} esta semana`;
       const progress = el("progress"); progress.max = 50;
       if (newGoal.confirmed !== null) progress.value = Math.min(50, Math.max(0, newGoal.confirmed));
       progress.setAttribute("aria-label", goal.textContent);
@@ -101,12 +102,26 @@
         const node = el("span", `${text}: `); const count = el("strong", number(data.relevance[key]));
         count.setAttribute(`data-kpi-${key}`, ""); node.append(count); states.append(node);
       });
-      stats.append(goal, progress, grid, states,
+      const info = el("details", undefined, "ui-info");
+      const summary = el("summary", "ⓘ");
+      summary.setAttribute("aria-label", "Sobre estes indicadores");
+      summary.title = "Sobre estes indicadores";
+      const extra = el("div", undefined, "ui-info-content");
+      const secondary = el("div", undefined, "kpi-grid");
+      secondary.append(metric("Não relevantes", data.relevance.no, "no"), metric("Desconhecidas", data.relevance.unknown, "unknown"));
+      extra.append(el("p", `Semana ${displayDate(data.weekly_goal.week_start)}–${displayDate(new Date(data.weekly_goal.week_end_exclusive).getTime() - 1)}`), secondary, states,
         el("p", `Relevantes na semana (inclui follow-up): ${number(data.weekly_goal.confirmed)} · Relevantes sem prova de primeira conversa: ${number(data.weekly_new_significant_goal?.unknown)} · Declarações em conflito: ${number(data.weekly_new_significant_goal?.conflict)}. Meta nova: só relevância atual + primeira conversa humana explícita; cobertura parcial.`, "subtle"),
         timestamp("Última atualização dos dados", data.generated_at, "updated"),
         timestamp("Avaliação atual mais antiga", data.assessed_at, "assessed", "Sem avaliação atual"),
         el("p", `Tipo de tentativa desconhecido: ${number(data.phone_attempts.unknown)} · Excluídas: ${number(data.exclusions.total)} · Falhas de processamento: ${number(data.coverage.processing.failed)}`, "subtle"),
         el("p", `Histórico incompleto: ${number(data.coverage.history.incomplete)} · Ordem ambígua: ${number(data.coverage.history.ambiguous_order)}. ${data.coverage.source.complete ? "Varredura concluída." : "Cobertura de processamento ainda não confirmada."}`, "subtle"));
+      extra.append(support);
+      info.append(summary, extra);
+      stats.append(goal, progress, grid);
+      if (!data.coverage.source.complete || [data.relevance.pending, data.relevance.stale, data.relevance.conflict, data.relevance.unknown, data.weekly_new_significant_goal?.unknown, data.weekly_new_significant_goal?.conflict, data.coverage.processing.failed].some(value => value > 0)) {
+        stats.append(el("span", "Parcial", "kpi-partial"));
+      }
+      stats.append(info);
     };
     const controller = createController({request, render});
     const reload = () => { ++sourceSequence; sources.replaceChildren(); return controller.load(date.value, period.value); };
@@ -210,11 +225,11 @@
         } else if (!page.items.length && !cursor) sources.append(el("p", "Sem fontes neste período."));
       } catch (_) { if (sequence === sourceSequence) sources.replaceChildren(el("p", "Fontes indisponíveis ou alteradas. Autentique-se ou recarregue.")); }
     };
-    if (root.dataset.authenticated === "true") controls.append(button("Ver fontes", () => loadSources()));
+    if (root.dataset.authenticated === "true") support.append(button("Ver fontes", () => loadSources()));
     else {
       const login = el("a", "Autenticar para ver fontes", "btn");
       login.href = `${base}?date=${date.value}&period=week`;
-      controls.append(login);
+      support.append(login);
     }
     root.append(el("h2", "Conversas comerciais"), controls, stats, sources, dialog);
     reload();

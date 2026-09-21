@@ -1320,15 +1320,29 @@
       const labels = {unknown:'Desconhecido', yes:'Sim', no:'Não', decision_maker:'Decisor confirmado',
         responsible:'Responsável; decisão por confirmar',contact:'Intermediário',connected:'Atendida',
         no_answer:'Sem resposta',not_interested:'Sem interesse',follow_up:'Acompanhar',voicemail:'Caixa de mensagens'};
+      const info = document.createElement('details');
+      info.className = 'ui-info';
+      const infoToggle = document.createElement('summary');
+      infoToggle.textContent = 'ⓘ';
+      infoToggle.setAttribute('aria-label', 'Detalhes e fontes deste contacto');
+      infoToggle.title = 'Detalhes e fontes deste contacto';
+      const extra = document.createElement('div');
+      extra.className = 'ui-info-content';
+      info.append(infoToggle, extra);
       [['interest','Interesse'],['decision_role','Decisor'],['relevance','Relevância'],['result','Resultado']].forEach(([key,name]) => {
         const fact = qualification[key] || {value:'unknown'};
-        appendText(commercialPanel,'',`${name}: ${labels[fact.value] || 'Desconhecido'}${fact.provenance ? ' · Fonte: '+fact.provenance : ''}${fact.freshness ? ' · '+fact.freshness : ''}`);
+        if (fact.value !== 'unknown' && labels[fact.value] && (!fact.freshness || fact.freshness === 'current')) {
+          appendText(commercialPanel,'',`${name}: ${labels[fact.value]}`);
+        }
+        appendText(extra,'',`${name}: ${labels[fact.value] || 'Desconhecido'}${fact.provenance ? ' · Fonte: '+fact.provenance : ''}${fact.freshness ? ' · '+fact.freshness : ''}`);
       });
       const email = commercial?.email || {};
-      appendText(commercialPanel,'',`Email: ${email.delivery_status === 'sent' ? 'Enviado · '+(email.provenance === 'manual_record' ? 'registo manual' : 'observação Gmail')+' · '+formatDateTime(email.sent_at) : 'Por confirmar'}`);
-      if (email.source_ref) appendText(commercialPanel,'subtle','Fonte: '+email.source_ref.activity_id);
-      appendText(commercialPanel,'subtle',email.draft_exists ? 'Draft verificado na preparação; estado atual por confirmar. Não prova envio.' : 'Sem draft observado; não prova ausência no Gmail.');
-      appendText(commercialPanel,'subtle',commercial?.post_call?.status === 'prepared' ? 'Contexto pós-chamada preparado · handoff Sales em fila · sem composição/envio de email' : 'Contexto pós-chamada por confirmar');
+      if (email.delivery_status === 'sent') appendText(commercialPanel,'',email.provenance === 'manual_record' ? 'Email: registado como enviado' : 'Email: enviado');
+      appendText(extra,'',`Email: ${email.delivery_status === 'sent' ? 'Enviado · '+(email.provenance === 'manual_record' ? 'registo manual' : 'observação Gmail')+' · '+formatDateTime(email.sent_at) : 'Por confirmar'}`);
+      if (email.source_ref) appendText(extra,'subtle','Fonte: '+email.source_ref.activity_id);
+      appendText(extra,'subtle',email.draft_exists ? 'Draft verificado na preparação; estado atual por confirmar. Não prova envio.' : 'Sem draft observado; não prova ausência no Gmail.');
+      appendText(extra,'subtle',commercial?.post_call?.status === 'prepared' ? 'Contexto pós-chamada preparado · handoff Sales em fila · sem composição/envio de email' : 'Contexto pós-chamada por confirmar');
+      commercialPanel.append(info);
       renderTasks(taskItems);
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
       root.querySelector("[data-detail-empty]").classList.add("hidden");
