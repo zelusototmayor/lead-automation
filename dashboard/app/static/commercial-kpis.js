@@ -1,6 +1,10 @@
 /* Commercial-call KPIs are separate from legacy useful/CallDetails. */
 (function (global) {
   "use strict";
+  const goalView = data => ({
+    confirmed: Number.isSafeInteger(data.weekly_new_significant_goal?.confirmed) ? data.weekly_new_significant_goal.confirmed : null,
+    label: "novas conversas significativas",
+  });
   const createController = ({request, render}) => {
     let sequence = 0, date, period;
     const load = async (nextDate, nextPeriod) => {
@@ -86,16 +90,19 @@
         metric("Novas", data.phone_attempts.new), metric("Follow-up", data.phone_attempts.follow_up));
       const goal = el("p"); goal.setAttribute("data-kpi-goal", "");
       const displayDate = value => new Intl.DateTimeFormat("pt-PT", {timeZone: "Europe/Lisbon"}).format(new Date(value));
-      goal.textContent = `Semana ${displayDate(data.weekly_goal.week_start)}–${displayDate(new Date(data.weekly_goal.week_end_exclusive).getTime() - 1)} · ${number(data.weekly_goal.confirmed)}/50 relevantes`;
+      const newGoal = goalView(data);
+      goal.className = "kpi-goal-hero";
+      goal.textContent = `Semana ${displayDate(data.weekly_goal.week_start)}–${displayDate(new Date(data.weekly_goal.week_end_exclusive).getTime() - 1)} · ${number(newGoal.confirmed)}/50 ${newGoal.label}`;
       const progress = el("progress"); progress.max = 50;
-      progress.value = Math.min(50, Math.max(0, data.weekly_goal.confirmed || 0));
+      if (newGoal.confirmed !== null) progress.value = Math.min(50, Math.max(0, newGoal.confirmed));
       progress.setAttribute("aria-label", goal.textContent);
       const states = el("div", undefined, "kpi-states");
       [["pending", "Pendentes"], ["stale", "Desatualizadas"], ["conflict", "Em conflito"]].forEach(([key, text]) => {
         const node = el("span", `${text}: `); const count = el("strong", number(data.relevance[key]));
         count.setAttribute(`data-kpi-${key}`, ""); node.append(count); states.append(node);
       });
-      stats.append(grid, goal, progress, states,
+      stats.append(goal, progress, grid, states,
+        el("p", `Relevantes na semana (inclui follow-up): ${number(data.weekly_goal.confirmed)} · Relevantes sem prova de primeira conversa: ${number(data.weekly_new_significant_goal?.unknown)} · Declarações em conflito: ${number(data.weekly_new_significant_goal?.conflict)}. Meta nova: só relevância atual + primeira conversa humana explícita; cobertura parcial.`, "subtle"),
         timestamp("Última atualização dos dados", data.generated_at, "updated"),
         timestamp("Avaliação atual mais antiga", data.assessed_at, "assessed", "Sem avaliação atual"),
         el("p", `Tipo de tentativa desconhecido: ${number(data.phone_attempts.unknown)} · Excluídas: ${number(data.exclusions.total)} · Falhas de processamento: ${number(data.coverage.processing.failed)}`, "subtle"),
@@ -213,7 +220,7 @@
     reload();
     return {invalidate: () => { ++sourceSequence; sources.replaceChildren(); if (dialog.open) dialog.close(); return controller.invalidate(); }};
   };
-  const api = {createController, mount};
+  const api = {createController, mount, goalView};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.CommercialKpis = api;
 })(globalThis);

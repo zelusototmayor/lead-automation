@@ -291,6 +291,10 @@
             <div class="callback-fields hidden" data-callback-fields>
               <label><span><input type="checkbox" name="callback_agreed"> Callback combinado com o cliente</span></label>
               <label>Quando<input type="datetime-local" name="callback_due_at"></label>
+              <label>Dia para procurar horário<input type="date" name="callback_day"></label>
+              <label>Período (hora do calendário)<select name="callback_period"><option value="any">Dia útil · 09–12 / 14–18</option><option value="morning">Manhã · 09–12</option><option value="afternoon">Tarde · 14–18</option></select></label>
+              <button class="btn" type="button" data-suggest-callback>Procurar horário disponível · 15 min</button>
+              <span data-callback-slot-status role="status">Sugestão opcional; confirma o acordo antes de guardar.</span>
               <label>Motivo <span>opcional</span><input name="callback_title" maxlength="512" placeholder="Retomar a conversa"></label>
             </div>
           </div>

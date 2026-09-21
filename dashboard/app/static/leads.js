@@ -792,6 +792,27 @@
       const saved = callDrafts.write(selectedLeadId, values);
       root.querySelector("[data-call-draft-status]").textContent = saved ? "Rascunho guardado" : "Rascunho nesta página";
     };
+    root.querySelector('[data-suggest-callback]')?.addEventListener('click', async event => {
+      const lead = currentLead;
+      const due = callForm.elements.callback_due_at;
+      const previous = due.value;
+      const day = callForm.elements.callback_day.value;
+      const period = callForm.elements.callback_period.value;
+      const status = root.querySelector('[data-callback-slot-status]');
+      if (!lead || !day) { status.textContent = 'Escolhe o dia pretendido.'; return; }
+      event.currentTarget.disabled = true;
+      const button = event.currentTarget;
+      status.textContent = 'A verificar calendário e tarefas…';
+      try {
+        const value = await fetchJson(`/api/v1/leads/${lead.id}/callback-slot?day=${encodeURIComponent(day)}&period=${encodeURIComponent(period)}`);
+        if (currentLead !== lead || due.value !== previous || callForm.elements.callback_day.value !== day || callForm.elements.callback_period.value !== period) return;
+        if (value.status !== 'suggested') { status.textContent = 'Sem disponibilidade confirmada; não foi alterado o horário.'; return; }
+        due.value = localDateTimeValue(new Date(value.due_at));
+        status.textContent = `Sugestão verificada em ${value.timezone}; confirma antes de guardar. Não é reserva.`;
+        persistCallDraft();
+      } catch (_) { status.textContent = 'Calendário indisponível; mantém o horário explícito.'; }
+      finally { button.disabled = false; }
+    });
     const restoreCallDraft = (leadId) => {
       if (!callForm) return;
       callForm.reset();
@@ -1234,12 +1255,13 @@
 
     const requestLead = async (leadId, rowKey) => {
       const queueItem = queueItems.find((item) => leadRowKey(item) === rowKey) || null;
-      const [detail, timeline, tasks] = await Promise.all([
+      const [detail, timeline, tasks, commercial] = await Promise.all([
         fetchJson(`/api/v1/leads/${leadId}`),
         fetchJson(`/api/v1/leads/${leadId}/timeline?limit=50&offset=0`),
         fetchJson(`/api/v1/leads/${leadId}/tasks?limit=50&offset=0`),
+        fetchJson(`/api/v1/leads/${leadId}/commercial-context`).catch(() => null),
       ]);
-      return { detail, timeline, tasks, queueItem };
+      return { detail, timeline, tasks, queueItem, commercial };
     };
 
     const clearSelection = (leadId, rowKey = leadId) => {
@@ -1252,7 +1274,7 @@
       root.querySelector("[data-detail-empty]").classList.remove("hidden");
     };
 
-    const commitSelection = (_leadId, { detail, timeline, tasks, queueItem }) => {
+    const commitSelection = (_leadId, { detail, timeline, tasks, queueItem, commercial }) => {
       currentLead = detail;
       root.querySelector(".detail-head .eyebrow").textContent = detail.suppressed ? "Histórico do contacto" : "Em conversa";
       root.querySelector("[data-contact-protected]").classList.toggle("hidden", !detail.suppressed);
@@ -1270,7 +1292,7 @@
       const context = root.querySelector("[data-call-context]");
       context.classList.toggle("hidden", !recent);
       if (recent) {
-        context.querySelector("p").textContent = recent.summary;
+        context.querySelector("p").textContent = recent.summary.length > 280 ? recent.summary.slice(0, 280) + "… · Nota integral no histórico abaixo" : recent.summary;
         context.querySelector(".eyebrow").textContent = recent.actor_type === "migration" ? "Contexto importado · data original por confirmar" : "Última nota";
       }
       populateCommandForms(detail);
@@ -1286,6 +1308,27 @@
       root.querySelector("[data-detail-next-action]").textContent = nextAction.title;
       root.querySelector("[data-detail-next-due]").textContent = nextAction.due;
       renderContactActions(detail);
+      let commercialPanel = root.querySelector('[data-commercial-context]');
+      if (!commercialPanel) {
+        commercialPanel = document.createElement('section');
+        commercialPanel.dataset.commercialContext = '';
+        commercialPanel.className = 'detail-section';
+        context.after(commercialPanel);
+      }
+      commercialPanel.replaceChildren();
+      const qualification = commercial?.qualification || {};
+      const labels = {unknown:'Desconhecido', yes:'Sim', no:'Não', decision_maker:'Decisor confirmado',
+        responsible:'Responsável; decisão por confirmar',contact:'Intermediário',connected:'Atendida',
+        no_answer:'Sem resposta',not_interested:'Sem interesse',follow_up:'Acompanhar',voicemail:'Caixa de mensagens'};
+      [['interest','Interesse'],['decision_role','Decisor'],['relevance','Relevância'],['result','Resultado']].forEach(([key,name]) => {
+        const fact = qualification[key] || {value:'unknown'};
+        appendText(commercialPanel,'',`${name}: ${labels[fact.value] || 'Desconhecido'}${fact.provenance ? ' · Fonte: '+fact.provenance : ''}${fact.freshness ? ' · '+fact.freshness : ''}`);
+      });
+      const email = commercial?.email || {};
+      appendText(commercialPanel,'',`Email: ${email.delivery_status === 'sent' ? 'Enviado · '+(email.provenance === 'manual_record' ? 'registo manual' : 'observação Gmail')+' · '+formatDateTime(email.sent_at) : 'Por confirmar'}`);
+      if (email.source_ref) appendText(commercialPanel,'subtle','Fonte: '+email.source_ref.activity_id);
+      appendText(commercialPanel,'subtle',email.draft_exists ? 'Draft verificado na preparação; estado atual por confirmar. Não prova envio.' : 'Sem draft observado; não prova ausência no Gmail.');
+      appendText(commercialPanel,'subtle',commercial?.post_call?.status === 'prepared' ? 'Contexto pós-chamada preparado · handoff Sales em fila · sem composição/envio de email' : 'Contexto pós-chamada por confirmar');
       renderTasks(taskItems);
       renderTimeline(Array.isArray(timeline.items) ? timeline.items : []);
       root.querySelector("[data-detail-empty]").classList.add("hidden");
