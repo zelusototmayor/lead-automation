@@ -93,7 +93,7 @@
       const displayDate = value => new Intl.DateTimeFormat("pt-PT", {timeZone: "Europe/Lisbon"}).format(new Date(value));
       const newGoal = goalView(data);
       goal.className = "kpi-goal-hero";
-      goal.textContent = `${number(newGoal.confirmed)}/50 ${newGoal.label} esta semana`;
+      goal.textContent = `${number(newGoal.confirmed)}/50 ${newGoal.label} na semana`;
       const progress = el("progress"); progress.max = 50;
       if (newGoal.confirmed !== null) progress.value = Math.min(50, Math.max(0, newGoal.confirmed));
       progress.setAttribute("aria-label", goal.textContent);
