@@ -1,0 +1,1 @@
+"""Validated dashboard response schemas."""

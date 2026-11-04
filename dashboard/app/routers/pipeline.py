@@ -1,0 +1,1073 @@
+from __future__ import annotations
+
+import os
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Annotated, Literal
+from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import String, and_, case, exists, func, literal, or_, select, union_all
+
+from dashboard.app.routers.accounts import (
+    AccountRequestContext,
+    get_account_request_context,
+)
+from dashboard.app.schemas.pipeline import (
+    AnalyticsCountBreakdown,
+    AnalyticsDay,
+    AnalyticsPeriod,
+    AnalyticsQueueBreakdown,
+    AnalyticsStageDwell,
+    AnalyticsTaskBreakdown,
+    AnalyticsTimeInStage,
+    AnalyticsTimeInStageCoverage,
+    LeadDetail,
+    LeadTask,
+    LeadTaskPage,
+    PipelineAnalytics,
+    PipelineItem,
+    PipelinePage,
+    PipelinePriority,
+    PipelineQueue,
+    PipelineQueueUnit,
+    PipelineSummary,
+    PipelineTask,
+    TimelineItem,
+    TimelinePage,
+)
+from src.crm.activity_provenance import operational_activity_filter
+from src.crm.domain.enums import CRMStage
+from src.crm.domain.untouched_order import untouched_source_rank
+from src.crm.persistence.models import (
+    Account,
+    Activity,
+    Contact,
+    Evidence,
+    Lead,
+    Proposal,
+    SourceIdentity,
+    Task,
+    Workspace,
+)
+
+from dashboard.app.routers.commercial_kpis import router as commercial_kpis_router
+
+from src.crm.services.company_types import COMPANY_TYPES, SCOPE, type_label, canonical_type, aliases
+
+from src.crm.services.contact_channels import display_phone_columns as _display_phone_columns, display_email_columns as _display_email_columns
+
+router = APIRouter()
+router.include_router(commercial_kpis_router)
+
+_QUEUES: tuple[PipelineQueue, ...] = (
+    "calls_overdue",
+    "calls_today",
+    "calls_future",
+    "emails_overdue",
+    "emails_today",
+    "emails_future",
+    "proposal_followups_overdue",
+    "proposal_followups_today",
+    "touched_today",
+    "untouched",
+    "phone_new",
+    "phone_unknown",
+    "calls_actionable",
+    "all",
+)
+_TASK_QUEUES = frozenset(
+    queue
+    for queue in _QUEUES
+    if queue.startswith(("calls_", "emails_", "proposal_followups_"))
+)
+_QUEUE_UNITS: dict[PipelineQueue, PipelineQueueUnit] = {
+    queue: "task" if queue in _TASK_QUEUES else "lead" for queue in _QUEUES
+}
+_QUALIFYING_ACTIVITY_TYPES = (
+    "call",
+    "email_sent",
+    "email_received",
+    "meeting",
+    "proposal",
+    "stage_change",
+    "note",
+)
+_EXTERNAL_CONTACT_ACTIVITY_TYPES = (
+    "call",
+    "email_sent",
+    "email_received",
+    "meeting",
+    "proposal",
+)
+_ANALYTICS_OUTCOMES = (
+    "connected",
+    "no_answer",
+    "voicemail",
+    "wrong_number",
+    "not_interested",
+    "follow_up",
+)
+_ANALYTICS_TASK_TYPES = ("call", "email", "follow_up", "proposal_followup")
+_ANALYTICS_QUEUE_NAMES: tuple[PipelineQueue, ...] = (
+    "calls_overdue",
+    "calls_today",
+    "emails_overdue",
+    "emails_today",
+    "proposal_followups_overdue",
+    "proposal_followups_today",
+)
+_CANONICAL_STAGES = tuple(stage.value for stage in CRMStage)
+_CANONICAL_STAGE_ORDER = {
+    stage: position for position, stage in enumerate(_CANONICAL_STAGES)
+}
+
+
+def _stage_bucket_expression():
+    return func.coalesce(func.nullif(func.trim(Lead.stage), ""), "unknown")
+
+
+def _ordered_stage_counts(stage_counts: dict[str, int]) -> dict[str, int]:
+    remaining = {
+        str(stage or "unknown"): int(count) for stage, count in stage_counts.items()
+    }
+    by_status: dict[str, int] = {}
+    for stage in _CANONICAL_STAGES:
+        count = remaining.pop(stage, 0)
+        if count:
+            by_status[stage] = count
+    for stage in sorted(remaining):
+        by_status[stage] = remaining[stage]
+    return by_status
+
+
+def _lead_stage_breakdown(context: AccountRequestContext) -> AnalyticsCountBreakdown:
+    stage_bucket = _stage_bucket_expression().label("stage_bucket")
+    count_label = func.count().label("lead_count")
+    rows = context.session.execute(
+        select(stage_bucket, count_label)
+        .where(Lead.workspace_id == context.principal.workspace_id)
+        .group_by(stage_bucket)
+    ).all()
+    by_status = _ordered_stage_counts(
+        {str(row.stage_bucket): int(row.lead_count) for row in rows}
+    )
+    return AnalyticsCountBreakdown(by_status=by_status, total=sum(by_status.values()))
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _workspace_timezone(context: AccountRequestContext) -> tuple[str, ZoneInfo]:
+    timezone_name = context.session.scalar(
+        select(Workspace.timezone).where(Workspace.id == context.principal.workspace_id)
+    )
+    try:
+        return timezone_name, ZoneInfo(timezone_name)
+    except (TypeError, ZoneInfoNotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Pipeline unavailable",
+        ) from None
+
+
+def _day_bounds(
+    context: AccountRequestContext, now: datetime
+) -> tuple[datetime, datetime]:
+    _, timezone = _workspace_timezone(context)
+    local_date = now.astimezone(timezone).date()
+    start = datetime.combine(local_date, time.min, timezone).astimezone(UTC)
+    end = datetime.combine(local_date, time.max, timezone).astimezone(UTC)
+    return start, end
+
+
+def _task_filter(queue: PipelineQueue, start: datetime, end: datetime):
+    if queue.startswith("calls_"):
+        type_filter = Task.task_type == "call"
+    elif queue.startswith("emails_"):
+        type_filter = Task.task_type == "email"
+    else:
+        type_filter = and_(
+            Task.proposal_id.is_not(None),
+            Task.task_type.in_(("follow_up", "proposal_followup")),
+        )
+    if queue == "calls_actionable":
+        due_filter = Task.due_at <= end
+    elif queue.endswith("_overdue"):
+        due_filter = Task.due_at < start
+    elif queue.endswith("_future"):
+        due_filter = Task.due_at > end
+    else:
+        due_filter = Task.due_at.between(start, end)
+    return and_(Task.status == "open", type_filter, due_filter)
+
+
+def _activity_exists(
+    workspace_id, start: datetime | None = None, end: datetime | None = None
+):
+    conditions = [
+        Activity.workspace_id == workspace_id,
+        Activity.lead_id == Lead.id,
+        Activity.activity_type.in_(_QUALIFYING_ACTIVITY_TYPES),
+        operational_activity_filter(),
+    ]
+    if start is not None:
+        conditions.append(Activity.occurred_at >= start)
+    if end is not None:
+        conditions.append(Activity.occurred_at <= end)
+    return exists(select(Activity.id).where(*conditions))
+
+
+def _external_contact_exists(workspace_id):
+    return exists(
+        select(Activity.id).where(
+            Activity.workspace_id == workspace_id,
+            Activity.lead_id == Lead.id,
+            Activity.activity_type.in_(_EXTERNAL_CONTACT_ACTIVITY_TYPES),
+            operational_activity_filter(),
+        )
+    )
+
+
+def _lead_suppressed(workspace_id):
+    source_protected = exists(
+        select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == workspace_id,
+            SourceIdentity.id == Lead.source_identity_id,
+            SourceIdentity.metadata_json["suppressed"].as_boolean().is_(True),
+        )
+    )
+    return or_(
+        Lead.stage.in_(("lost", "not_a_fit", "won")),
+        func.coalesce(Contact.status == "inactive", False),
+        source_protected,
+    )
+
+
+def _legacy_contact_exists(workspace_id):
+    raw = SourceIdentity.metadata_json["legacy_row"]
+    date_fields = (
+        "Initial Email Sent", "Outreach FU1 Sent", "Outreach FU2 Sent",
+        "Proposal Sent", "Proposal Email Sent", "Last Contact",
+    )
+    return exists(
+        select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == workspace_id,
+            SourceIdentity.id == Lead.source_identity_id,
+            or_(*(func.length(func.trim(raw[key].astext)) > 0 for key in date_fields)),
+        )
+    )
+
+
+
+
+def _pipeline_statement(
+    workspace_id, queue: PipelineQueue, start: datetime, end: datetime
+):
+    base_columns = (
+        Lead.id.label("lead_id"),
+        Lead.account_id,
+        Account.sector,
+        func.coalesce(
+            Account.display_name, Lead.company_name, literal("Sem conta")
+        ).label("company"),
+        func.coalesce(Contact.full_name, Lead.contact_name).label("contact_name"),
+        Contact.title.label("contact_title"),
+        *_display_email_columns(),
+        *_display_phone_columns(),
+        func.coalesce(Account.city, Lead.city).label("city"),
+        Lead.stage,
+        Lead.priority,
+        Lead.version.label("lead_version"),
+    )
+    statement = (
+        select(*base_columns)
+        .outerjoin(
+            Account,
+            (Account.workspace_id == Lead.workspace_id)
+            & (Account.id == Lead.account_id),
+        )
+        .outerjoin(
+            Contact,
+            (Contact.workspace_id == Lead.workspace_id)
+            & (Contact.id == Lead.contact_id),
+        )
+        .where(Lead.workspace_id == workspace_id)
+        .where(~exists(select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == workspace_id,
+            SourceIdentity.source_system == "agent",
+            SourceIdentity.source_scope == "crm.removed-leads.v1",
+            SourceIdentity.canonical_entity_type == "lead",
+            SourceIdentity.canonical_entity_id == Lead.id,
+            SourceIdentity.metadata_json["removed"].as_boolean().is_(True),
+        )))
+    )
+    if queue != "all":
+        statement = statement.where(~_lead_suppressed(workspace_id))
+    if queue in _TASK_QUEUES:
+        return statement.add_columns(
+            Task.id.label("task_id"),
+            Task.task_type.label("task_type"),
+            Task.title.label("task_title"),
+            Task.due_at.label("task_due_at"),
+            Task.version.label("task_version"),
+        ).join(
+            Task,
+            (Task.workspace_id == Lead.workspace_id)
+            & (Task.lead_id == Lead.id)
+            & _task_filter(queue, start, end),
+        )
+    if queue == "touched_today":
+        statement = statement.where(_activity_exists(workspace_id, start, end))
+    elif queue in {"phone_new", "phone_unknown"}:
+        has_answer = exists(select(Activity.id).where(
+            Activity.workspace_id == workspace_id, Activity.activity_type == "call",
+            or_(Activity.lead_id == Lead.id, and_(Lead.account_id.is_not(None), Activity.account_id == Lead.account_id)),
+            Activity.call_details["answer_kind"].astext == "human_counterparty",
+            operational_activity_filter()))
+        history = func.coalesce(Lead.phone_history["state"].astext, "unknown")
+        phone = func.coalesce(Contact.phone, Lead.contact_phone, "")
+        valid_phone = and_(phone.op("~")(r"^\+?[0-9 ()-]{8,24}$"),
+                          func.length(func.regexp_replace(phone, "[^0-9]", "", "g")).between(8,15))
+        statement = statement.where(~has_answer, valid_phone,
+            history == "complete_no_prior_answer" if queue == "phone_new" else history == "unknown")
+    elif queue == "untouched":
+        statement = statement.where(
+            Lead.stage == "new",
+            ~_external_contact_exists(workspace_id),
+            ~_legacy_contact_exists(workspace_id),
+        )
+    next_task = (
+        select(Task)
+        .where(
+            Task.workspace_id == workspace_id,
+            Task.lead_id == Lead.id,
+            Task.status == "open",
+        )
+        .order_by(Task.due_at.asc(), Task.id.asc())
+        .limit(1)
+        .lateral()
+    )
+    return statement.add_columns(
+        next_task.c.id.label("task_id"),
+        next_task.c.task_type.label("task_type"),
+        next_task.c.title.label("task_title"),
+        next_task.c.due_at.label("task_due_at"),
+        next_task.c.version.label("task_version"),
+    ).outerjoin(next_task, literal(True))
+
+
+def _redact_phone(phone: str | None) -> str | None:
+    if phone is None:
+        return None
+    prefix = "+" if phone.startswith("+") else ""
+    digits = "".join(character for character in phone if character.isdigit())
+    if len(digits) < 8:
+        return None
+    country_prefix = digits[:3] if prefix else ""
+    return f"{prefix}{country_prefix}****{digits[-4:]}"
+
+
+def _to_item(row, email_followup=None) -> PipelineItem:
+    task = None
+    if row.task_id is not None:
+        task = PipelineTask(
+            id=row.task_id,
+            type=row.task_type,
+            title=row.task_title,
+            due_at=row.task_due_at,
+            version=row.task_version,
+        )
+    return PipelineItem(
+        email_followup=email_followup,
+        lead_id=row.lead_id,
+        account_id=row.account_id,
+        company=row.company,
+        sector=type_label(row.sector),
+        company_type=canonical_type(row.sector),
+        contact_name=row.contact_name,
+        contact_title=row.contact_title,
+        email=str(row.email) if row.email is not None else None,
+        phone=_redact_phone(row.phone),
+        email_kind=row.email_kind,
+        email_source_contact_id=row.email_source_contact_id,
+        phone_kind=row.phone_kind,
+        phone_source_contact_id=row.phone_source_contact_id,
+        city=row.city,
+        stage=row.stage,
+        priority=row.priority,
+        lead_version=row.lead_version,
+        task=task,
+    )
+
+
+@router.get('/api/v1/pipeline/call-day')
+def pipeline_call_day(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    work_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    from src.crm.persistence.models import CallDayPlan
+    _, zone = _workspace_timezone(context)
+    day = work_date or _utc_now().astimezone(zone).date()
+    plan = context.session.get(CallDayPlan, (context.principal.workspace_id, day))
+    if plan is None:
+        return dict(schema_version=1, date=day.isoformat(), work_date=day.isoformat(),
+            version=0, source_status='not_prepared', items=[], total=0,
+            blockers=['Preparação diária ainda não executada.'])
+    from src.crm.services.call_day_reconcile import plan_context_hash
+    # Exact persisted list plus explicit fresh read-CAS; no hidden recalculation
+    # or writes. Reconciliation is a separate authenticated command.
+    return dict(plan.payload, current_context_sha256=plan_context_hash(
+        context.session, context.principal.workspace_id, plan.payload))
+
+
+@router.get("/api/v1/pipeline/activity-analysis")
+def pipeline_activity_analysis(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    days: Annotated[int, Query(ge=7, le=90)] = 30,
+):
+    from src.crm.services.activity_analysis import activity_analysis
+    if days not in (7, 30, 90):
+        raise HTTPException(status_code=422, detail="Use 7, 30 or 90 days")
+    return activity_analysis(context.session, context.principal.workspace_id,
+                             _utc_now().astimezone(ZoneInfo('Europe/Lisbon')).date(), days)
+
+
+@router.get("/api/v1/pipeline/call-headline")
+def pipeline_call_headline(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+):
+    from src.crm.services.jose_note_metrics import metrics
+    from src.crm.services.commercial_kpi_service import SourceIndex, period_bounds
+    from src.crm.services.jose_note_service import source_snapshot_units
+    _, timezone = _workspace_timezone(context)
+    today = _utc_now().astimezone(timezone).date()
+    start, end = period_bounds(today, "week")
+    first, last = start.astimezone(timezone).date(), end.astimezone(timezone).date()
+    index = SourceIndex(context.session, context.principal.workspace_id)
+
+    def in_week(source):
+        if source.activity_type not in ("call", "note"):
+            return False
+        if source.actor_type not in ("migration", "import", "system"):
+            return start <= source.occurred_at < end
+        # Imported timestamps are recording dates. Use the same bound literal
+        # dates as the canonical classifier, never the import date.
+        for unit in source_snapshot_units(source):
+            literal = unit["source"]["unit"].get("date_literal")
+            if literal:
+                try:
+                    if first <= date.fromisoformat(literal[:10]) < last:
+                        return True
+                except ValueError:
+                    pass
+        return False
+
+    index.activities = {key: value for key, value in index.activities.items() if in_week(value)}
+    result = metrics(context.session, context.principal.workspace_id,
+                     anchor_date=today, period="day", index=index)
+    # Historical first/follow-up counts require the full index and remain in Analysis.
+    return {"personal_notes": {
+        "counts": {key: result["counts"][key] for key in ("answered", "calls", "relevant")},
+        "weekly_relevant": result["weekly_relevant"],
+        "generated_at": result["generated_at"],
+    }}
+
+
+
+@router.get("/api/v1/pipeline/call-metrics")
+def pipeline_call_metrics(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    work_date: Annotated[date | None, Query(alias="date")] = None,
+    period: Literal["day", "week", "month"] = "day",
+):
+    from src.crm.services.call_metrics import call_metrics
+    timezone_name, timezone = _workspace_timezone(context)
+    return call_metrics(context.session, context.principal.workspace_id,
+                        work_date or _utc_now().astimezone(timezone).date(), timezone_name, period=period)
+
+
+@router.get("/api/v1/pipeline/summary", response_model=PipelineSummary)
+def pipeline_summary(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+) -> PipelineSummary:
+    now = _utc_now()
+    start, end = _day_bounds(context, now)
+    counts: dict[PipelineQueue, int] = {}
+    for queue in _QUEUES:
+        rows = _pipeline_statement(
+            context.principal.workspace_id, queue, start, end
+        ).subquery()
+        count_expression = (
+            func.count()
+            if queue in _TASK_QUEUES
+            else func.count(func.distinct(rows.c.lead_id))
+        )
+        counts[queue] = int(
+            context.session.scalar(select(count_expression).select_from(rows)) or 0
+        )
+    return PipelineSummary(
+        queues=counts,
+        queue_units=_QUEUE_UNITS,
+        stages=_lead_stage_breakdown(context),
+        generated_at=now,
+    )
+
+
+@router.get("/api/v1/pipeline/analytics", response_model=PipelineAnalytics)
+def pipeline_analytics(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    days: Annotated[int, Query(ge=1, le=120)] = 30,
+) -> PipelineAnalytics:
+    now = _utc_now()
+    workspace_id = context.principal.workspace_id
+    timezone_name, timezone = _workspace_timezone(context)
+    end_date = now.astimezone(timezone).date()
+    start_date = end_date - timedelta(days=days - 1)
+    start_at = datetime.combine(start_date, time.min, timezone).astimezone(UTC)
+    end_at = datetime.combine(
+        end_date + timedelta(days=1), time.min, timezone
+    ).astimezone(UTC)
+    local_day = func.date(func.timezone(timezone_name, Activity.occurred_at))
+    outcome_bucket = case(
+        (Activity.outcome_code.is_(None), None),
+        (
+            Activity.outcome_code.in_(_ANALYTICS_OUTCOMES),
+            Activity.outcome_code,
+        ),
+        else_="other",
+    ).cast(String)
+    activity_filters = (
+        Activity.workspace_id == workspace_id,
+        Activity.occurred_at >= start_at,
+        Activity.occurred_at < end_at,
+        Activity.activity_type.in_(_QUALIFYING_ACTIVITY_TYPES),
+        operational_activity_filter(),
+    )
+    activity_groups = (
+        select(
+            literal("activity").label("metric"),
+            local_day.label("local_day"),
+            Activity.activity_type.label("dimension"),
+            outcome_bucket.label("outcome"),
+            func.count().label("value"),
+        )
+        .where(*activity_filters)
+        .group_by(local_day, Activity.activity_type, outcome_bucket)
+    )
+    touched_groups = (
+        select(
+            literal("touched").label("metric"),
+            local_day.label("local_day"),
+            literal(None).cast(String).label("dimension"),
+            literal(None).cast(String).label("outcome"),
+            func.count(func.distinct(Activity.lead_id)).label("value"),
+        )
+        .where(*activity_filters, Activity.lead_id.is_not(None))
+        .group_by(local_day)
+    )
+    activity_rows = context.session.execute(
+        union_all(activity_groups, touched_groups)
+    ).all()
+
+    daily_values: dict[date, dict[str, object]] = {
+        start_date + timedelta(days=offset): {
+            "activity_types": {},
+            "outcomes": {},
+            "distinct_touched_leads": 0,
+        }
+        for offset in range(days)
+    }
+    for row in activity_rows:
+        values = daily_values[row.local_day]
+        if row.metric == "touched":
+            values["distinct_touched_leads"] = int(row.value)
+            continue
+        activity_types = values["activity_types"]
+        outcomes = values["outcomes"]
+        assert isinstance(activity_types, dict)
+        assert isinstance(outcomes, dict)
+        activity_types[row.dimension] = activity_types.get(row.dimension, 0) + int(
+            row.value
+        )
+        if row.outcome is not None:
+            outcomes[row.outcome] = outcomes.get(row.outcome, 0) + int(row.value)
+
+    stage_breakdown = _lead_stage_breakdown(context)
+
+    proposal_rows = context.session.execute(
+        select(Proposal.status, func.count())
+        .where(Proposal.workspace_id == workspace_id)
+        .group_by(Proposal.status)
+    ).all()
+    proposal_counts = {row.status: int(row.count) for row in proposal_rows}
+
+    task_type_bucket = case(
+        (Task.task_type.in_(_ANALYTICS_TASK_TYPES), Task.task_type), else_="other"
+    ).cast(String)
+    task_status_groups = (
+        select(
+            literal("status").label("metric"),
+            Task.status.label("dimension"),
+            func.count().label("value"),
+        )
+        .where(Task.workspace_id == workspace_id)
+        .group_by(Task.status)
+    )
+    open_task_type_groups = (
+        select(
+            literal("open_type").label("metric"),
+            task_type_bucket.label("dimension"),
+            func.count().label("value"),
+        )
+        .where(Task.workspace_id == workspace_id, Task.status == "open")
+        .group_by(task_type_bucket)
+    )
+    task_rows = context.session.execute(
+        union_all(task_status_groups, open_task_type_groups)
+    ).all()
+    task_status_counts = {
+        row.dimension: int(row.value) for row in task_rows if row.metric == "status"
+    }
+    open_task_type_counts = {
+        row.dimension: int(row.value) for row in task_rows if row.metric == "open_type"
+    }
+
+    today_start = datetime.combine(end_date, time.min, timezone).astimezone(UTC)
+    today_end = datetime.combine(end_date, time.max, timezone).astimezone(UTC)
+    queue_row = context.session.execute(
+        select(
+            *(
+                func.count()
+                .filter(_task_filter(queue, today_start, today_end))
+                .label(queue)
+                for queue in _ANALYTICS_QUEUE_NAMES
+            )
+        ).where(Task.workspace_id == workspace_id)
+    ).one()
+    queue_counts = {
+        queue: int(getattr(queue_row, queue)) for queue in _ANALYTICS_QUEUE_NAMES
+    }
+
+    prior_to_stage = func.lag(Activity.to_stage).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    prior_occurred_at = func.lag(Activity.occurred_at).over(
+        partition_by=Activity.lead_id,
+        order_by=(Activity.occurred_at, Activity.id),
+    )
+    ordered_transitions = (
+        select(
+            Activity.occurred_at.label("occurred_at"),
+            Activity.from_stage.label("from_stage"),
+            Activity.to_stage.label("to_stage"),
+            prior_to_stage.label("prior_to_stage"),
+            prior_occurred_at.label("prior_occurred_at"),
+        )
+        .where(
+            Activity.workspace_id == workspace_id,
+            Activity.activity_type == "stage_change",
+            operational_activity_filter(),
+            Activity.lead_id.is_not(None),
+            Activity.occurred_at >= start_at,
+            Activity.occurred_at < end_at,
+        )
+        .cte("ordered_transitions")
+    )
+    duration_seconds = func.extract(
+        "epoch",
+        ordered_transitions.c.occurred_at - ordered_transitions.c.prior_occurred_at,
+    )
+    structured = and_(
+        ordered_transitions.c.from_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.to_stage.in_(_CANONICAL_STAGES),
+    )
+    legacy = and_(
+        ordered_transitions.c.from_stage.is_(None),
+        ordered_transitions.c.to_stage.is_(None),
+    )
+    usable = and_(
+        structured,
+        ordered_transitions.c.prior_to_stage.in_(_CANONICAL_STAGES),
+        ordered_transitions.c.prior_to_stage == ordered_transitions.c.from_stage,
+        duration_seconds >= 0,
+    )
+    scoped_transitions = select(
+        ordered_transitions,
+        structured.label("structured"),
+        legacy.label("legacy"),
+        usable.label("usable"),
+        duration_seconds.label("duration_seconds"),
+    ).cte("scoped_transitions")
+    duration_hours = scoped_transitions.c.duration_seconds / 3600.0
+    coverage_metrics = select(
+        literal("coverage").label("metric"),
+        literal(None).cast(String).label("stage"),
+        func.count().filter(scoped_transitions.c.structured).label("structured"),
+        func.count().filter(scoped_transitions.c.legacy).label("legacy"),
+        func.count().filter(scoped_transitions.c.usable).label("usable"),
+        func.count()
+        .filter(
+            scoped_transitions.c.structured,
+            scoped_transitions.c.usable.is_not(True),
+        )
+        .label("uncovered"),
+        literal(None).label("completed_intervals"),
+        literal(None).label("average_hours"),
+        literal(None).label("median_hours"),
+        literal(None).label("p90_hours"),
+    ).select_from(scoped_transitions)
+    stage_metrics = (
+        select(
+            literal("stage").label("metric"),
+            scoped_transitions.c.from_stage.label("stage"),
+            literal(None).label("structured"),
+            literal(None).label("legacy"),
+            literal(None).label("usable"),
+            literal(None).label("uncovered"),
+            func.count().label("completed_intervals"),
+            func.avg(duration_hours).label("average_hours"),
+            func.percentile_cont(0.5)
+            .within_group(duration_hours)
+            .label("median_hours"),
+            func.percentile_cont(0.9).within_group(duration_hours).label("p90_hours"),
+        )
+        .where(scoped_transitions.c.usable)
+        .group_by(scoped_transitions.c.from_stage)
+    )
+    time_rows = context.session.execute(
+        union_all(coverage_metrics, stage_metrics)
+    ).all()
+    coverage_row = next(row for row in time_rows if row.metric == "coverage")
+    stage_rows = sorted(
+        (row for row in time_rows if row.metric == "stage"),
+        key=lambda row: _CANONICAL_STAGE_ORDER[row.stage],
+    )
+    stage_dwell = tuple(
+        AnalyticsStageDwell(
+            stage=row.stage,
+            completed_intervals=int(row.completed_intervals),
+            average_hours=round(float(row.average_hours), 2),
+            median_hours=round(float(row.median_hours), 2),
+            p90_hours=round(float(row.p90_hours), 2),
+        )
+        for row in stage_rows
+    )
+    time_in_stage = AnalyticsTimeInStage(
+        status="available" if stage_dwell else "not_available",
+        coverage=AnalyticsTimeInStageCoverage(
+            structured_transitions=int(coverage_row.structured),
+            legacy_transitions=int(coverage_row.legacy),
+            usable_intervals=int(coverage_row.usable),
+            uncovered_transitions=int(coverage_row.uncovered),
+        ),
+        stages=stage_dwell,
+    )
+
+    return PipelineAnalytics(
+        period=AnalyticsPeriod(start_date=start_date, end_date=end_date, days=days),
+        daily=tuple(
+            AnalyticsDay(date=local_date, **values)
+            for local_date, values in daily_values.items()
+        ),
+        stages=stage_breakdown,
+        proposals=AnalyticsCountBreakdown(
+            by_status=proposal_counts, total=sum(proposal_counts.values())
+        ),
+        tasks=AnalyticsTaskBreakdown(
+            by_status=task_status_counts,
+            open_by_type=open_task_type_counts,
+            total=sum(task_status_counts.values()),
+        ),
+        queues=AnalyticsQueueBreakdown(counts=queue_counts),
+        time_in_stage=time_in_stage,
+        generated_at=now,
+    )
+
+
+def _literal_search_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+@router.get("/api/v1/pipeline/items", response_model=PipelinePage)
+def pipeline_items(
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    queue: Annotated[PipelineQueue, Query()] = "all",
+    stage: Annotated[CRMStage | None, Query()] = None,
+    priority: Annotated[PipelinePriority | None, Query()] = None,
+    company_type: Annotated[str | None, Query(max_length=80)] = None,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=200,
+            pattern=r"^[^\x00-\x20\x7f](?:[^\x00-\x1f\x7f]*[^\x00-\x20\x7f])?$",
+        ),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PipelinePage:
+    start, end = _day_bounds(context, _utc_now())
+    statement = _pipeline_statement(context.principal.workspace_id, queue, start, end)
+    if company_type in ('road_towing', 'pest_control', 'drain_cleaning'):
+        detailed = exists(select(SourceIdentity.id).where(
+            SourceIdentity.workspace_id == context.principal.workspace_id,
+            SourceIdentity.source_system == 'agent',
+            SourceIdentity.entity_kind == 'account',
+            SourceIdentity.source_scope == SCOPE,
+            SourceIdentity.canonical_entity_id == Account.id,
+            SourceIdentity.metadata_json['detailed_types'].contains([company_type])))
+        statement = statement.where(or_(Account.sector == company_type,
+            Account.commercial_vertical == company_type,
+            Lead.commercial_vertical == company_type, detailed))
+    elif company_type is not None:
+        company_type=canonical_type(company_type)
+        if company_type not in COMPANY_TYPES:raise HTTPException(422,'Unknown business type')
+        if company_type=='review':
+            statement=statement.where(or_(Account.sector.is_(None),Account.sector=='review'))
+        else:
+            secondary=exists(select(SourceIdentity.id).where(SourceIdentity.workspace_id==context.principal.workspace_id,SourceIdentity.source_system=='agent',SourceIdentity.entity_kind=='account',SourceIdentity.source_scope==SCOPE,SourceIdentity.canonical_entity_id==Account.id,SourceIdentity.metadata_json['secondary'].contains([company_type])))
+            statement=statement.where(or_(Account.sector.in_(aliases(company_type)),secondary))
+    if stage is not None:
+        statement = statement.where(Lead.stage == stage.value)
+    if priority is not None:
+        statement = statement.where(Lead.priority == priority)
+    if search is not None:
+        pattern = _literal_search_pattern(search)
+        statement = statement.where(
+            or_(
+                Account.display_name.ilike(pattern, escape="\\"),
+                Lead.company_name.ilike(pattern, escape="\\"),
+                Contact.full_name.ilike(pattern, escape="\\"),
+                Lead.contact_name.ilike(pattern, escape="\\"),
+                Contact.primary_email.ilike(pattern, escape="\\"),
+                Lead.contact_email.ilike(pattern, escape="\\"),
+                Contact.phone.ilike(pattern, escape="\\"),
+                Lead.contact_phone.ilike(pattern, escape="\\"),
+                Account.city.ilike(pattern, escape="\\"),
+                Lead.city.ilike(pattern, escape="\\"),
+            )
+        )
+    rows = statement.subquery()
+    total = int(context.session.scalar(select(func.count()).select_from(rows)) or 0)
+    # Source ranking changes only Sem contacto, after eligibility/filtering and
+    # before LIMIT/OFFSET. Other queues and fallback recency retain their order.
+    if queue == "untouched":
+        statement = statement.order_by(untouched_source_rank(Lead.id))
+    page_rows = context.session.execute(
+        statement.order_by(
+            Task.due_at.asc().nulls_last()
+            if queue in _TASK_QUEUES
+            else Lead.updated_at.desc(),
+            Task.id.asc() if queue in _TASK_QUEUES else Lead.id.asc(),
+            Lead.id.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    from src.crm.services.followup_projection import stored_summaries
+    email_views = stored_summaries(context.session, context.principal.workspace_id,
+                                  [r.lead_id for r in page_rows], os.environ.get('CRM_GOOGLE_MAILBOX', ''))
+    return PipelinePage(
+        queue=queue,
+        items=tuple(_to_item(row, email_views.get(row.lead_id)) for row in page_rows),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _lead_detail_row(context: AccountRequestContext, lead_id: UUID):
+    row = context.session.execute(
+        select(
+            Lead.id,
+            Lead.account_id,
+            func.coalesce(
+                Account.display_name, Lead.company_name, literal("Sem conta")
+            ).label("company"),
+            func.coalesce(Contact.full_name, Lead.contact_name).label("contact_name"),
+            Contact.title.label("contact_title"),
+            *_display_email_columns(),
+            *_display_phone_columns(),
+            func.coalesce(Account.city, Lead.city).label("city"),
+            Account.website_url,
+            Account.sector,
+            Lead.stage,
+            Lead.priority,
+            Lead.version,
+            _lead_suppressed(context.principal.workspace_id).label("suppressed"),
+        )
+        .outerjoin(
+            Account,
+            (Account.workspace_id == Lead.workspace_id)
+            & (Account.id == Lead.account_id),
+        )
+        .outerjoin(
+            Contact,
+            (Contact.workspace_id == Lead.workspace_id)
+            & (Contact.id == Lead.contact_id),
+        )
+        .where(
+            Lead.workspace_id == context.principal.workspace_id,
+            Lead.id == lead_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return row
+
+
+@router.get("/api/v1/leads/{lead_id}", response_model=LeadDetail)
+def lead_detail(
+    lead_id: UUID,
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+) -> LeadDetail:
+    from src.crm.services.commercial_profile import read_profile
+    row = _lead_detail_row(context, lead_id)
+    profile = read_profile(context.session, context.principal.workspace_id, lead_id)
+    from src.crm.services.followup_projection import stored_summaries
+    email_view = stored_summaries(context.session, context.principal.workspace_id,
+                                 [lead_id], os.environ.get('CRM_GOOGLE_MAILBOX', '')).get(lead_id)
+    type_evidence=context.session.scalar(select(SourceIdentity.metadata_json).where(SourceIdentity.workspace_id==context.principal.workspace_id,SourceIdentity.source_system=="agent",SourceIdentity.source_scope==SCOPE,SourceIdentity.entity_kind=="account",SourceIdentity.canonical_entity_id==row.account_id)) if row.account_id else None
+    return LeadDetail(
+        email_followup=email_view,
+        commercial_profile=profile,
+        company_type_evidence=type_evidence,
+        id=row.id,
+        account_id=row.account_id,
+        company=row.company,
+        contact_name=row.contact_name,
+        contact_title=row.contact_title,
+        email=str(row.email) if row.email is not None else None,
+        phone=str(row.phone) if row.phone is not None else None,
+        email_kind=row.email_kind,
+        email_source_contact_id=row.email_source_contact_id,
+        phone_kind=row.phone_kind,
+        phone_source_contact_id=row.phone_source_contact_id,
+        city=row.city,
+        stage=row.stage,
+        priority=row.priority,
+        version=row.version,
+        suppressed=bool(row.suppressed),
+        website_url=row.website_url,
+        sector=type_label(row.sector),
+        company_type=canonical_type(row.sector),
+    )
+
+
+@router.get("/api/v1/leads/{lead_id}/timeline", response_model=TimelinePage)
+def lead_timeline(
+    lead_id: UUID,
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    personal_only: bool = False,
+) -> TimelinePage:
+    _lead_detail_row(context, lead_id)
+    filters = (
+        Activity.workspace_id == context.principal.workspace_id,
+        Activity.lead_id == lead_id,
+        # Email stage facts are represented by the same short email history entry.
+        or_(Activity.outcome_code.is_(None), Activity.outcome_code != 'email_stage_update'),
+    )
+    if personal_only:
+        filters += (
+            Activity.actor_type == "human",
+            Activity.activity_type.in_(("call", "note")),
+            func.length(func.trim(Activity.summary)) > 0,
+        )
+    total = int(
+        context.session.scalar(select(func.count(Activity.id)).where(*filters)) or 0
+    )
+    rows = context.session.execute(
+        select(
+            Activity.id,
+            Activity.activity_type,
+            Activity.title,
+            Activity.summary,
+            Activity.outcome_code,
+            Activity.direction,
+            Activity.actor_type,
+            Activity.occurred_at,
+            Activity.call_details,
+        )
+        .where(*filters)
+        .order_by(Activity.occurred_at.desc(), Activity.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    from src.crm.services.email_update_service import email_history_summaries
+    short_email_notes = email_history_summaries(context.session,
+        context.principal.workspace_id, lead_id,
+        [row.id for row in rows if row.activity_type in ('email_sent', 'email_received')])
+    from src.crm.services.import_note_briefs import read_briefs
+    visible_import_notes=read_briefs(context.session,context.principal.workspace_id,rows)
+    return TimelinePage(
+        items=tuple(
+            TimelineItem(
+                id=row.id,
+                type=row.activity_type,
+                title=row.title,
+                summary=visible_import_notes.get(str(row.id), short_email_notes.get(str(row.id), row.summary)),
+                outcome_code=row.outcome_code,
+                direction=row.direction,
+                actor_type=row.actor_type,
+                occurred_at=row.occurred_at,
+                call_details=row.call_details,
+                answered={
+                    "human_counterparty": True,
+                    "no_answer": False,
+                    "ivr": False,
+                    "voicemail": False,
+                    "wrong_number": False,
+                }.get((row.call_details or {}).get("answer_kind")),
+            )
+            for row in rows
+        ),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/api/v1/leads/{lead_id}/tasks", response_model=LeadTaskPage)
+def lead_tasks(
+    lead_id: UUID,
+    context: Annotated[AccountRequestContext, Depends(get_account_request_context)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> LeadTaskPage:
+    _lead_detail_row(context, lead_id)
+    filters = (
+        Task.workspace_id == context.principal.workspace_id,
+        Task.lead_id == lead_id,
+    )
+    total = int(
+        context.session.scalar(select(func.count(Task.id)).where(*filters)) or 0
+    )
+    rows = context.session.execute(
+        select(Task)
+        .where(*filters)
+        .order_by(Task.due_at.asc(), Task.id.asc())
+        .limit(limit)
+        .offset(offset)
+    ).scalars()
+    return LeadTaskPage(
+        items=tuple(
+            LeadTask(
+                id=row.id,
+                type=row.task_type,
+                title=row.title,
+                due_at=row.due_at,
+                status=row.status,
+                version=row.version,
+            )
+            for row in rows
+        ),
+        total=total,
+        limit=limit,
+        offset=offset,
+    )

@@ -1,0 +1,222 @@
+/* Calling workspace, 2026-09-26. Scoped so other CRM screens keep their layout. */
+body.sales-workspace { --page-bg:#f5f5f1; --panel:#fff; --ink:#20362c; --muted:#68746c; --line:#e1e7df; --accent:#315b42; --accent-soft:#edf2ea; background:var(--page-bg); }
+.sales-workspace .shell { max-width:1320px; padding:28px 32px 40px; }
+.sales-workspace .workspace-header { min-height:68px; padding:10px 32px; gap:30px; background:var(--panel); }
+.sales-workspace .workspace-status { display:none; }
+.sales-workspace .brand-mark { display:none; }
+.sales-workspace .workspace-brand { font-size:19px; letter-spacing:-.5px; }
+.sales-workspace .workspace-brand strong { font-size:12px; letter-spacing:0; }
+.sales-workspace .primary-nav { margin-left:auto; }
+.sales-workspace .primary-nav a { padding:9px 12px; font-weight:500; }
+.sales-workspace .btn { border-radius:7px; font-weight:500; }
+#leads-app .topbar { margin-bottom:18px; }
+#leads-app .topbar .eyebrow { font-weight:400; letter-spacing:0; text-transform:none; font-size:12px; }
+#leads-app .topbar h1,#leads-app.contact-open>.topbar h1 { font-size:26px; font-weight:500; margin:5px 0; letter-spacing:-.8px; }
+#leads-app.contact-open>.topbar .eyebrow { display:block; }
+#leads-app .focus-exit { display:none; }
+#leads-app .header-actions .btn { background:transparent; border-color:var(--line); color:var(--ink); }
+#leads-app .commercial-kpis { border:0; border-radius:0; padding:0 0 25px; margin:0; background:transparent; position:relative; }
+#leads-app .kpi-overview { display:grid; grid-template-columns:1.15fr 1fr; gap:32px; align-items:center; }
+#leads-app .kpi-weekly-goal { padding-right:32px; border-right:1px solid var(--line); }
+#leads-app .kpi-goal-hero { margin:0; font-size:16px; font-weight:400; }
+#leads-app .goal-label { display:block; color:var(--muted); font-size:13px; margin-bottom:4px; }
+#leads-app .goal-value { font-size:38px; font-weight:500; letter-spacing:-1.3px; }
+#leads-app .goal-denominator { color:var(--muted); font-size:16px; }
+#leads-app .commercial-kpis progress { display:block; width:100%; height:10px; margin:12px 0 8px; border:0; border-radius:10px; overflow:hidden; background:var(--line); color:var(--accent); appearance:none; }
+#leads-app progress::-webkit-progress-bar { background:var(--line); border-radius:10px; }
+#leads-app progress::-webkit-progress-value { background:var(--accent); border-radius:10px; transition:width .45s; }
+#leads-app progress::-moz-progress-bar { background:var(--accent); border-radius:10px; }
+#leads-app .goal-caption { color:var(--muted); font-size:12px; margin:0; }
+#leads-app .kpi-overview>.kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px; margin:0; }
+#leads-app .kpi-card { background:transparent; border:0; border-radius:0; padding:0; display:flex; flex-direction:column-reverse; gap:5px; min-width:0; }
+#leads-app .kpi-card>span { font-size:12px; font-weight:400; color:var(--muted); }
+#leads-app .kpi-card>strong { font-size:28px; font-weight:500; letter-spacing:-.7px; }
+#leads-app .commercial-kpis .ui-info { margin-top:12px; position:static; display:inline-block; }
+#leads-app .commercial-kpis .ui-info>summary,#leads-app .kpi-options>summary { width:auto; min-height:32px; padding:5px 0; border:0; background:none; font-size:11px; color:var(--muted); border-radius:0; list-style:revert; cursor:pointer; }
+#leads-app .commercial-kpis .ui-info-content { position:static; width:100%; max-width:100%; box-shadow:none; padding:16px; margin:5px 0 0; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+#leads-app .kpi-partial { font-size:11px; background:transparent; border:0; color:var(--muted); margin:0 12px 0 0; padding:0; }
+#leads-app .kpi-options { margin-bottom:12px; }
+#leads-app .kpi-options>summary { text-align:right; }
+#leads-app .kpi-controls { display:flex; flex-wrap:wrap; gap:12px; margin:8px 0 12px; justify-content:flex-end; }
+#leads-app .kpi-controls label { font-size:12px; }
+#leads-app .kpi-controls input,#leads-app .kpi-controls select { padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+#leads-app .pipeline-layout { display:grid; grid-template-columns:300px minmax(0,1fr); gap:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:clip; align-items:stretch; }
+#leads-app .pipeline-layout>* { min-width:0; }
+#leads-app .queue-pane { border-right:1px solid var(--line); }
+#leads-app .queue-top { padding:20px 18px 12px; border-bottom:1px solid var(--line); }
+#leads-app .queue-select-label select { width:100%; padding:4px 0; background:var(--panel); border:0; font-size:15px; font-weight:500; }
+#leads-app .queue-heading { margin:4px 0 14px; }
+#leads-app .queue-heading .subtle { font-size:12px; }
+#leads-app .lead-tools { display:block; margin:0; }
+#leads-app .lead-tools label { display:grid; gap:5px; font-size:12px; }
+#leads-app .lead-tools input,#leads-app .lead-tools select { width:100%; min-width:0; border:1px solid var(--line); border-radius:6px; padding:10px; background:var(--page-bg); }
+#leads-app .queue-filters { margin-top:8px; }
+#leads-app .queue-filters>summary { color:var(--muted); font-size:11px; cursor:pointer; padding:5px 0; }
+#leads-app .filter-fields { display:grid; gap:12px; padding:10px 0; }
+#leads-app .plan-toolbar { padding:12px 18px; border-bottom:1px solid var(--line); margin:0; }
+#leads-app .leads-list,#leads-app.contact-open .leads-list { max-height:none; border:0; border-radius:0; overflow:visible; box-shadow:none; }
+#leads-app [data-leads-table] { display:block; width:100%; border-collapse:collapse; }
+#leads-app [data-leads-table] caption { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+#leads-app [data-leads-table] tbody { display:block; width:100%; }
+#leads-app [data-leads-table] thead { display:none; }
+#leads-app .lead-row { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto auto; gap:4px 10px; padding:17px 18px; min-height:100px; border-bottom:1px solid var(--line); width:100%; }
+#leads-app .lead-row td { min-width:0; }
+#leads-app .lead-company { grid-row:2; grid-column:1/-1; font-size:14px; font-weight:500; white-space:normal; overflow-wrap:anywhere; }
+#leads-app .lead-open-button { border:0; background:none; padding:0; color:inherit; text-align:left; font:inherit; width:100%; cursor:pointer; }
+#leads-app .lead-contact { grid-row:3; grid-column:1/-1; font-size:12px; color:var(--muted); }
+#leads-app .lead-action { grid-row:1; grid-column:1; font-size:11px; color:var(--accent); margin:0; overflow-wrap:anywhere; }
+#leads-app .lead-due { margin:0 0 0 5px; font-size:11px; }
+#leads-app .lead-row>.lead-stage { grid-row:1; grid-column:2; display:inline-flex; align-items:center; justify-self:end; max-width:150px; min-height:22px; padding:0 7px; border-radius:6px; background:var(--blue-soft); color:var(--blue); font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.03em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#leads-app .lead-stage[data-stage="won"] { background:var(--green-soft); color:var(--green); }
+#leads-app .lead-stage[data-stage="lost"],#leads-app .lead-stage[data-stage="not_a_fit"] { background:var(--red-soft); color:var(--red); }
+#leads-app .lead-stage[data-stage="proposal_requested"],#leads-app .lead-stage[data-stage="proposal_sent"],#leads-app .lead-stage[data-stage="negotiation"] { background:var(--amber-soft); color:var(--amber); }
+#leads-app .lead-phone,#leads-app .lead-email,#leads-app .lead-priority { display:none; }
+#leads-app .lead-row[aria-current=true] { background:var(--accent-soft); box-shadow:inset 3px 0 var(--accent); }
+#leads-app .lead-row:hover { background:#f2f5ef; }
+#leads-app .queue-pagination { padding:14px 12px; margin:0; display:flex; justify-content:space-between; gap:6px; align-items:center; }
+#leads-app .queue-pagination [data-page-range] { font-size:11px; color:var(--muted); }
+#leads-app .state { border:0; padding:24px 18px; background:var(--panel); }
+#leads-app .detail-panel,#leads-app.contact-open .detail-panel { border:0; border-radius:0; box-shadow:none; max-height:none; overflow:visible; padding:28px 32px; position:sticky; top:0; align-self:start; min-width:0; }
+#leads-app .detail-navigation { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; color:var(--muted); font-size:12px; }
+#leads-app .detail-navigation .btn { border:0; background:none; padding:5px 0; color:var(--muted); }
+#leads-app .detail-head .eyebrow { color:var(--muted); font-weight:400; font-size:11px; letter-spacing:1px; text-transform:uppercase; }
+#leads-app .detail-head h2 { font-size:30px; font-weight:500; letter-spacing:-1px; line-height:1.2; overflow-wrap:anywhere; margin:7px 0 10px; }
+#leads-app .detail-badges { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+#leads-app .company-website { display:inline-block; color:var(--accent); font-size:13px; overflow-wrap:anywhere; }
+#leads-app .company-financials { display:flex; gap:38px; padding:20px 0; margin-bottom:20px; border-bottom:1px solid var(--line); }
+#leads-app .company-financials span { display:block; font-size:11px; color:var(--muted); }
+#leads-app .company-financials strong { font-size:20px; font-weight:500; }
+#leads-app .company-financials small { margin-left:auto; align-self:end; color:var(--muted); font-size:11px; }
+#leads-app .detail-contact { margin:0 0 12px; font-size:15px; font-weight:500; color:var(--ink); }
+#leads-app [data-detail-contact-actions] { display:flex; flex-wrap:wrap; margin:0 0 22px; gap:8px; }
+#leads-app .call-phone { flex:0 1 auto; min-height:44px; background:var(--panel); color:var(--ink); border:1px solid var(--line); font-size:14px; font-weight:500; }
+#leads-app .call-phone [data-call-phone-number] { opacity:1; user-select:all; }
+#leads-app .copy-phone { order:1; }
+#leads-app [data-detail-email-link] { order:2; background:transparent; border-color:transparent; color:var(--muted); }
+#leads-app .call-context { padding:15px 16px; margin:0 0 18px; border:0; border-radius:8px; background:var(--page-bg); }
+#leads-app .call-context .eyebrow { font-size:11px; letter-spacing:0; font-weight:400; text-transform:none; }
+#leads-app .call-context p { max-height:none; overflow:visible; font-size:14px; color:var(--ink); line-height:1.6; margin:7px 0 0; }
+#leads-app .detail-summary { background:none; padding:0; margin:0 0 18px; font-size:12px; }
+#leads-app .detail-summary-line { display:flex; justify-content:space-between; gap:12px; color:var(--muted); }
+#leads-app .detail-summary-line strong { font-weight:400; color:var(--ink); text-align:right; overflow-wrap:anywhere; }
+#leads-app .detail-summary[data-empty=true] { display:none; }
+#leads-app .commercial-context-secondary { display:none; }
+#leads-app .call-workspace { border:0; padding:0; margin:20px 0 0; }
+#leads-app .call-section-heading { margin-bottom:9px; }
+#leads-app .call-note-label { margin:0; font-size:14px; font-weight:500; }
+#leads-app .draft-status { font-size:11px; }
+#leads-app .call-workspace textarea { font-size:15px; min-height:145px; padding:14px; line-height:1.6; border-radius:8px; }
+#leads-app .call-save-bar { position:static; display:flex; justify-content:space-between; gap:10px; background:var(--panel); margin:12px 0 0; padding:0; border:0; }
+#leads-app .call-save-bar .btn-primary { min-height:46px; padding:12px 18px; }
+#leads-app .no-answer-shortcut { border:0; padding-left:0; color:var(--muted); background:transparent; }
+#leads-app .call-save-state { font-size:12px; color:var(--muted); margin:8px 0 0; overflow-wrap:anywhere; }
+#leads-app .call-save-state:empty { display:none; }
+#leads-app .call-other { margin-top:18px; border-top:1px solid var(--line); }
+#leads-app .call-other>summary { font-size:12px; padding:13px 0; }
+#leads-app .call-dimensions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+#leads-app .call-dimensions label { display:grid; gap:5px; font-size:12px; min-width:0; }
+#leads-app .call-dimensions input,#leads-app .call-dimensions select { width:100%; min-width:0; padding:9px; background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+#leads-app .call-dimensions .full-width { grid-column:1/-1; }
+#leads-app .detail-section { border-top:1px solid var(--line); margin-top:12px; padding-top:10px; }
+#leads-app .detail-section>summary { font-size:12px; color:var(--muted); cursor:pointer; min-height:32px; }
+#leads-app .command-form { display:grid; gap:10px; padding:15px 0; }
+#leads-app .command-form label { display:grid; gap:5px; font-size:12px; }
+#leads-app .command-form input,#leads-app .command-form select,#leads-app .command-form textarea { width:100%; padding:10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+#leads-app .command-form input[type=checkbox] { width:auto; }
+#leads-app .command-form-actions { display:flex; gap:10px; justify-content:flex-end; }
+#leads-app .timeline-item,#leads-app .task-item { padding:12px 0; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); overflow-wrap:anywhere; white-space:pre-wrap; }
+#leads-app .task-title { color:var(--ink); font-weight:500; margin-bottom:5px; }
+#leads-app .task-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+#leads-app .workspace-save-status { min-height:20px; color:var(--muted); font-size:12px; padding-top:12px; }
+@media(max-width:1050px) and (min-width:821px) { #leads-app .pipeline-layout{grid-template-columns:270px minmax(0,1fr)} #leads-app .detail-panel{padding:24px} #leads-app .kpi-overview{grid-template-columns:1fr 1fr;gap:22px} #leads-app .kpi-weekly-goal{padding-right:22px} #leads-app .kpi-overview>.kpi-grid{gap:10px} }
+@media(max-width:820px) {
+ .sales-workspace .shell { padding:22px 16px 30px; }
+ .sales-workspace .workspace-header { padding:12px 16px; min-height:60px; gap:12px; flex-wrap:wrap; }
+ .sales-workspace .primary-nav { gap:0; margin-left:0; width:100%; overflow:auto; }
+ .sales-workspace .primary-nav a { font-size:12px; padding:10px; min-height:44px; }
+ #leads-app .topbar h1 { font-size:24px; }
+ #leads-app .topbar { flex-wrap:wrap; gap:12px; }
+ #leads-app .kpi-overview { grid-template-columns:1fr; gap:18px; }
+ #leads-app .kpi-weekly-goal { border:0; padding:0; }
+ #leads-app .kpi-overview>.kpi-grid { border-top:1px solid var(--line); padding-top:15px; gap:12px; }
+ #leads-app .kpi-card>strong { font-size:25px; }
+ #leads-app .kpi-card>span { font-size:11px; }
+ #leads-app .pipeline-layout { display:block; }
+ #leads-app .queue-pane { border:0; }
+ #leads-app .detail-panel { display:none; position:static; padding:20px 18px; }
+ #leads-app.contact-open>.topbar,#leads-app.contact-open>.commercial-kpis { display:none; }
+ #leads-app.contact-open .detail-panel { display:block; padding:20px 18px 26px; }
+ #leads-app.contact-open .mobile-queue-back { display:inline-flex; margin:0; min-height:44px; }
+ #leads-app .detail-navigation { margin-bottom:18px; }
+ #leads-app .detail-navigation .btn { min-height:44px; }
+ #leads-app .detail-head h2 { font-size:28px; }
+ #leads-app .company-financials { gap:28px; }
+ #leads-app .call-phone { flex:1; background:var(--accent-soft); min-height:48px; padding:10px; }
+ #leads-app .copy-phone { min-height:48px; }
+ #leads-app [data-detail-email-link] { width:100%; justify-content:flex-start; padding:0; min-height:32px; }
+ #leads-app .call-workspace textarea { font-size:16px; min-height:150px; }
+ #leads-app .call-save-bar { position:sticky; bottom:0; z-index:5; padding:10px 0 max(10px,env(safe-area-inset-bottom)); margin-top:5px; }
+ #leads-app .call-save-bar .btn-primary { flex:1; min-height:48px; white-space:normal; }
+ #leads-app .call-save-bar .no-answer-shortcut { flex:0 0 auto; min-height:48px; font-size:12px; }
+ #leads-app .call-dimensions { grid-template-columns:1fr; }
+ #leads-app .call-dimensions .full-width { grid-column:auto; }
+ #leads-app input,#leads-app select,#leads-app textarea { font-size:16px; }
+ #leads-app .queue-filters>summary,#leads-app .detail-section>summary { min-height:44px; display:flex; align-items:center; }
+ #leads-app .draft-status { max-width:110px; text-align:right; }
+ #leads-app .queue-pagination .btn { min-height:44px; }
+}
+@media(prefers-reduced-motion:reduce) { #leads-app progress::-webkit-progress-value { transition:none; } }
+
+#leads-app .kpi-goal-hero { padding:0; border:0; background:none; border-radius:0; }
+#leads-app.contact-open .focus-exit { display:none; }
+#leads-app .kpi-partial { float:none; }
+@media(min-width:821px) {
+ #leads-app .leads-list,#leads-app.contact-open .leads-list { max-height:660px; overflow-y:auto; overscroll-behavior:contain; }
+ #leads-app .lead-action { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+}
+
+#leads-app .stage-summary { display:grid; grid-template-columns:1fr; gap:8px; margin:0; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
+#leads-app .stage-summary[hidden] { display:none; }
+#leads-app .stage-summary-head { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+#leads-app .stage-summary-title { font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+#leads-app .stage-summary-total,#leads-app .stage-summary-note { color:var(--muted); font-size:11px; }
+#leads-app .stage-summary-actions { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+#leads-app .stage-summary .analytics-metric-btn,#leads-app .stage-summary .analytics-chip { border:1px solid var(--line); border-radius:999px; background:var(--page-bg); padding:5px 8px; color:var(--ink); font-size:11px; }
+
+/* Only the individual lead stage is visible; counters are not part of the calling workspace. */
+#leads-app .stage-summary { display:none!important; }
+#leads-app .detail-priority { display:none; }
+#leads-app .lead-row>.lead-stage,#leads-app [data-detail-stage] { display:inline-flex; font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; white-space:normal; overflow:visible; max-width:150px; line-height:1.35; padding:4px 8px; border-radius:5px; }
+#leads-app .detail-head { flex-wrap:wrap; }
+#leads-app .detail-badges { flex-shrink:0; }
+
+/* Compact, selectable contact references in the main lead view. */
+#leads-app .contact-reference-lines { display:grid; gap:2px; margin:8px 0 12px; }
+#leads-app .contact-reference { display:grid; grid-template-columns:38px minmax(0,1fr) auto; gap:8px; align-items:center; font-size:12px; min-height:30px; }
+#leads-app .reference-label { color:var(--muted); }
+#leads-app .reference-value { color:var(--ink); overflow-wrap:anywhere; user-select:text; min-width:0; }
+#leads-app a.reference-value { color:var(--accent); }
+#leads-app .reference-copy { border:0; background:none; color:var(--muted); font:inherit; padding:6px 8px; border-radius:5px; cursor:pointer; }
+#leads-app .reference-copy:hover { background:var(--accent-soft); }
+#leads-app .reference-copy:disabled { visibility:hidden; }
+#leads-app [data-detail-email-link] { display:none!important; }
+@media(max-width:820px) { #leads-app .reference-copy { min-height:44px; min-width:55px; } }
+
+/* Three weekly indicators; all diagnostic detail lives in Analysis. */
+.simple-week-label {font-size:12px;color:var(--muted,#69756c);margin:0 0 14px}
+.simple-call-kpis {display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:32px;align-items:center;padding-bottom:22px}
+.simple-relevant {padding-right:32px;border-right:1px solid #dce4dc}
+.simple-metric-label,.simple-call-kpis .kpi-card>span {font-size:13px;color:#52685a}
+.simple-call-kpis .goal-value {font-size:42px;line-height:1.25;font-weight:600}
+.simple-target {font-size:20px;color:#7a897d}
+.simple-relevant progress {display:block;width:100%;height:7px;margin-top:12px;border:0;border-radius:8px;overflow:hidden;accent-color:#427b55;background:#e0e8df}
+.simple-relevant progress::-webkit-progress-bar {background:#e0e8df;border-radius:8px}
+.simple-relevant progress::-webkit-progress-value {background:#427b55;border-radius:8px}
+.simple-call-kpis .kpi-card {display:flex;flex-direction:column;gap:6px;padding:0;border:0;background:none}
+.simple-call-kpis .kpi-card strong {font-size:32px;font-weight:500}
+[data-call-context] p {white-space:pre-wrap;overflow-wrap:anywhere}
+.commercial-kpi-analysis {margin-top:28px}
+@media(max-width:600px){.simple-call-kpis{grid-template-columns:1fr 1fr;gap:20px}.simple-relevant{grid-column:1/-1;padding:0 0 18px;border-right:0;border-bottom:1px solid #dce4dc}.simple-call-kpis .goal-value{font-size:36px}.simple-call-kpis .kpi-card strong{font-size:28px}}
+
+/* Agent-managed controls stay out of the call workflow. */
+#leads-app .workflow-internal { display:none!important; }

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Hoje & chamadas · Comercial{% endblock %}
+{% block body_class %}sales-workspace{% endblock %}
+{% block stylesheets %}<link rel="stylesheet" href="/static/calls.css?v=20260909-analysis1"><link rel="stylesheet" href="/static/activity-analysis.css?v=20260909-analysis1"><link rel="stylesheet" href="/static/sales-workspace.css?v=20260930-notes">{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="/static/commercial-kpis.css?v=20260927-stage2">
+<section id="leads-app" aria-live="polite"
+  data-writable="{{ 'true' if writable else 'false' }}"
+  data-can-edit-lead="{{ 'true' if can_edit_lead else 'false' }}"
+  data-can-transition-stage="{{ 'true' if can_transition_stage else 'false' }}"
+  data-can-log-call="{{ 'true' if can_log_call else 'false' }}"
+  data-can-log-email="{{ 'true' if can_log_email else 'false' }}"
+  data-can-add-note="{{ 'true' if can_add_note else 'false' }}"
+  data-can-write-tasks="{{ 'true' if can_write_tasks else 'false' }}"{% if csrf_token %}
+  data-csrf-token="{{ csrf_token }}"{% endif %}>
+  <header class="topbar">
+    <div><p class="eyebrow" data-today-label>O teu dia comercial</p><h1>Chamadas</h1></div><div class="header-actions"><button class="btn focus-exit" type="button" data-exit-focus>Ver filas e filtros</button><a class="btn" href="/contas">Ver empresas <span aria-hidden="true">↗</span></a>{% if writable and can_create_lead|default(false) %}<button class="btn btn-primary" type="button" data-new-contact>Novo contacto <span aria-hidden="true">+</span></button>{% endif %}</div>
+  </header>
+  <section class="commercial-kpis" data-commercial-kpis data-authenticated="{{ 'false' if subject == 'public-browser' else 'true' }}" aria-label="KPIs comerciais"></section>
+<nav class="queue-bar" hidden aria-label="Filas de trabalho"><button type="button" data-pipeline-queue="plan">Plano</button>{% for value, label in pipeline_queues %}<button type="button" data-pipeline-queue="{{ value }}">{{ label }}</button>{% endfor %}<button type="button" data-pipeline-queue="phone_new">Nova prospeção</button><button type="button" data-pipeline-queue="phone_unknown">Histórico por confirmar</button><button type="button" data-pipeline-queue="calls_actionable">Pendentes</button></nav>  <div class="pipeline-layout">
+    <div class="queue-pane"><div class="queue-top"><label class="queue-select-label"><span class="sr-only">Lista de trabalho</span><select data-queue-select>
+<option value="calls_today">Chamadas de hoje</option><option value="calls_overdue">Chamadas em atraso</option><option value="plan">Plano de hoje</option><option value="calls_future">Chamadas futuras</option><option value="untouched">Novos contactos</option><option value="all">Todas as leads</option>
+<optgroup label="Acompanhamento"><option value="emails_today">Emails de hoje</option><option value="emails_overdue">Emails em atraso</option><option value="emails_future">Emails futuros</option><option value="proposal_followups_today">Propostas de hoje</option><option value="proposal_followups_overdue">Propostas em atraso</option><option value="touched_today">Trabalhados hoje</option><option value="phone_new">Nova prospeção</option><option value="phone_unknown">Histórico por confirmar</option><option value="calls_actionable">Chamadas pendentes</option></optgroup></select></label><div class="queue-heading"><span class="subtle"><span data-lead-total>—</span> contactos</span></div>  <div class="lead-tools">
+    <label class="search-label"><span class="sr-only">Encontrar um contacto</span><input type="search" data-lead-search maxlength="200" placeholder="Pesquisar empresa ou pessoa"></label>
+<label>Tipo de empresa<select data-company-type-filter><option value="">Todos os tipos</option><option value="transport_logistics">Transportes e logística</option><option value="road_towing">Reboques</option><option value="pest_control">Controlo de pragas</option><option value="drain_cleaning">Desentupimentos e canalização</option><option value="construction_materials">Construção e materiais</option><option value="industry_metalworking">Indústria e metalomecânica</option><option value="equipment_technical_services">Equipamentos e serviços técnicos</option><option value="other_business">Outros setores</option><option value="review">Por rever</option></select></label>
+<details class="queue-filters"><summary>Mais filtros</summary><div class="filter-fields">    <label>Fase<select data-stage-filter><option value="">Todos</option><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Not a fit</option></select></label>
+    <label>Prioridade<select data-priority-filter><option value="">Todas</option><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+</div></details></div></div>
+      <div class="plan-toolbar" data-call-day>
+        <div><strong data-list-title hidden>Plano de hoje</strong><p class="subtle" data-call-day-status>A carregar…</p></div>
+        <button class="btn" type="button" data-prepare-call-day hidden>Preparar · 120 min</button>
+        <button class="btn" type="button" data-refresh-call-day>Atualizar</button>
+      </div>
+      <div class="state" data-state="loading">A carregar fila…</div>
+      <div class="state hidden" data-state="empty">Não existem leads nesta fila.</div>
+      <div class="state hidden" data-state="error">Não foi possível carregar a fila.</div>
+      <div class="leads-list hidden" data-state="ready" data-leads-table-scroll>
+        <table data-leads-table>
+          <caption>Leads da fila selecionada</caption>
+          <thead>
+            <tr class="lead-row lead-head">
+              <th scope="col" data-column="company">Empresa</th>
+              <th scope="col" data-column="contact">Contacto</th>
+              <th scope="col" data-column="due">Prazo / ação</th>
+              <th scope="col" data-column="phone">Telefone</th>
+              <th scope="col" data-column="email">Email</th>
+              <th scope="col" data-column="stage">Fase</th>
+              <th scope="col" data-column="priority">Prioridade</th>
+            </tr>
+          </thead>
+          <tbody data-leads-list></tbody>
+        </table>
+      </div>
+      <nav class="queue-pagination" aria-label="Paginação da fila">
+        <button class="btn" type="button" data-page-previous disabled>Anterior</button>
+        <span data-page-range>0–0 de 0</span>
+        <button class="btn" type="button" data-page-next disabled>Seguinte</button>
+      </nav>
+    </div>
+    <aside class="detail-panel" data-lead-detail-panel>
+      <div data-detail-empty><span class="empty-mark" aria-hidden="true">↗</span><p class="eyebrow">Tudo a postos</p><h2>Escolhe a próxima conversa</h2><p class="subtle">Abre um contacto da fila para ver o contexto, ligar e guardar o resultado.</p><button class="btn btn-primary" type="button" data-start-calls>Começar chamadas</button></div>
+      <div class="hidden" data-detail-ready>
+        <div class="detail-navigation"><button class="btn mobile-queue-back" type="button" data-back-to-queue>← Lista</button><span data-lead-position></span><button class="btn skip-call" type="button" data-skip-lead>Saltar →</button></div>
+        <div class="detail-head">
+          <div><p class="eyebrow">Em conversa</p><h2 data-detail-company></h2></div>
+          <div class="detail-badges"><span class="lead-stage" data-detail-stage></span><span class="detail-priority" data-detail-priority></span></div>
+        </div>
+        <div class="contact-reference-lines">
+          <div class="contact-reference"><span class="reference-label">Email</span><span data-reference-email class="reference-value">—</span><button type="button" class="reference-copy" data-copy-reference="email" aria-label="Copiar email" disabled>Copiar</button></div>
+          <div class="contact-reference"><span class="reference-label">Site</span><span data-reference-site-missing class="reference-value">—</span><a class="reference-value hidden" data-detail-website target="_blank" rel="noopener noreferrer"></a><button type="button" class="reference-copy" data-copy-reference="website" aria-label="Copiar site" disabled>Copiar</button></div>
+        </div>
+        <details class="hidden" data-company-type-evidence><summary>Atividade e fontes</summary><p data-company-type-status></p><p data-company-type-description></p><p data-company-type-sources></p></details>
+        <div class="company-financials" aria-label="Informação financeira"><div><span>Faturação</span><strong data-financial-revenue>—</strong></div><div><span>EBITDA</span><strong data-financial-ebitda>—</strong></div><small data-financial-status>Por importar</small></div>
+        <p class="detail-contact" data-detail-contact></p>
+        <div class="call-context hidden" data-call-context><span class="eyebrow">Última nota</span><p></p></div>
+        <div class="detail-summary workflow-internal" hidden data-detail-summary>
+          <div class="detail-summary-line"><span>Próxima ação</span><strong data-detail-next-action>Sem próxima ação</strong></div>
+          <div class="detail-summary-line"><span>Prazo</span><strong data-detail-next-due>—</strong></div>
+        </div>
+        <p class="notice hidden" data-contact-protected>Contacto encerrado ou protegido. O histórico está disponível; as ações de contacto estão suspensas.</p>
+        <div class="task-actions" data-detail-contact-actions>
+          <a class="btn btn-primary call-phone hidden" data-detail-phone-link><span aria-hidden="true">↗</span> Ligar <span data-call-phone-number></span></a>
+          <small class="subtle hidden" data-company-phone-label>Telefone da empresa</small>
+          <a class="btn hidden" data-detail-email-link>Email</a>
+          <button class="btn copy-phone hidden" type="button" data-copy-phone>Copiar</button>
+        </div>
+        {% if writable and can_log_call %}
+        <form class="call-workspace" data-call-log-form>
+          <div class="call-section-heading"><h3>Como correu?</h3><span class="draft-status" data-call-draft-status aria-live="polite"></span></div>
+          <label class="call-note-label" for="call-note">Nota da conversa</label>
+          <textarea id="call-note" name="summary" maxlength="2000" rows="4" placeholder="O que ficou combinado? Escreve como falas."></textarea>
+          <details class="call-other workflow-internal" hidden data-call-advanced>
+          <summary>Detalhes avançados · opcional</summary>
+          <fieldset class="call-outcomes"><legend class="sr-only">Resultado da chamada</legend>
+            <label><input type="radio" name="outcome_code" value="connected"><span>✓ Atendeu</span></label>
+            <label><input type="radio" name="outcome_code" value="no_answer"><span>↗ Não atendeu</span></label>
+          </fieldset>
+          <div class="call-dimensions" aria-label="Dimensões telefónicas verificadas">
+            <label>Hora real da chamada<input type="datetime-local" name="occurred_at" required></label>
+            <label>Atendimento<select name="answer_kind" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="human_counterparty">Humano / contraparte</option>
+              <option value="no_answer">Não atendeu</option>
+              <option value="ivr">IVR / central automática</option>
+              <option value="voicemail">Caixa de mensagens</option>
+              <option value="wrong_number">Número errado</option>
+            </select></label>
+            <label>Antes desta chamada, já houve algum contacto?<select name="contact_kind"><option value="unknown">Histórico desconhecido</option><option value="first_contact">1º contacto — confirmo nenhum anterior</option><option value="follow_up">Follow-up — já houve contacto</option></select><small>Inclui emails, reuniões e tentativas sem resposta.</small></label>
+            <label>Primeira conversa telefónica atendida?<select name="first_conversation"><option value="unknown">Não sei</option><option value="yes">Sim, confirmo</option><option value="no">Não, já falámos</option></select></label>
+              <label>Conversa útil<select name="useful" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="yes">Sim</option>
+              <option value="no">Não</option>
+            </select></label>
+            <label>Falaste com decisor?<select name="decision_maker" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="yes">Sim</option>
+              <option value="no">Não</option>
+            </select></label>
+            <label>Papel do interlocutor<select name="interlocutor_role" required>
+              <option value="unknown">Desconhecido</option>
+              <option value="reception">Receção</option>
+              <option value="decision_maker">Decisor</option>
+              <option value="other">Outro</option>
+            </select></label>
+            <label class="full-width">Razão para repetir no mesmo dia <span>opcional</span><input name="repeat_reason" maxlength="500" placeholder="Só quando há retorno pedido ou exceção legítima"></label>
+          </div>
+          </details>
+          {% if can_write_tasks %}
+          <div class="callback-box workflow-internal" hidden>
+            <label class="callback-toggle"><input type="checkbox" name="callback_enabled"><span>Voltar a ligar</span><span class="callback-hint">Marcar callback</span></label>
+            <div class="callback-fields hidden" data-callback-fields>
+              <label><span><input type="checkbox" name="callback_agreed"> Callback combinado com o cliente</span></label>
+              <label>Quando<input type="datetime-local" name="callback_due_at"></label>
+              <label>Dia para procurar horário<input type="date" name="callback_day"></label>
+              <label>Período (hora do calendário)<select name="callback_period"><option value="any">Dia útil · 09–12 / 14–18</option><option value="morning">Manhã · 09–12</option><option value="afternoon">Tarde · 14–18</option></select></label>
+              <button class="btn" type="button" data-suggest-callback>Procurar horário disponível · 15 min</button>
+              <span data-callback-slot-status role="status">Sugestão opcional; confirma o acordo antes de guardar.</span>
+              <label>Motivo <span>opcional</span><input name="callback_title" maxlength="512" placeholder="Retomar a conversa"></label>
+            </div>
+          </div>
+          {% endif %}
+          <details class="call-other workflow-internal" hidden><summary>Outro resultado</summary><div class="call-other-options">
+            <label><input type="radio" name="outcome_code" value="voicemail"> Caixa de mensagens</label>
+            <label><input type="radio" name="outcome_code" value="wrong_number"> Número errado</label>
+            <label><input type="radio" name="outcome_code" value="not_interested"> Sem interesse</label>
+            <label><input type="radio" name="outcome_code" value="follow_up"> Acompanhar</label>
+          </div></details>
+          <div class="call-save-bar"><button class="btn no-answer-shortcut" type="button" data-no-answer>Não atendeu</button><span data-call-save-state role="status">Guarda o resultado para continuar.</span><button class="btn btn-primary" type="submit" data-call-save>Guardar e seguinte <span aria-hidden="true">→</span></button></div>
+        </form>
+        {% endif %}
+        {% if writable %}
+        <div class="detail-section" data-lead-commands>
+          <h3>Mais ações</h3>
+          <div class="command-stack">
+          {% if can_edit_lead %}
+          <details class="command-disclosure">
+            <summary>Editar dados</summary>
+          <form class="command-form" data-lead-edit-form>
+            <label>Prioridade<select name="priority" required><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+            <label>Empresa<input name="company_name" maxlength="512" required></label>
+            <label>Contacto<input name="contact_name" maxlength="512"></label>
+            <label>Email<input name="contact_email" type="email" maxlength="320"></label>
+            <label>Telefone do contacto<input name="contact_phone" maxlength="64" autocomplete="tel"></label>
+            <div class="command-form-actions">
+              <button class="btn" type="submit">Guardar dados</button>
+              <button class="btn btn-primary" type="submit" data-advance-after-save="true">Guardar e seguinte</button>
+            </div>
+          </form>
+          </details>
+          {% endif %}
+          {% if can_transition_stage %}
+          <details class="command-disclosure">
+            <summary>Alterar fase</summary>
+          <form class="command-form" data-stage-transition-form>
+            <label>Fase<select name="target_stage" required><option value="new">Novo</option><option value="contacted">Contactado</option><option value="qualified">Qualificado</option><option value="meeting_booked">Reunião marcada</option><option value="meeting_held">Reunião realizada</option><option value="proposal_requested">Proposta pedida</option><option value="proposal_sent">Proposta enviada</option><option value="negotiation">Negociação</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="not_a_fit">Not a fit</option></select></label>
+            <label><span><input name="reviewed_correction" type="checkbox"> Correção revista de estado terminal</span></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Alterar fase</button></div>
+          </form>
+          </details>
+          {% endif %}
+          {% if can_log_email %}
+          <details class="command-disclosure workflow-internal" hidden>
+            <summary>Registar email</summary>
+          <form class="command-form" data-email-log-form>
+            <label>Direção<select name="direction" required><option value="outbound">Enviado</option><option value="inbound">Recebido</option></select></label>
+            <label>Nota<textarea name="summary" maxlength="2000"></textarea></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Registar email</button></div>
+          </form>
+          </details>
+          {% endif %}
+          {% if can_add_note %}
+          <details class="command-disclosure"><summary>Adicionar nota ao histórico</summary>
+          <form class="command-form" data-note-form>
+            <label>Adicionar nota ao histórico<textarea name="summary" maxlength="2000" required></textarea></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Adicionar nota</button></div>
+          </form></details>
+          {% endif %}
+          {% if can_write_tasks %}
+          <details class="command-disclosure workflow-internal" hidden>
+            <summary>Marcar próxima ação</summary>
+          <form class="command-form" data-next-action-form>
+            <label>Tipo<select name="task_type" required><option value="call">Chamada</option><option value="email">Email</option><option value="follow_up">Follow-up</option></select></label>
+            <label>Próxima ação<input name="title" maxlength="512" required></label>
+            <label>Data e hora<input name="due_at" type="datetime-local" required></label>
+            <div class="command-form-actions"><button class="btn btn-primary" type="submit">Marcar próxima ação</button></div>
+          </form>
+          </details>
+          {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        <details class="detail-section workflow-internal" hidden><summary>Próximos passos</summary><div data-lead-tasks></div></details>
+        <details class="detail-section"><summary>Histórico</summary><div data-lead-timeline></div></details>
+      </div>
+    </aside>
+  </div>
+  <section class="activity-analysis" data-activity-analysis hidden aria-labelledby="activity-title">
+    <div class="analysis-heading"><div><h2 id="activity-title">Análise de atividade</h2><p class="subtle">Atividade comercial registada · Europe/Lisbon</p></div>
+      <label>Período <select data-analysis-period><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option></select></label>
+      <button class="btn" type="button" data-close-analysis>← Chamadas</button>
+    </div>
+    <p class="subtle" data-analysis-range role="status"></p>
+    <div class="activity-totals" data-analysis-totals></div>
+    <div class="activity-chart" data-analysis-chart></div>
+    <p class="subtle" data-analysis-source></p>
+    <details class="analysis-coverage"><summary>Fonte e cobertura</summary><p data-analysis-coverage></p><p class="subtle">API para agentes: /api/v1/pipeline/activity-analysis?days=30</p></details>
+  </section>
+  {% if writable and can_create_lead|default(false) %}
+  <dialog class="contact-dialog" data-new-contact-dialog aria-labelledby="new-contact-title">
+    <form data-new-contact-form>
+      <div class="dialog-header"><div><p class="eyebrow">A próxima oportunidade</p><h2 id="new-contact-title">Novo contacto</h2></div><button class="btn" type="button" data-close-contact aria-label="Fechar">×</button></div>
+      <p class="subtle">Começa pelo essencial. Podes completar o resto depois.</p>
+      <div class="contact-form-grid">
+        <label class="full-width">Empresa<input name="company" maxlength="512" required autocomplete="organization" placeholder="Nome da empresa"></label>
+        <label>Pessoa de contacto<input name="contact_name" maxlength="512" autocomplete="name"></label>
+        <label>Telefone<input name="phone" type="tel" maxlength="64" autocomplete="tel"></label>
+        <label>Email<input name="email" type="email" maxlength="320" autocomplete="email"></label>
+        <label>Localidade<input name="city" maxlength="255" autocomplete="address-level2"></label>
+        <label class="full-width">Contexto inicial <span>opcional</span><textarea name="notes" maxlength="2000" rows="3" placeholder="Como surgiu este contacto?"></textarea></label>
+      </div>
+      <div class="dialog-actions"><span class="subtle" data-new-contact-state role="status"></span><button class="btn btn-primary" type="submit">Criar e abrir contacto →</button></div>
+    </form>
+  </dialog>
+  {% endif %}
+  <p class="workspace-save-status" data-workspace-status role="status" aria-live="polite"></p>
+  <template data-task-actions-template>
+    <div class="task-actions">
+      <button class="btn btn-primary" type="button" data-task-complete>Concluir</button>
+      <button class="btn" type="button" data-task-reschedule>Reagendar</button>
+      <button class="btn" type="button" data-task-cancel>Cancelar</button>
+    </div>
+  </template>
+</section>
+{% endblock %}
+{% block scripts %}<script defer src="/static/commercial-kpis.js?v=20260929-period"></script><script defer src="/static/leads.js?v=20261019-latency1"></script><script defer src="/static/call-day.js?v=20261019-latency1"></script><script defer src="/static/activity-analysis.js?v=20260909-analysis1"></script>{% endblock %}

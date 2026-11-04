@@ -1,0 +1,86 @@
+{
+  "e51a3e79-2958-5d78-b20e-6e8d75a30d83": {
+    "workspace_id": "339f8411-5023-4b6c-ae0e-202609050001",
+    "worker_id": "hermes-head-of-sales-mac-mini",
+    "updated_at": "2026-10-19T13:11:40.986981Z",
+    "lead_id": "8a85eece-f715-5150-8a7f-e1deb04d747b",
+    "task_id": "e2c2afc4-9bbf-5c64-95b1-37ec8479c584",
+    "source_key": "fu:v1:a8a6b62f0311616ff75d1f9f1d01eae972942898ae527586013ef7e916c2aabe",
+    "actor_id": "8eb857f6-29b1-5f53-961d-e037d6f2d270",
+    "grant_command_id": "340f36d2-f6c2-44f6-8f25-43296bf472f0",
+    "payload_sha256": "27b222a5e07c4d19ff2af944d8f0866945fd78db04233096a9b8ef1ad11d13d4",
+    "grant_sha256": "17c6c211349ce41fc34849966a222371738fad191448ec54d93589a7f9ac17bf",
+    "decision_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "request_id": "78dab2c6-ad63-4e39-8506-cc801d518543",
+    "request_hash": "31a11758bffaea622aceb9b42de2a513314865ef55bee7cbb1a5c3bcc0e5b02a",
+    "audits": [
+      {
+        "id": "be97e5e9-d5c6-4492-8673-0e081bc9848c",
+        "sha256": "2062ed06e4931699439cfa02dccd45cdf5837658165e103402cd8b5f22a6c619"
+      },
+      {
+        "id": "84fd38fc-a8dc-4a9a-8e33-bd0b02da283d",
+        "sha256": "adb7a3553993cfce9f13c9bef07c5ad859b50de82b4e51b3125c4bcbadbb8505"
+      }
+    ],
+    "failure": {
+      "journal_filename": "e51a3e79-2958-5d78-b20e-6e8d75a30d83-57244b28dc43cefc.json",
+      "sha256": "392ebf91d2aee68e8da6a1b9fe1a1f11672d0255e5f5302eca6d3e3f809b6637",
+      "record": {
+        "at": "2026-10-19T13:11:40.357434+00:00",
+        "attempt": 1,
+        "canonical_attempt": 1,
+        "canonical_error": "followup_handoff:review_or_execution_not_finalized",
+        "canonical_status": "failed",
+        "reason": "review_or_execution_not_finalized",
+        "release_attempted": true,
+        "work_id": "e51a3e79-2958-5d78-b20e-6e8d75a30d83"
+      }
+    }
+  },
+  "5b4d8036-3f26-535f-ad35-3919fba38324": {
+    "workspace_id": "339f8411-5023-4b6c-ae0e-202609050001",
+    "worker_id": "hermes-head-of-sales-mac-mini",
+    "updated_at": "2026-10-19T13:21:52.090720Z",
+    "lead_id": "bda3432d-5f01-55ff-a40c-e59588bc3c21",
+    "task_id": "6065233a-509c-5cb4-8cee-fa2b2d4ed311",
+    "source_key": "fu:v1:610c8d648fd27fe031ea68dec3b140586dc6dfa249018f0a30e929f97d83fb50",
+    "actor_id": "8eb857f6-29b1-5f53-961d-e037d6f2d270",
+    "grant_command_id": "c001e923-563a-42fe-88fa-2f2cb075dff6",
+    "payload_sha256": "2476b7bb64eb32aed3de46c6aff34bc6904db4daf13933672643936b67c78cb8",
+    "grant_sha256": "401cbbe88608113020802315feadf00012fd2f0f458dcfa70c41e7852772f713",
+    "decision_sha256": "0d3eebf3e1420d01258cd9e6fc96d061d02fa47cbc9be4148b612744341bbb84",
+    "request_id": "d403afc4-6c13-479b-b2ce-90278751ad5d",
+    "request_hash": "3103a3ae2ddfce3b6c168eb0d7fb3382371467b2986ac6766c1c3d05461dbf44",
+    "audits": [
+      {
+        "id": "257870f0-3a7d-4a40-8f1d-4f155a089109",
+        "sha256": "9840776822192cd2af7363837d6556afd5f9a97c44a2578e1d90eae359ce1b8a"
+      },
+      {
+        "id": "1f3bf8b9-35db-44f3-9568-0611eaae8d08",
+        "sha256": "abc5beeb0082dcaec9e9d47cbbebe07b3870f919d654216286101f49ec066175"
+      }
+    ],
+    "failure": {
+      "journal_filename": "5b4d8036-3f26-535f-ad35-3919fba38324-42e794bb871c2dd0.json",
+      "sha256": "ef302ed06c2a7b32bb4487a32d64a0991457164574568310e390b51cf3bb68ef",
+      "record": {
+        "at": "2026-10-19T13:21:51.575117+00:00",
+        "attempt": 1,
+        "canonical_attempt": 1,
+        "canonical_error": "followup_handoff:execution_error:ExecuteRequestError",
+        "canonical_status": "failed",
+        "execution_detail": {
+          "http_status": 502,
+          "method": "POST",
+          "phase": "execute",
+          "reason_code": "provider_read_failed"
+        },
+        "reason": "execution_error:ExecuteRequestError",
+        "release_attempted": true,
+        "work_id": "5b4d8036-3f26-535f-ad35-3919fba38324"
+      }
+    }
+  }
+}

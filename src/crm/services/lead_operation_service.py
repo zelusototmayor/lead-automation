@@ -1,0 +1,892 @@
+"""Canonical operational lead commands in caller-owned transactions."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+import hashlib
+import json
+from uuid import UUID, uuid5
+
+from src.crm.ingestion.outbox import enqueue_outbox_event
+from src.crm.domain.call_contract import CallDetails, PhoneHistory, CallIntent
+from src.crm.services.phone_proof_service import validate_phone_history
+from src.crm.persistence.models import Activity, AuditEvent, Task
+from src.crm.services.agent_work_service import enqueue_task_work, enqueue_work, callback_intent_requires_calendar
+from src.crm.services.account_service import normalize_company_name, normalize_email
+from src.crm.services.command_service import (
+    CommandAuthorizationError,
+    CommandConflictError,
+    HumanCommandPrincipal,
+    _assert_replay_actor,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RecordPhoneHistoryCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    phone_history: dict
+
+
+@dataclass(frozen=True, slots=True)
+class EditLeadCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    priority: str
+    company_name: str
+    contact_name: str | None
+    contact_email: str | None
+    contact_phone: str | None
+    updated_fields: frozenset[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LogCallCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    outcome_code: str | None
+    summary: str | None
+    occurred_at: datetime | None = None
+    next_action: dict | None = None
+    completed_task: dict | None = None
+    call_details: dict | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LogEmailCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    direction: str
+    summary: str | None
+    occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AddNoteCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    summary: str
+    note_kind: str | None = None
+    provenance_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleNextActionCommand:
+    command_id: UUID
+    workspace_id: UUID
+    lead_id: UUID
+    expected_version: int
+    task_type: str
+    title: str
+    due_at: datetime
+    call_intent: dict | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LeadOperationResult:
+    command_id: UUID
+    aggregate_id: UUID
+    version: int
+    replayed: bool
+    task_id: UUID | None = None
+    occurred_at: datetime | None = None
+    callback_sync_status: str | None = None
+    activity_id: UUID | None = None
+    call_details: dict | None = None
+    phone_history: dict | None = None
+
+
+def _conflict() -> CommandConflictError:
+    return CommandConflictError("command conflict")
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _bounded_text(value: object, *, maximum: int) -> str:
+    if (
+        type(value) is not str
+        or value != value.strip()
+        or not value
+        or len(value) > maximum
+    ):
+        raise _conflict() from None
+    return value
+
+
+def _semantic_hash(action: str, command, fields: dict[str, object]) -> str:
+    canonical = json.dumps(
+        {
+            "action": action,
+            "expected_version": command.expected_version,
+            "lead_id": str(command.lead_id),
+            **fields,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+class LeadOperationService:
+    """Apply narrow lead operations; never commit, publish, or send outbound."""
+
+    def __init__(self, uow):
+        self.uow = uow
+
+    def record_phone_history(self, principal, command: RecordPhoneHistoryCommand):
+        self._authorize(principal, command, "crm:call:log")
+        history = PhoneHistory.model_validate(command.phone_history)
+        value = history.model_dump(mode="json")
+        semantic_hash = _semantic_hash("record-phone-history", command, {"phone_history": value})
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(command.workspace_id, command.lead_id, for_update=True)
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict()
+        validate_phone_history(self.uow.session, command.workspace_id, command.lead_id, history)
+        previous = lead.phone_history
+        lead.phone_history = value
+        lead.updated_at = _now()
+        self.uow.session.flush()
+        self._record(principal, command, semantic_hash, event_type="lead.phone_history_recorded",
+                     version=lead.version, activity_title="Phone history review recorded",
+                     payload={"phone_history": value, "previous_phone_history": previous})
+        return LeadOperationResult(command.command_id, lead.id, lead.version, False, phone_history=value)
+
+    def edit(
+        self, principal: HumanCommandPrincipal, command: EditLeadCommand
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:lead:edit")
+        if (
+            type(command) is not EditLeadCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+        ):
+            raise _conflict() from None
+        priority = _bounded_text(command.priority, maximum=64)
+        company_name = _bounded_text(command.company_name, maximum=512)
+
+        def optional_text(value, maximum):
+            if value is None or value == "":
+                return None
+            return _bounded_text(value, maximum=maximum)
+
+        updated_fields = command.updated_fields
+        if updated_fields is None:
+            updated_fields = frozenset(
+                {"contact_name", "contact_email", "contact_phone"}
+            )
+        if type(updated_fields) is not frozenset or not updated_fields.issubset(
+            {"contact_name", "contact_email", "contact_phone"}
+        ):
+            raise _conflict()
+        contact_name = optional_text(command.contact_name, 512)
+        try:
+            raw_email = optional_text(command.contact_email, 320)
+            contact_email = (
+                normalize_email(raw_email) if raw_email is not None else None
+            )
+        except ValueError:
+            raise _conflict() from None
+        contact_phone = optional_text(command.contact_phone, 64)
+        semantic_hash = _semantic_hash(
+            "edit",
+            command,
+            {
+                "company_name": company_name,
+                "updated_fields": sorted(updated_fields),
+                "contact_email": contact_email,
+                "contact_name": contact_name,
+                "contact_phone": contact_phone,
+                "priority": priority,
+            },
+        )
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        account = (
+            self.uow.accounts.get(
+                command.workspace_id, lead.account_id, for_update=True
+            )
+            if lead.account_id is not None
+            else None
+        )
+        contact = (
+            self.uow.contacts.get(
+                command.workspace_id, lead.contact_id, for_update=True
+            )
+            if lead.contact_id is not None
+            else None
+        )
+        if (
+            (lead.account_id is not None and account is None)
+            or (lead.contact_id is not None and contact is None)
+            or (
+                account is not None
+                and contact is not None
+                and contact.account_id != account.id
+            )
+        ):
+            raise _conflict() from None
+
+        lead.priority = priority
+        if account is not None:
+            account.display_name = company_name
+            account.normalized_name = normalize_company_name(company_name)
+            # An explicit authorized edit supersedes the retained pre-account
+            # company value. Otherwise a later stage command sees a false
+            # identity conflict against the name the human just approved.
+            lead.company_name = None
+        else:
+            lead.company_name = company_name
+        if contact is not None:
+            if "contact_name" in updated_fields:
+                contact.full_name = contact_name
+                lead.contact_name = None
+            if "contact_email" in updated_fields:
+                contact.primary_email = contact_email
+                lead.contact_email = None
+            if "contact_phone" in updated_fields:
+                contact.phone = contact_phone
+                lead.contact_phone = None
+        else:
+            if "contact_name" in updated_fields:
+                lead.contact_name = contact_name
+            if "contact_email" in updated_fields:
+                lead.contact_email = contact_email
+            if "contact_phone" in updated_fields:
+                lead.contact_phone = contact_phone
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.details_updated",
+            version=lead.version,
+            activity_title="Lead details updated",
+            payload={"fields": ["company", "contact", "priority"]},
+        )
+        return LeadOperationResult(command.command_id, lead.id, lead.version, False)
+
+    def log_call(
+        self, principal: HumanCommandPrincipal, command: LogCallCommand
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:call:log")
+        if (
+            type(command) is not LogCallCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+            or (command.outcome_code is None and not command.summary)
+            or command.outcome_code
+            not in {
+                None,
+                "connected",
+                "no_answer",
+                "voicemail",
+                "wrong_number",
+                "not_interested",
+                "follow_up",
+            }
+            or (
+                command.summary is not None
+                and (
+                    type(command.summary) is not str
+                    or command.summary != command.summary.strip()
+                    or not command.summary
+                    or len(command.summary) > 2000
+                )
+            )
+        ):
+            raise _conflict() from None
+        call_details = None
+        if command.call_details is not None:
+            try:
+                validated_details = CallDetails.model_validate(command.call_details)
+                validated_details.validate_outcome(command.outcome_code)
+                call_details = validated_details.model_dump(mode="json", exclude_unset=True)
+            except ValueError:
+                raise _conflict() from None
+        completed = command.completed_task
+        if completed is not None:
+            self._authorize(principal, command, "crm:task:write")
+            if (
+                type(completed) is not dict
+                or set(completed) != {"id", "expected_version"}
+                or type(completed.get("id")) is not UUID
+                or type(completed.get("expected_version")) is not int
+                or completed["expected_version"] < 1
+            ):
+                raise _conflict()
+        callback = command.next_action
+        callback_due = None
+        callback_intent = None
+        if callback is not None:
+            self._authorize(principal, command, "crm:task:write")
+            if (
+                type(callback) is not dict
+                or set(callback) not in ({"task_type", "title", "due_at"}, {"task_type", "title", "due_at", "call_intent"})
+                or callback.get("task_type") != "call"
+            ):
+                raise _conflict()
+            _bounded_text(callback.get("title"), maximum=512)
+            callback_due = callback.get("due_at")
+            if (
+                type(callback_due) is not datetime
+                or callback_due.tzinfo is None
+                or callback_due.utcoffset() is None
+            ):
+                raise _conflict()
+            callback_due = callback_due.astimezone(UTC)
+            if callback.get("call_intent") is not None:
+                try:
+                    callback_intent = CallIntent.model_validate(callback["call_intent"]).model_dump(mode="json")
+                except ValueError:
+                    raise _conflict() from None
+        occurred_at = command.occurred_at or datetime.now(UTC)
+        if (
+            type(occurred_at) is not datetime
+            or occurred_at.tzinfo is None
+            or occurred_at.utcoffset() is None
+            or occurred_at > _now()
+        ):
+            raise _conflict() from None
+        occurred_at = occurred_at.astimezone(UTC)
+        semantic_hash = _semantic_hash(
+            "log-call",
+            command,
+            {
+                "occurred_at": command.occurred_at.astimezone(UTC).isoformat()
+                if command.occurred_at is not None
+                else None,
+                "outcome_code": command.outcome_code,
+                "summary": command.summary,
+                **({"call_details": call_details} if call_details is not None else {}),
+                **(
+                    {
+                        "completed_task": {
+                            "id": str(completed["id"]),
+                            "expected_version": completed["expected_version"],
+                        }
+                    }
+                    if completed
+                    else {}
+                ),
+                **(
+                    {
+                        "next_action": {
+                            "task_type": "call",
+                            "title": callback["title"],
+                            "due_at": callback_due.isoformat(),
+                            **({"call_intent": callback_intent} if callback_intent else {}),
+                        }
+                    }
+                    if callback
+                    else {}
+                ),
+            },
+        )
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        if completed is not None:
+            from src.crm.services.task_command_service import (
+                TaskCommandService,
+                CompleteTaskCommand,
+            )
+
+            existing_task = self.uow.tasks.get(
+                command.workspace_id, completed["id"], for_update=True
+            )
+            if (
+                not existing_task
+                or existing_task.lead_id != lead.id
+                or existing_task.task_type != "call"
+            ):
+                raise _conflict()
+            TaskCommandService(self.uow).complete(
+                principal,
+                CompleteTaskCommand(
+                    command_id=uuid5(command.command_id, "complete-selected-callback"),
+                    workspace_id=command.workspace_id,
+                    task_id=completed["id"],
+                    expected_version=completed["expected_version"],
+                ),
+            )
+        task_id = None
+        if callback is not None:
+            if callback_due <= _now():
+                raise _conflict()
+            task_id = uuid5(command.workspace_id, f"{command.command_id}:call-callback")
+            task = Task(
+                id=task_id,
+                workspace_id=command.workspace_id,
+                lead_id=lead.id,
+                account_id=lead.account_id,
+                task_type="call",
+                title=callback["title"],
+                due_at=callback_due,
+                owner_user_id=principal.actor_id,
+                status="open",
+                source_rule="human_call_callback",
+                call_intent=callback_intent,
+            )
+            self.uow.tasks.add(task)
+            self.uow.session.flush()
+            enqueue_task_work(self.uow.session, task)
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.call_logged",
+            project_contact=True,
+            version=lead.version,
+            activity_title="Call logged",
+            task_id=task_id,
+            activity_type="call",
+            occurred_at=occurred_at,
+            direction="outbound",
+            outcome_code=command.outcome_code,
+            summary=command.summary,
+            call_details=call_details,
+            payload={
+                "occurred_at": occurred_at.isoformat(),
+                "outcome_code": command.outcome_code,
+                "activity_id": str(uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")),
+                "call_details": call_details,
+                **({"callback_sync_status": "pending" if callback_intent_requires_calendar(callback_intent) else "not_required"} if task_id else {}),
+            },
+        )
+        from src.crm.services.note_source_service import enqueue_note_source
+
+        self.uow.session.flush()
+        activity = self.uow.session.get(
+            Activity, uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged")
+        )
+        enqueue_note_source(
+            self.uow.session, activity,
+            source_key=f"call:{command.command_id}", callback_task_id=task_id,
+        )
+        return LeadOperationResult(
+            command.command_id,
+            lead.id,
+            lead.version,
+            False,
+            task_id=task_id,
+            occurred_at=occurred_at,
+            callback_sync_status=("pending" if callback_intent_requires_calendar(callback_intent) else "not_required") if task_id else None,
+            activity_id=uuid5(command.workspace_id, f"{command.command_id}:activity:lead.call_logged"),
+            call_details=call_details,
+        )
+
+    def log_email(
+        self, principal: HumanCommandPrincipal, command: LogEmailCommand
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:email:log")
+        if (
+            type(command) is not LogEmailCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+            or command.direction not in {"inbound", "outbound"}
+            or (
+                command.summary is not None
+                and (
+                    type(command.summary) is not str
+                    or command.summary != command.summary.strip()
+                    or not command.summary
+                    or len(command.summary) > 2000
+                )
+            )
+        ):
+            raise _conflict() from None
+        occurred_at = command.occurred_at or datetime.now(UTC)
+        if (
+            type(occurred_at) is not datetime
+            or occurred_at.tzinfo is None
+            or occurred_at.utcoffset() is None
+            or occurred_at > _now()
+        ):
+            raise _conflict() from None
+        occurred_at = occurred_at.astimezone(UTC)
+        semantic_hash = _semantic_hash(
+            "log-email",
+            command,
+            {
+                "direction": command.direction,
+                "occurred_at": command.occurred_at.astimezone(UTC).isoformat()
+                if command.occurred_at is not None
+                else None,
+                "summary": command.summary,
+            },
+        )
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.email_logged",
+            version=lead.version,
+            activity_title="Email logged",
+            activity_type="email_sent"
+            if command.direction == "outbound"
+            else "email_received",
+            occurred_at=occurred_at,
+            direction=command.direction,
+            summary=command.summary,
+            payload={
+                "direction": command.direction,
+                "occurred_at": occurred_at.isoformat(),
+            },
+        )
+        return LeadOperationResult(
+            command.command_id,
+            lead.id,
+            lead.version,
+            False,
+            occurred_at=occurred_at,
+        )
+
+    def add_note(
+        self, principal: HumanCommandPrincipal, command: AddNoteCommand
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:note:write")
+        if (
+            type(command) is not AddNoteCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+        ):
+            raise _conflict() from None
+        summary = _bounded_text(command.summary, maximum=2000)
+        technical = command.note_kind == 'lead_justification'
+        if command.note_kind not in (None, 'lead_justification') or (technical != (command.provenance_ref is not None)):
+            raise _conflict()
+        material = {"summary": summary}
+        if technical:
+            reference = _bounded_text(command.provenance_ref, maximum=200)
+            if not summary.startswith('Justificação de lead: '): raise _conflict()
+            material.update(note_kind=command.note_kind, provenance_ref=reference)
+        semantic_hash = _semantic_hash("add-note", command, material)
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        if technical and reference.startswith('call-day/'):
+            # Source fences first (all NOWAIT), then reuse the locked lead.
+            # Never hold one lead while waiting on another writer's workspace.
+            from src.crm.services.call_day_reconcile import validate_justification
+            validate_justification(self.uow.session, command.workspace_id,
+                command.lead_id, reference, summary)
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        occurred_at = datetime.now(UTC)
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.note_added",
+            project_contact=not technical,
+            version=lead.version,
+            activity_title="Lead justification" if technical else "Note added",
+            activity_type="note",
+            occurred_at=occurred_at,
+            summary=summary,
+            payload={"occurred_at": occurred_at.isoformat(), **({"note_kind": command.note_kind, "provenance_ref": reference, "actor_type": "system", "source_system": "agent"} if technical else {})},
+            technical_note=technical,
+        )
+        from src.crm.services.note_source_service import enqueue_note_source
+
+        self.uow.session.flush()
+        activity = self.uow.session.get(
+            Activity, uuid5(command.workspace_id, f"{command.command_id}:activity:lead.note_added")
+        )
+        if not technical:
+            enqueue_note_source(self.uow.session, activity)
+        return LeadOperationResult(
+            command.command_id,
+            lead.id,
+            lead.version,
+            False,
+            occurred_at=occurred_at,
+        )
+
+    def schedule_next_action(
+        self,
+        principal: HumanCommandPrincipal,
+        command: ScheduleNextActionCommand,
+    ) -> LeadOperationResult:
+        self._authorize(principal, command, "crm:task:write")
+        if (
+            type(command) is not ScheduleNextActionCommand
+            or type(command.command_id) is not UUID
+            or type(command.workspace_id) is not UUID
+            or type(command.lead_id) is not UUID
+            or type(command.expected_version) is not int
+            or command.expected_version < 1
+            or command.task_type not in {"call", "email", "follow_up"}
+            or type(command.due_at) is not datetime
+            or command.due_at.tzinfo is None
+            or command.due_at.utcoffset() is None
+        ):
+            raise _conflict() from None
+        title = _bounded_text(command.title, maximum=512)
+        intent = None
+        if command.call_intent is not None:
+            try:
+                intent = CallIntent.model_validate(command.call_intent).model_dump(mode="json")
+            except ValueError:
+                raise _conflict() from None
+            if command.task_type != "call":
+                raise _conflict()
+        due_at = command.due_at.astimezone(UTC)
+        semantic_hash = _semantic_hash(
+            "schedule-next-action",
+            command,
+            {
+                "due_at": due_at.isoformat(),
+                "task_type": command.task_type,
+                "title": title,
+                **({"call_intent": intent} if intent else {}),
+            },
+        )
+        replay = self._claim_or_replay(principal, command, semantic_hash)
+        if replay is not None:
+            return replay
+        if due_at <= _now():
+            raise _conflict() from None
+        lead = self.uow.leads.get(
+            command.workspace_id, command.lead_id, for_update=True
+        )
+        if lead is None or lead.version != command.expected_version:
+            raise _conflict() from None
+        task_id = uuid5(
+            command.workspace_id,
+            f"{command.command_id}:task:lead.next_action_scheduled",
+        )
+        self.uow.tasks.add(
+            Task(
+                id=task_id,
+                workspace_id=command.workspace_id,
+                account_id=lead.account_id,
+                lead_id=lead.id,
+                task_type=command.task_type,
+                title=title,
+                due_at=due_at,
+                owner_user_id=principal.actor_id,
+                status="open",
+                source_rule="manual_next_action",
+                call_intent=intent,
+            )
+        )
+        lead.updated_at = datetime.now(UTC)
+        self.uow.session.flush()
+        self._record(
+            principal,
+            command,
+            semantic_hash,
+            event_type="lead.next_action_scheduled",
+            version=lead.version,
+            activity_title="Next action scheduled",
+            activity_type="task",
+            summary=title,
+            payload={
+                "due_at": due_at.isoformat(),
+                "task_type": command.task_type,
+                **(
+                    {"callback_sync_status": "pending" if callback_intent_requires_calendar(intent) else "not_required", "call_intent": intent}
+                    if command.task_type == "call"
+                    else {}
+                ),
+            },
+            task_id=task_id,
+        )
+        task = self.uow.tasks.get(command.workspace_id, task_id)
+        enqueue_task_work(self.uow.session, task)
+        return LeadOperationResult(
+            command.command_id,
+            lead.id,
+            lead.version,
+            False,
+            task_id=task_id,
+            callback_sync_status=("pending" if callback_intent_requires_calendar(intent) else "not_required") if command.task_type == "call" else None,
+        )
+
+    def _authorize(self, principal, command, permission: str) -> None:
+        if (
+            type(principal) is not HumanCommandPrincipal
+            or type(principal.actor_id) is not UUID
+            or type(principal.workspace_id) is not UUID
+            or type(principal.permissions) is not frozenset
+            or principal.workspace_id != getattr(command, "workspace_id", None)
+            or permission not in principal.permissions
+        ):
+            raise CommandAuthorizationError("command forbidden") from None
+
+    def _claim_or_replay(
+        self, principal: HumanCommandPrincipal, command, semantic_hash: str
+    ) -> LeadOperationResult | None:
+        self.uow.lock_identities(
+            command.workspace_id, (f"human-command:{command.command_id}",)
+        )
+        replay = self.uow.outbox_events.by_command(
+            command.workspace_id, command.command_id
+        )
+        if replay is None:
+            return None
+        if (
+            replay.semantic_hash != semantic_hash
+            or replay.aggregate_id != command.lead_id
+        ):
+            raise _conflict() from None
+        _assert_replay_actor(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            actor_id=principal.actor_id,
+        )
+        return LeadOperationResult(
+            command.command_id,
+            replay.aggregate_id,
+            int(replay.payload["version"]),
+            True,
+            UUID(replay.payload["task_id"]) if replay.payload.get("task_id") else None,
+            datetime.fromisoformat(replay.payload["occurred_at"])
+            if replay.payload.get("occurred_at")
+            else None,
+            replay.payload.get("callback_sync_status"),
+            UUID(replay.payload["activity_id"]) if replay.payload.get("activity_id") else None,
+            replay.payload.get("call_details"),
+            replay.payload.get("phone_history"),
+        )
+
+    def _record(
+        self,
+        principal: HumanCommandPrincipal,
+        command,
+        semantic_hash: str,
+        *,
+        event_type: str,
+        version: int,
+        activity_title: str,
+        payload: dict[str, object],
+        activity_type: str = "note",
+        project_contact: bool = False,
+        occurred_at: datetime | None = None,
+        direction: str | None = None,
+        outcome_code: str | None = None,
+        summary: str | None = None,
+        task_id: UUID | None = None,
+        call_details: dict | None = None,
+        technical_note: bool = False,
+    ) -> None:
+        effective_at = occurred_at or datetime.now(UTC)
+        activity = Activity(
+                id=uuid5(
+                    command.workspace_id, f"{command.command_id}:activity:{event_type}"
+                ),
+                workspace_id=command.workspace_id,
+                account_id=self.uow.leads.get(
+                    command.workspace_id, command.lead_id
+                ).account_id,
+                lead_id=command.lead_id,
+                activity_type=activity_type,
+                occurred_at=effective_at,
+                title=activity_title,
+                summary=summary,
+                direction=direction,
+                outcome_code=outcome_code,
+                call_details=call_details,
+                semantic_fingerprint=semantic_hash,
+                source_system="agent" if technical_note else "manual",
+                actor_type="system" if technical_note else "human",
+                actor_id=principal.actor_id,
+        )
+        self.uow.activities.add(activity)
+
+        if project_contact:
+            from src.crm.services.call_contact_stage import project_contact_stage
+            lead = self.uow.leads.get(command.workspace_id, command.lead_id)
+            project_contact_stage(self.uow.session, lead, activity, principal.actor_id)
+            self.uow.session.flush()
+            version = lead.version
+        event_payload = {"lead_id": str(command.lead_id), "version": version, **payload}
+        if task_id is not None:
+            event_payload["task_id"] = str(task_id)
+        enqueue_outbox_event(
+            self.uow,
+            workspace_id=command.workspace_id,
+            command_id=command.command_id,
+            semantic_hash=semantic_hash,
+            event_type=event_type,
+            aggregate_type="lead",
+            aggregate_id=command.lead_id,
+            payload=event_payload,
+        )
+        self.uow.audit_events.add(
+            AuditEvent(
+                id=uuid5(
+                    command.workspace_id, f"{command.command_id}:audit:{event_type}"
+                ),
+                workspace_id=command.workspace_id,
+                command_id=command.command_id,
+                actor_id=principal.actor_id,
+                action=event_type,
+                entity_type="lead",
+                entity_id=command.lead_id,
+                details={
+                    key: value
+                    for key, value in event_payload.items()
+                    if key != "lead_id"
+                },
+            )
+        )

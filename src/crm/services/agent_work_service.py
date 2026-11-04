@@ -1,0 +1,549 @@
+"""Lease-fenced execution, bounded retries and duplicate-safe terminal results."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+import base64
+import hashlib
+import json
+from uuid import uuid4, uuid5
+
+from sqlalchemy import select, true, case, String, and_, or_, text
+from sqlalchemy.dialects.postgresql import insert
+from src.crm.persistence.models import (
+    AgentWork,
+    Task,
+    Lead,
+    Contact,
+    SourceIdentity,
+    AuditEvent,
+    Activity,
+)
+
+
+class WorkConflict(ValueError):
+    pass
+
+
+def lead_is_suppressed(session, lead):
+    if lead.stage in {"lost", "not_a_fit", "won"}:
+        return True
+    if lead.contact_id:
+        contact = session.scalar(
+            select(Contact).where(
+                Contact.workspace_id == lead.workspace_id, Contact.id == lead.contact_id
+            )
+        )
+        if contact and contact.status == "inactive":
+            return True
+    if lead.source_identity_id:
+        source = session.scalar(
+            select(SourceIdentity).where(
+                SourceIdentity.workspace_id == lead.workspace_id,
+                SourceIdentity.id == lead.source_identity_id,
+            )
+        )
+        if source and (source.metadata_json or {}).get("suppressed") is True:
+            return True
+    return False
+
+
+def enqueue_work(
+    session,
+    *,
+    workspace_id,
+    source_key,
+    kind,
+    payload=None,
+    task_id=None,
+    lead_id=None,
+    available_at=None,
+    wake_note_worker=False,
+):
+    import os
+
+    work_id = uuid5(workspace_id, f"agent-work:{source_key}")
+    # Opt-in routing only, never trust raw observation as semantic/send proof.
+    if (os.getenv("CRM_FOLLOWUP_OBSERVE_ENABLED", "").lower() == "true"
+        and kind == "sent_review" and lead_id and payload
+        and payload.get("provider") == "gmail"
+        and payload.get("source_scope", "").startswith("mailbox:")):
+        from src.crm.services.followup_review import initial_anchor
+        payload = dict(payload) | {"followup_anchor_v1": initial_anchor(
+            payload["source_scope"][8:], lead_id, payload["thread_id"], payload["message_id"])}
+    wake = (wake_note_worker and kind in ('call_followup', 'calendar_callback')
+            and os.getenv('CRM_NOTE_EVENTS_ENABLED') == 'true')
+    if wake:
+        payload = dict(payload or {}, note_event_v1=True)
+    inserted = session.execute(
+        insert(AgentWork)
+        .values(
+            id=work_id,
+            workspace_id=workspace_id,
+            source_key=source_key,
+            kind=kind,
+            payload=payload or {},
+            task_id=task_id,
+            lead_id=lead_id,
+            available_at=available_at or datetime.now(UTC),
+        )
+        .on_conflict_do_nothing(constraint="uq_agent_work_source")
+        .returning(AgentWork.id)
+    ).scalar_one_or_none()
+    if wake and inserted is not None:
+        # NOTIFY is delivered only after this transaction commits. Reconnects
+        # replay the durable marked work rows, never the whole CRM history.
+        session.execute(text("SELECT pg_notify('crm_note_work_v1', :payload)"),
+            {'payload': json.dumps({'workspace_id': str(workspace_id),
+                                    'work_id': str(work_id)})})
+    return work_id
+
+
+def callback_calendar_required(task):
+    if task.task_type != "call":
+        return False
+    return callback_intent_requires_calendar(task.call_intent)
+
+
+def callback_intent_requires_calendar(intent):
+    # v1 UI wrote calendar_policy=none even for explicit human callbacks.
+    # Preserve that historical metadata; agreement determines internal projection.
+    return intent is None or (
+        intent.get("purpose") == "agreed_callback"
+        and intent.get("agreed_with_client") is True
+    )
+
+
+def enqueue_callback(session, task, *, intent_key=None, content=None):
+    if not callback_calendar_required(task):
+        return None
+    session.flush()
+    from src.crm.services.callback_occurrences import occurrence_for_enqueue
+    source_key = f"callback:{task.id}:v{task.version}"
+    existing = session.scalar(select(AgentWork.id).where(
+        AgentWork.workspace_id == task.workspace_id, AgentWork.source_key == source_key))
+    if existing is not None:
+        return existing
+    occurrence = occurrence_for_enqueue(session, task, source_key,
+        intent_key=intent_key, content=content)
+    return enqueue_work(
+        session,
+        workspace_id=task.workspace_id,
+        source_key=source_key,
+        kind="calendar_callback",
+        wake_note_worker=task.source_rule == 'head_of_sales_note',
+        task_id=task.id,
+        lead_id=task.lead_id,
+        payload={"task_version": task.version, "callback_occurrence": occurrence},
+    )
+
+
+def enqueue_task_work(session, task):
+    if task.source_rule == "ordinary-followup/v1":
+        # Canonical obligations are created atomically with their exact work key.
+        # Never convert a human version edit into another send work/attempt.
+        return session.scalar(select(AgentWork.id).where(
+            AgentWork.workspace_id == task.workspace_id, AgentWork.task_id == task.id,
+            AgentWork.source_key.startswith("fu:v1:"), AgentWork.kind == "followup_due"))
+    if task.task_type == "call":
+        return enqueue_callback(session, task)
+    if task.task_type not in {"email", "follow_up"} or task.status != "open":
+        return None
+    session.flush()
+    return enqueue_work(
+        session,
+        workspace_id=task.workspace_id,
+        source_key=f"followup:{task.id}:v{task.version}",
+        kind="followup_due",
+        task_id=task.id,
+        lead_id=task.lead_id,
+        available_at=task.due_at,
+        payload={"task_version": task.version, "title": task.title},
+    )
+
+
+def serialize_work(row, *, include_lease=False):
+    from src.crm.services.followup_review import public_payload
+    value = {
+        "id": str(row.id),
+        "kind": row.kind,
+        "status": row.status,
+        "task_id": str(row.task_id) if row.task_id else None,
+        "lead_id": str(row.lead_id) if row.lead_id else None,
+        "payload": public_payload(row.payload),
+        "attempt": row.attempts,
+        "available_at": row.available_at.astimezone(UTC).isoformat(),
+        "result": row.result,
+        "result_hash": row.result_hash,
+        "error": row.error,
+        "updated_at": row.updated_at.astimezone(UTC).isoformat(),
+    }
+    if include_lease:
+        value.update(
+            lease_token=str(row.lease_token), lease_until=row.lease_until.astimezone(UTC).isoformat()
+        )
+    return value
+
+
+def claim_work(
+    session,
+    workspace_id,
+    *,
+    worker_id,
+    limit=20,
+    lease_seconds=300,
+    now=None,
+    kinds=None,
+    work_ids=None,
+    actor_id=None,
+    preparation_principal=None,
+    preparation_provider_factory=None,
+):
+    now = now or datetime.now(UTC)
+    if not (
+        1 <= limit <= 20 and 30 <= lease_seconds <= 600 and 1 <= len(worker_id) <= 128
+    ):
+        raise WorkConflict("invalid claim")
+    expired = list(
+        session.scalars(
+            select(AgentWork)
+            .where(
+                AgentWork.workspace_id == workspace_id,
+                AgentWork.status == "running",
+                AgentWork.lease_until <= now,
+                AgentWork.id.in_(work_ids) if work_ids is not None else true(),
+                true() if work_ids is not None else ~AgentWork.payload.contains({'note_event_v1': True}),
+            )
+            .with_for_update(skip_locked=True)
+        )
+    )
+    for row in expired:
+        from src.crm.services.followup_preparation_recovery import allowance
+        row.status = "failed" if row.attempts >= 3 or allowance(row) else "queued"
+        row.error = "Worker lease expired"
+        row.last_lease_token = row.lease_token
+        row.lease_token = row.lease_until = None
+    session.flush()
+    from src.crm.services.followup_recovery_credit import claim_filter, consume_for_claim
+    from src.crm.services import followup_preparation_recovery as preparation
+    preparation_present, preparation_available = preparation.claim_filter(explicit=work_ids is not None)
+    from src.crm.services import moveauto_operational_admission as operational
+    operational_filter = operational.claim_filter(explicit=work_ids is not None and len(work_ids) == 1)
+    rows = list(
+        session.scalars(
+            select(AgentWork)
+            .where(
+                AgentWork.workspace_id == workspace_id,
+                or_(and_(AgentWork.status == "queued",
+                    or_(and_(~preparation_present, or_(AgentWork.attempts < 3, claim_filter())), preparation_available)),
+                    operational_filter),
+                AgentWork.available_at <= now,
+                AgentWork.kind.in_(kinds) if kinds else true(),
+                AgentWork.id.in_(work_ids) if work_ids is not None else true(),
+                true() if work_ids is not None else ~AgentWork.payload.contains({'note_event_v1': True}),
+            )
+            .order_by(
+                # Recent source activity beats old reconciliation/import work.
+                # Queue insertion time is not the commercial activity time.
+                case(
+                    (select(Activity.id).where(
+                        Activity.workspace_id == workspace_id,
+                        Activity.id.cast(String) == AgentWork.payload['activity_id'].astext,
+                        Activity.activity_type.in_(['call', 'note']),
+                        Activity.occurred_at >= now - timedelta(days=2),
+                    ).exists(), 0),
+                    (and_(AgentWork.kind == 'email_update',
+                        select(Activity.id).where(
+                            Activity.workspace_id == workspace_id,
+                            Activity.id.cast(String) == AgentWork.payload['activity_id'].astext,
+                            Activity.activity_type.in_(['email_sent', 'email_received']),
+                            Activity.occurred_at >= now - timedelta(days=2),
+                        ).exists()), 0),
+                    (AgentWork.kind == 'reply_review', 1),
+                    (AgentWork.kind == 'followup_due', 2),
+                    (AgentWork.payload.has_key('followup_anchor_v1'), 3),
+                    else_=4,
+                ),
+                AgentWork.available_at,
+                AgentWork.created_at,
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    claimed = []
+    for row in rows:
+        operational_marker = None
+        if row.status == 'failed' and operational.MARKER in (row.payload or {}):
+            operational_marker = operational.consume(session, row, worker_id=worker_id, actor_id=actor_id)
+        preparation_claim = preparation.allowance(row) is not None
+        if preparation_claim and not preparation.consume_for_claim(session, row, now,
+                principal=preparation_principal, provider_factory=preparation_provider_factory):
+            continue
+        if row.kind == "followup_due" and row.task_id:
+            task = session.scalar(
+                select(Task).where(
+                    Task.workspace_id == workspace_id, Task.id == row.task_id
+                )
+            )
+            lead = (
+                session.scalar(
+                    select(Lead).where(
+                        Lead.workspace_id == workspace_id, Lead.id == row.lead_id
+                    )
+                )
+                if row.lead_id
+                else None
+            )
+            if (
+                (lead is not None and lead_is_suppressed(session, lead))
+                or task is None
+                or task.status != "open"
+                or task.version != row.payload.get("task_version")
+            ):
+                row.status = "completed"
+                row.result = {
+                    "summary": "Ação substituída ou concluída; sem trabalho adicional",
+                    "evidence": [],
+                }
+                continue
+        recovery_claim = row.attempts >= 3 and not preparation_claim and operational_marker is None
+        if recovery_claim and not consume_for_claim(session, row, now):
+            continue
+        claimed.append(row)
+        row.status, row.worker_id = "running", worker_id
+        # The DB caps normal attempts at three. One separately audited recovery
+        # attempt preserves that counter; the consumed credit records ordinal4.
+        if not recovery_claim and not preparation_claim and operational_marker is None:
+            row.attempts += 1
+        row.lease_token, row.lease_until = (
+            uuid4(),
+            now + timedelta(seconds=lease_seconds),
+        )
+        row.updated_at = now
+        if operational_marker is not None:
+            operational.record_consumption(session, row, operational_marker, actor_id)
+    session.flush()
+    return [serialize_work(row, include_lease=True) for row in claimed]
+
+
+def locked_work(session, workspace_id, work_id):
+    row = session.scalar(
+        select(AgentWork)
+        .where(AgentWork.workspace_id == workspace_id, AgentWork.id == work_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise WorkConflict("work unavailable")
+    return row
+
+
+def validate_lease(row, lease_token, now=None):
+    if (
+        row.status != "running"
+        or row.lease_token != lease_token
+        or row.lease_until <= (now or datetime.now(UTC))
+    ):
+        raise WorkConflict("work lease conflict")
+
+
+def finish_work(
+    session, workspace_id, work_id, lease_token, *, result, status="completed", now=None
+):
+    if status not in {"completed", "waiting"}:
+        raise WorkConflict("invalid work outcome")
+    encoded = json.dumps(
+        {"status": status, "result": result},
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    if len(encoded.encode()) > 16000:
+        raise WorkConflict("result too large")
+    fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+    row = locked_work(session, workspace_id, work_id)
+    if row.kind == 'email_update' and 'request_hash' not in result:
+        raise WorkConflict('Email updates require the email-update operation')
+    if any(k in row.payload for k in ("followup_v1", "followup_anchor_v1")):
+        raise WorkConflict("Canonical followup requires server receipt")
+    if (
+        row.status == status
+        and row.last_lease_token == lease_token
+        and row.result_hash == fingerprint
+    ):
+        return serialize_work(row) | {"replayed": True}
+    validate_lease(row, lease_token, now)
+    row.status, row.result, row.result_hash = status, result, fingerprint
+    row.last_lease_token = row.lease_token
+    row.lease_token = row.lease_until = None
+    row.error = None
+    session.flush()
+    return serialize_work(row) | {"replayed": False}
+
+
+def fail_work(
+    session,
+    workspace_id,
+    work_id,
+    lease_token,
+    *,
+    retryable=True,
+    reason="Execution failed",
+    now=None,
+):
+    now = now or datetime.now(UTC)
+    row = locked_work(session, workspace_id, work_id)
+    if row.last_lease_token == lease_token and row.status in {"queued", "failed"}:
+        return serialize_work(row) | {"replayed": True}
+    validate_lease(row, lease_token, now)
+    from src.crm.services.followup_preparation_recovery import allowance
+    row.status = "queued" if retryable and row.attempts < 3 and not allowance(row) else "failed"
+    row.available_at = now + timedelta(seconds=30 * 2 ** (row.attempts - 1))
+    row.error = reason[:256]
+    row.last_lease_token = row.lease_token
+    row.lease_token = row.lease_until = None
+    session.flush()
+    return serialize_work(row) | {"replayed": False}
+
+
+_REVIEW_KINDS = frozenset(
+    {"reply_review", "proposal_review", "identity_review", "sent_review"}
+)
+
+
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def resolve_waiting_review(
+    session,
+    workspace_id,
+    work_id,
+    *,
+    actor_id,
+    resolution_id,
+    expected_result_hash,
+    result,
+):
+    """Close a reviewed waiting item; never mutate business entities or send work."""
+    if (
+        not isinstance(result, dict)
+        or set(result) != {"summary", "evidence"}
+        or not isinstance(result.get("summary"), str)
+        or not result["summary"].strip()
+        or len(result["summary"]) > 2000
+        or not isinstance(result.get("evidence"), list)
+        or not 1 <= len(result["evidence"]) <= 20
+        or any(not isinstance(item, dict) or not item for item in result["evidence"])
+    ):
+        raise WorkConflict("Review requires evidence and a summary")
+    encoded = _canonical_json({"status": "completed", "result": result})
+    if len(encoded.encode()) > 16000:
+        raise WorkConflict("Review result too large")
+    fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+    request_hash = hashlib.sha256(
+        _canonical_json(
+            {
+                "work_id": str(work_id),
+                "expected_result_hash": expected_result_hash,
+                "result": result,
+            }
+        ).encode()
+    ).hexdigest()
+    row = locked_work(session, workspace_id, work_id)
+    if any(k in row.payload for k in ("followup_v1", "followup_anchor_v1")):
+        raise WorkConflict("Canonical followup requires server receipt")
+    prior = session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace_id,
+            AuditEvent.command_id == resolution_id,
+        )
+    )
+    if prior is not None:
+        if (
+            prior.action != "agent.review_resolved"
+            or prior.entity_id != work_id
+            or prior.actor_id != actor_id
+            or prior.details.get("request_hash") != request_hash
+            or row.status != "completed"
+            or row.result_hash != fingerprint
+        ):
+            raise WorkConflict("Resolution id was already used")
+        return serialize_work(row) | {
+            "resolution_id": str(resolution_id),
+            "replayed": True,
+        }
+    if (
+        row.status != "waiting"
+        or row.kind not in _REVIEW_KINDS
+        or row.result_hash != expected_result_hash
+    ):
+        raise WorkConflict("Review state changed or is not resolvable")
+    previous = row.result or {}
+    prior_evidence = {_canonical_json(item) for item in previous.get("evidence", [])}
+    if not any(
+        _canonical_json(item) not in prior_evidence for item in result["evidence"]
+    ):
+        raise WorkConflict("Resolution requires new evidence")
+    history = {"previous_result": previous, "resolution_result": result}
+    details = {
+        "resolution_id": str(resolution_id),
+        "request_hash": request_hash,
+        "previous_status": "waiting",
+        "previous_result_hash": row.result_hash,
+        "result_hash": fingerprint,
+    }
+    # Each immutable audit row is limited to 4096 bytes by the existing schema.
+    # Preserve longer legitimate results losslessly in deterministic audit parts.
+    if len(json.dumps(details | history, ensure_ascii=False).encode()) <= 3900:
+        details.update(history)
+    else:
+        history_bytes = _canonical_json(history).encode()
+        encoded_history = base64.b64encode(history_bytes).decode("ascii")
+        parts = [
+            encoded_history[i : i + 2800] for i in range(0, len(encoded_history), 2800)
+        ]
+        details.update(
+            history_encoding="base64-json",
+            history_parts=len(parts),
+            history_sha256=hashlib.sha256(history_bytes).hexdigest(),
+        )
+        for index, part in enumerate(parts):
+            session.add(
+                AuditEvent(
+                    id=uuid5(
+                        resolution_id, f"review-audit-part:{workspace_id}:{index}"
+                    ),
+                    workspace_id=workspace_id,
+                    command_id=uuid5(resolution_id, f"review-audit-command:{index}"),
+                    actor_id=actor_id,
+                    action="agent.review_resolution_evidence",
+                    entity_type="agent_work",
+                    entity_id=work_id,
+                    details={
+                        "resolution_id": str(resolution_id),
+                        "part": index,
+                        "parts": len(parts),
+                        "history_json_base64": part,
+                    },
+                )
+            )
+    session.add(
+        AuditEvent(
+            id=uuid5(resolution_id, f"review-audit:{workspace_id}"),
+            workspace_id=workspace_id,
+            command_id=resolution_id,
+            actor_id=actor_id,
+            action="agent.review_resolved",
+            entity_type="agent_work",
+            entity_id=work_id,
+            details=details,
+        )
+    )
+    row.status, row.result, row.result_hash = "completed", result, fingerprint
+    row.error, row.updated_at = None, datetime.now(UTC)
+    session.flush()
+    return serialize_work(row) | {
+        "resolution_id": str(resolution_id),
+        "replayed": False,
+    }

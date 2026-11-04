@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Histórico anterior · Comercial{% endblock %}
+{% block content %}
+<section id="archive-app">
+  <a class="back-link" href="/contas">← Empresas</a>
+  <header class="topbar"><div><p class="eyebrow">Memória comercial</p><h1>Histórico anterior</h1><p class="subtle">Os registos preservados do CRM anterior, com os valores originais.</p></div></header>
+  <p class="archive-note">Este arquivo é de consulta. As datas e os estados são os que estavam registados; não representam novas interações.</p>
+  <div class="accounts-tools"><input type="search" data-archive-search maxlength="200" aria-label="Pesquisar no histórico" placeholder="Pesquisar empresa, contacto ou nota…"><span class="subtle" data-archive-count></span></div>
+  <p class="state" data-archive-state role="status">A carregar o histórico…</p>
+  <div class="archive-list" data-archive-list></div>
+  <nav class="proposal-pagination" aria-label="Páginas do histórico"><button class="btn" type="button" data-archive-previous disabled>Anterior</button><span class="subtle" data-archive-range></span><button class="btn" type="button" data-archive-next disabled>Seguinte</button></nav>
+</section>
+{% endblock %}
+{% block scripts %}<script defer src="/static/archive.js?v=20260905"></script>{% endblock %}
