@@ -58,11 +58,12 @@ def explicit_stage_intent(text):
         before, after = text[:match.start()], text[match.end():]
         # Defer the whole command if its timing depends on another action.
         # Do not mistake 'não atende, dar a lead como lost' for a negation.
-        clause_before = re.split(r'[.!;\n]', before)[-1].rstrip(' \t—–-') + ' '
+        clause_before = re.split(r'[.!;\n]', before)[-1]
+        negation_context = clause_before.rstrip(' \t—–-') + ' '
         clause_after = re.split(r'[.!;\n]', after)[0]
         deferred_after = _DEFERRED.search(clause_after)
         callback_tail = _CALLBACK_TAIL.search(clause_after)
-        if (_NEGATED.search(clause_before)
+        if (_NEGATED.search(negation_context)
                 or _DEFERRED.search(clause_before)
                 or (deferred_after and (not callback_tail or deferred_after.start() < callback_tail.start()))
                 or '?' in clause_after):

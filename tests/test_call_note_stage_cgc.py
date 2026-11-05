@@ -16,6 +16,9 @@ class StageGrammar(unittest.TestCase):
  def test_existing_commands(self):
   for text,stage in [('lead perdida','lost'),('estado: perdida','lost'),('marcar a lead como perdida','lost'),('lead está contactada','contacted'),('reunião marcada','meeting_booked')]:
    with self.subTest(text=text):self.check(text,stage)
+ def test_hyphen_delimited_meeting_facts_retained(self):
+  self.check('falámos - reunião marcada','meeting_booked')
+  self.check('falámos - reunião realizada','meeting_held')
  def test_negation_and_conditions(self):
   for text in ['não marcar a lead como perdida','se não responder, marcar a lead como perdida','marcar a lead como perdida amanhã','marcar a lead como perdida?','não - lead perdida','se não responder - lead perdida','falámos. lead perdida amanhã','falámos - lead perdida?','nunca - lead perdida']:
    with self.subTest(text=text):self.check(text,None)
