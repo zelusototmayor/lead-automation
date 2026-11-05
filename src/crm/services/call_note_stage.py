@@ -36,6 +36,9 @@ _COMMAND = re.compile(rf'\b(?:{_PREFIX}(?P<stage>{_TARGET})|(?P<meeting_fact>reu
 _ANNOTATION = re.compile(
     rf'^\s*(?:(?:lead|estado|status|tag|label)(?:\s*[:=]\s*|\s+))?'
     rf'(?P<stage>{_TARGET})\b(?=\s*(?:$|[-—–,;:!.\n]))', re.I)
+_INLINE_ANNOTATION = re.compile(
+    rf'(?<=[.!;\n—–-])\s*(?:lead|estado|status|tag|label)'
+    rf'(?:\s*[:=]\s*|\s+)(?P<stage>{_TARGET})\b(?=\s*(?:$|[-—–,;:!.\n]))', re.I)
 _NEGATED = re.compile(r'\b(?:n[aã]o|nunca|sem)\s+(?:(?:h[aá]|tem(?:os)?|houve|existe|uma|[ée]|para|vamos|quero|vou|deves?|devemos)\s+){0,4}$', re.I)
 _DEFERRED = re.compile(r'\b(?:depois|ap[oó]s|mais tarde|amanh[aã]|futuramente|eventualmente|quando|caso|se)\b', re.I)
 _REOPEN = re.compile(r'\b(?:reabrir|reativar)\b', re.I)
@@ -48,12 +51,14 @@ def explicit_stage_intent(text):
         return None
     found = []
     annotation = _ANNOTATION.search(text)
-    matches = ([annotation] if annotation else []) + list(_COMMAND.finditer(text))
+    matches = sorted(([annotation] if annotation else [])
+                     + list(_INLINE_ANNOTATION.finditer(text)) + list(_COMMAND.finditer(text)),
+                     key=lambda match: (match.start(), match.end()))
     for match in matches:
         before, after = text[:match.start()], text[match.end():]
         # Defer the whole command if its timing depends on another action.
         # Do not mistake 'não atende, dar a lead como lost' for a negation.
-        clause_before = re.split(r'[.!;\n]', before)[-1]
+        clause_before = re.split(r'[.!;\n]', before)[-1].rstrip(' \t—–-') + ' '
         clause_after = re.split(r'[.!;\n]', after)[0]
         deferred_after = _DEFERRED.search(clause_after)
         callback_tail = _CALLBACK_TAIL.search(clause_after)
@@ -75,7 +80,7 @@ def explicit_stage_intent(text):
         found.append({'target_stage': target, 'quote': match.group(0),
                       'basis': 'explicit_human_note',
                       'reviewed_correction': bool(_REOPEN.search(match.group(0)))})
-    if not found or len({item['target_stage'] for item in found}) != 1:
+    if not found:
         return None
     return found[-1]
 
